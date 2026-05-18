@@ -88,7 +88,9 @@ class BranchController extends Controller
     public function edit(Branch $branch): Response
     {
         return Inertia::render('Admin/Branches/Edit', [
-            'branch' => $branch,
+            'branch' => $branch->load([
+                'contacts',
+            ]),
             'companies' => Company::query()
                 ->select(['id', 'name'])
                 ->where('is_active', true)

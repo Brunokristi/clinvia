@@ -43,4 +43,9 @@ class Branch extends Model
     {
         return $this->belongsTo(Company::class);
     }
+
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(Contact::class)->orderBy('sort_order');
+    }
 }
