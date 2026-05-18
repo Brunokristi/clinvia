@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Company;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -16,20 +17,40 @@ class BranchController extends Controller
 {
     public function index(): Response
     {
+        $user = request()->user();
+
+        $query = Branch::query()
+            ->with('company:id,name')
+            ->select([
+                'id',
+                'company_id',
+                'name',
+                'slug',
+                'type',
+                'city',
+                'is_active',
+                'sort_order',
+                'created_at',
+            ]);
+
+        if (! $user->isSuperAdmin()) {
+            $companyIds = $user->companies()
+                ->wherePivot('is_active', true)
+                ->pluck('companies.id');
+
+            $branchIds = $user->branches()
+                ->wherePivot('is_active', true)
+                ->pluck('branches.id');
+
+            $query->where(function ($query) use ($companyIds, $branchIds) {
+                $query
+                    ->whereIn('company_id', $companyIds)
+                    ->orWhereIn('id', $branchIds);
+            });
+        }
+
         return Inertia::render('Admin/Branches/Index', [
-            'branches' => Branch::query()
-                ->with('company:id,name')
-                ->select([
-                    'id',
-                    'company_id',
-                    'name',
-                    'slug',
-                    'type',
-                    'city',
-                    'is_active',
-                    'sort_order',
-                    'created_at',
-                ])
+            'branches' => $query
                 ->orderBy('sort_order')
                 ->orderBy('name')
                 ->paginate(10),
@@ -38,17 +59,30 @@ class BranchController extends Controller
 
     public function create(): Response
     {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+        $user = request()->user();
+
+        $companiesQuery = Company::query()
+            ->select(['id', 'name'])
+            ->where('is_active', true)
+            ->orderBy('name');
+
+        if (! $user->isSuperAdmin()) {
+            $companyIds = $user->companies()
+                ->wherePivot('is_active', true)
+                ->pluck('companies.id');
+
+            $companiesQuery->whereIn('id', $companyIds);
+        }
+
         return Inertia::render('Admin/Branches/Create', [
-            'companies' => Company::query()
-                ->select(['id', 'name'])
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(),
+            'companies' => $companiesQuery->get(),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
         $data = $request->validate([
             'company_id' => ['required', 'exists:companies,id'],
             'name' => ['required', 'string', 'max:255'],
@@ -75,6 +109,10 @@ class BranchController extends Controller
             'sort_order' => ['nullable', 'integer'],
         ]);
 
+        if (! $request->user()->canAccessCompany((int) $data['company_id'])) {
+            abort(403);
+        }
+
         $data['slug'] = $data['slug'] ?: Str::slug($data['name']);
         $data['sort_order'] = $data['sort_order'] ?? 0;
 
@@ -87,14 +125,37 @@ class BranchController extends Controller
 
     public function edit(Branch $branch): Response
     {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        $user = request()->user();
+
+        $companiesQuery = Company::query()
+            ->select(['id', 'name'])
+            ->where('is_active', true)
+            ->orderBy('name');
+
+        if (! $user->isSuperAdmin()) {
+            $companyIds = $user->companies()
+                ->wherePivot('is_active', true)
+                ->pluck('companies.id');
+
+            $companiesQuery->whereIn('id', $companyIds);
+        }
+
         return Inertia::render('Admin/Branches/Edit', [
             'branch' => $branch->load([
                 'contacts',
                 'openingHours.intervals',
+                'users:id,name,email,global_role,is_active',
             ]),
-            'companies' => Company::query()
-                ->select(['id', 'name'])
+            'companies' => $companiesQuery->get(),
+            'availableUsers' => User::query()
+                ->select(['id', 'name', 'email', 'global_role', 'is_active'])
+                ->whereIn('global_role', ['admin', 'editor', 'viewer'])
                 ->where('is_active', true)
+                ->whereDoesntHave('branches', function ($query) use ($branch) {
+                    $query->where('branches.id', $branch->id);
+                })
                 ->orderBy('name')
                 ->get(),
         ]);
@@ -102,6 +163,8 @@ class BranchController extends Controller
 
     public function update(Request $request, Branch $branch): RedirectResponse
     {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
         $data = $request->validate([
             'company_id' => ['required', 'exists:companies,id'],
             'name' => ['required', 'string', 'max:255'],
@@ -130,6 +193,10 @@ class BranchController extends Controller
             'sort_order' => ['nullable', 'integer'],
         ]);
 
+        if (! $request->user()->canAccessCompany((int) $data['company_id'])) {
+            abort(403);
+        }
+
         $data['sort_order'] = $data['sort_order'] ?? 0;
 
         $branch->update($data);
@@ -141,6 +208,8 @@ class BranchController extends Controller
 
     public function destroy(Branch $branch): RedirectResponse
     {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
         $branch->delete();
 
         return redirect()

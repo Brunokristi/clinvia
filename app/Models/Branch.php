@@ -53,4 +53,16 @@ class Branch extends Model
     {
         return $this->hasMany(OpeningHour::class)->orderBy('day_of_week');
     }
+
+    public function userBranches(): HasMany
+    {
+        return $this->hasMany(UserBranch::class);
+    }
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'user_branches')
+            ->withPivot(['role', 'is_active'])
+            ->withTimestamps();
+    }
 }

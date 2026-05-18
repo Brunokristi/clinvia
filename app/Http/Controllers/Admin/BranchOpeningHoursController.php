@@ -13,6 +13,7 @@ class BranchOpeningHoursController extends Controller
 {
     public function update(Request $request, Branch $branch): RedirectResponse
     {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
         $validator = Validator::make($request->all(), [
             'opening_hours' => ['required', 'array', 'size:7'],
             'opening_hours.*.day_of_week' => ['required', 'integer', 'between:1,7'],

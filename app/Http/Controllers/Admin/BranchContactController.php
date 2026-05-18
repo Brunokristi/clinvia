@@ -13,6 +13,8 @@ class BranchContactController extends Controller
 {
     public function store(Request $request, Branch $branch): RedirectResponse
     {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        
         $data = $request->validate([
             'type' => ['required', 'string', Rule::in([
                 'phone',
@@ -45,6 +47,7 @@ class BranchContactController extends Controller
 
     public function update(Request $request, Branch $branch, Contact $contact): RedirectResponse
     {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if($contact->branch_id !== $branch->id, 404);
 
         $data = $request->validate([
@@ -80,6 +83,7 @@ class BranchContactController extends Controller
 
     public function destroy(Branch $branch, Contact $contact): RedirectResponse
     {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
         abort_if($contact->branch_id !== $branch->id, 404);
 
         $contact->delete();

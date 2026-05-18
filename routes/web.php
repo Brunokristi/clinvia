@@ -7,10 +7,12 @@ use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchOpeningHoursController;
+use App\Http\Controllers\Admin\BranchUserController;
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
 });
+
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
@@ -22,8 +24,9 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::resource('/companies', CompanyController::class)
             ->except(['show']);
-        });
+    });
 
+    Route::middleware('manage.branches')->group(function () {
         Route::resource('/branches', BranchController::class)
             ->except(['show']);
 
@@ -38,6 +41,14 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::put('/branches/{branch}/opening-hours', [BranchOpeningHoursController::class, 'update'])
             ->name('branches.opening-hours.update');
-        });
+        
+        Route::post('/branches/{branch}/users', [BranchUserController::class, 'store'])
+            ->name('branches.users.store');
+
+        Route::delete('/branches/{branch}/users/{user}', [BranchUserController::class, 'destroy'])
+            ->name('branches.users.destroy');
+    });
+});
+
 
 require __DIR__.'/auth.php';

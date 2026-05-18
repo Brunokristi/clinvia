@@ -36,7 +36,7 @@ const page = usePage();
                 </Link>
 
                 <Link
-                    v-if="page.props.auth?.user?.global_role === 'super_admin'"
+                    v-if="['super_admin', 'admin', 'editor'].includes(page.props.auth?.user?.global_role)"
                     :href="route('branches.index')"
                     class="block rounded-lg px-3 py-2 text-sm hover:bg-gray-100"
                 >

@@ -1,19 +1,23 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { router, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
+import Column from 'primevue/column';
+import DataTable from 'primevue/datatable';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
 
 const props = defineProps({
     branch: Object,
     companies: Array,
+    availableUsers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -40,6 +44,16 @@ const branchTypes = [
     { label: 'Kancelária', value: 'office' },
     { label: 'Iné', value: 'other' },
 ];
+
+const submit = () => {
+    form.put(route('branches.update', props.branch.id), {
+        preserveScroll: true,
+    });
+};
+
+/**
+ * Contacts
+ */
 const contactForm = useForm({
     type: 'phone',
     label: '',
@@ -85,6 +99,9 @@ const deleteContact = (contact) => {
     });
 };
 
+/**
+ * Opening hours
+ */
 const dayNames = [
     { value: 1, label: 'Pondelok' },
     { value: 2, label: 'Utorok' },
@@ -166,8 +183,44 @@ const dayLabel = (dayOfWeek) => {
     return dayNames.find((day) => day.value === dayOfWeek)?.label ?? dayOfWeek;
 };
 
-const submit = () => {
-    form.put(route('branches.update', props.branch.id));
+/**
+ * Branch users
+ */
+const branchUserForm = useForm({
+    user_id: null,
+    role: 'branch_editor',
+    is_active: true,
+});
+
+const branchUserRoles = [
+    { label: 'Branch admin', value: 'branch_admin' },
+    { label: 'Branch editor', value: 'branch_editor' },
+    { label: 'Viewer', value: 'viewer' },
+];
+
+const branchUserRoleLabel = (role) => {
+    return branchUserRoles.find((item) => item.value === role)?.label ?? role;
+};
+
+const attachBranchUser = () => {
+    branchUserForm.post(route('branches.users.store', props.branch.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            branchUserForm.reset();
+            branchUserForm.role = 'branch_editor';
+            branchUserForm.is_active = true;
+        },
+    });
+};
+
+const detachBranchUser = (user) => {
+    if (! confirm(`Odstrániť používateľa ${user.name} z tejto pobočky?`)) {
+        return;
+    }
+
+    router.delete(route('branches.users.destroy', [props.branch.id, user.id]), {
+        preserveScroll: true,
+    });
 };
 </script>
 
@@ -185,7 +238,10 @@ const submit = () => {
 
                 <div class="grid gap-5 md:grid-cols-2">
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Firma</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Firma
+                        </label>
+
                         <Select
                             v-model="form.company_id"
                             :options="companies"
@@ -193,13 +249,17 @@ const submit = () => {
                             optionValue="id"
                             class="w-full"
                         />
+
                         <p v-if="form.errors.company_id" class="mt-1 text-sm text-red-600">
                             {{ form.errors.company_id }}
                         </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Typ pobočky</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Typ pobočky
+                        </label>
+
                         <Select
                             v-model="form.type"
                             :options="branchTypes"
@@ -208,19 +268,31 @@ const submit = () => {
                             placeholder="Vyber typ"
                             class="w-full"
                         />
+
+                        <p v-if="form.errors.type" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.type }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Názov</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Názov
+                        </label>
+
                         <InputText v-model="form.name" class="w-full" />
+
                         <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
                             {{ form.errors.name }}
                         </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Slug</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Slug
+                        </label>
+
                         <InputText v-model="form.slug" class="w-full" />
+
                         <p v-if="form.errors.slug" class="mt-1 text-sm text-red-600">
                             {{ form.errors.slug }}
                         </p>
@@ -228,8 +300,15 @@ const submit = () => {
                 </div>
 
                 <div class="mt-5">
-                    <label class="mb-1 block text-sm font-medium">Popis</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        Popis
+                    </label>
+
                     <Textarea v-model="form.description" class="w-full" rows="5" />
+
+                    <p v-if="form.errors.description" class="mt-1 text-sm text-red-600">
+                        {{ form.errors.description }}
+                    </p>
                 </div>
             </div>
 
@@ -240,37 +319,82 @@ const submit = () => {
 
                 <div class="grid gap-5 md:grid-cols-2">
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Adresa 1</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Adresa 1
+                        </label>
+
                         <InputText v-model="form.address_line_1" class="w-full" />
+
+                        <p v-if="form.errors.address_line_1" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.address_line_1 }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Adresa 2</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Adresa 2
+                        </label>
+
                         <InputText v-model="form.address_line_2" class="w-full" />
+
+                        <p v-if="form.errors.address_line_2" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.address_line_2 }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Mesto</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Mesto
+                        </label>
+
                         <InputText v-model="form.city" class="w-full" />
+
+                        <p v-if="form.errors.city" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.city }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">PSČ</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            PSČ
+                        </label>
+
                         <InputText v-model="form.postal_code" class="w-full" />
+
+                        <p v-if="form.errors.postal_code" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.postal_code }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Krajina</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Krajina
+                        </label>
+
                         <InputText v-model="form.country" class="w-full" />
+
+                        <p v-if="form.errors.country" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.country }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Web</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Web
+                        </label>
+
                         <InputText v-model="form.website" class="w-full" />
+
+                        <p v-if="form.errors.website" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.website }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Latitude</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Latitude
+                        </label>
+
                         <InputNumber
                             v-model="form.latitude"
                             class="w-full"
@@ -278,10 +402,17 @@ const submit = () => {
                             :minFractionDigits="0"
                             :maxFractionDigits="7"
                         />
+
+                        <p v-if="form.errors.latitude" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.latitude }}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Longitude</label>
+                        <label class="mb-1 block text-sm font-medium">
+                            Longitude
+                        </label>
+
                         <InputNumber
                             v-model="form.longitude"
                             class="w-full"
@@ -289,6 +420,10 @@ const submit = () => {
                             :minFractionDigits="0"
                             :maxFractionDigits="7"
                         />
+
+                        <p v-if="form.errors.longitude" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.longitude }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -300,18 +435,37 @@ const submit = () => {
 
                 <div class="grid gap-5 md:grid-cols-2">
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Poradie</label>
-                        <InputNumber v-model="form.sort_order" class="w-full" inputClass="w-full" />
+                        <label class="mb-1 block text-sm font-medium">
+                            Poradie
+                        </label>
+
+                        <InputNumber
+                            v-model="form.sort_order"
+                            class="w-full"
+                            inputClass="w-full"
+                        />
+
+                        <p v-if="form.errors.sort_order" class="mt-1 text-sm text-red-600">
+                            {{ form.errors.sort_order }}
+                        </p>
                     </div>
 
                     <div class="flex items-center gap-2 pt-7">
                         <Checkbox v-model="form.is_active" binary inputId="is_active_edit" />
-                        <label for="is_active_edit">Aktívna pobočka</label>
+
+                        <label for="is_active_edit">
+                            Aktívna pobočka
+                        </label>
                     </div>
                 </div>
             </div>
 
-            <Button type="submit" label="Uložiť" :loading="form.processing" />
+            <Button
+                type="submit"
+                label="Uložiť základné údaje"
+                icon="pi pi-save"
+                :loading="form.processing"
+            />
         </form>
 
         <section class="mt-10 rounded-lg border bg-white p-5">
@@ -327,7 +481,10 @@ const submit = () => {
 
             <form class="mb-8 grid gap-5 md:grid-cols-5" @submit.prevent="addContact">
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Typ</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        Typ
+                    </label>
+
                     <Select
                         v-model="contactForm.type"
                         :options="contactTypes"
@@ -335,42 +492,55 @@ const submit = () => {
                         optionValue="value"
                         class="w-full"
                     />
+
                     <p v-if="contactForm.errors.type" class="mt-1 text-sm text-red-600">
                         {{ contactForm.errors.type }}
                     </p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Názov</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        Názov
+                    </label>
+
                     <InputText
                         v-model="contactForm.label"
                         class="w-full"
                         placeholder="napr. Objednávanie"
                     />
+
                     <p v-if="contactForm.errors.label" class="mt-1 text-sm text-red-600">
                         {{ contactForm.errors.label }}
                     </p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Hodnota</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        Hodnota
+                    </label>
+
                     <InputText
                         v-model="contactForm.value"
                         class="w-full"
                         placeholder="+421... alebo email"
                     />
+
                     <p v-if="contactForm.errors.value" class="mt-1 text-sm text-red-600">
                         {{ contactForm.errors.value }}
                     </p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Poradie</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        Poradie
+                    </label>
+
                     <InputNumber
                         v-model="contactForm.sort_order"
                         class="w-full"
                         inputClass="w-full"
                     />
+
                     <p v-if="contactForm.errors.sort_order" class="mt-1 text-sm text-red-600">
                         {{ contactForm.errors.sort_order }}
                     </p>
@@ -382,7 +552,10 @@ const submit = () => {
                         binary
                         inputId="contact_is_primary"
                     />
-                    <label for="contact_is_primary">Primárny</label>
+
+                    <label for="contact_is_primary">
+                        Primárny
+                    </label>
                 </div>
 
                 <div class="md:col-span-5">
@@ -395,7 +568,7 @@ const submit = () => {
                 </div>
             </form>
 
-            <DataTable :value="branch.contacts" tableStyle="min-width: 50rem">
+            <DataTable :value="branch.contacts ?? []" tableStyle="min-width: 50rem">
                 <Column header="Typ">
                     <template #body="{ data }">
                         {{ contactTypeLabel(data.type) }}
@@ -464,6 +637,7 @@ const submit = () => {
                                 binary
                                 :inputId="`closed_${day.day_of_week}`"
                             />
+
                             <label :for="`closed_${day.day_of_week}`">
                                 Zatvorené
                             </label>
@@ -480,11 +654,13 @@ const submit = () => {
                                 <label class="mb-1 block text-sm font-medium">
                                     Od
                                 </label>
+
                                 <input
                                     v-model="interval.opens_at"
                                     type="time"
                                     class="w-full rounded-md border-gray-300"
                                 />
+
                                 <p
                                     v-if="openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.opens_at`]"
                                     class="mt-1 text-sm text-red-600"
@@ -497,11 +673,13 @@ const submit = () => {
                                 <label class="mb-1 block text-sm font-medium">
                                     Do
                                 </label>
+
                                 <input
                                     v-model="interval.closes_at"
                                     type="time"
                                     class="w-full rounded-md border-gray-300"
                                 />
+
                                 <p
                                     v-if="openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.closes_at`]"
                                     class="mt-1 text-sm text-red-600"
@@ -532,6 +710,7 @@ const submit = () => {
                         <label class="mb-1 block text-sm font-medium">
                             Poznámka
                         </label>
+
                         <InputText
                             v-model="day.note"
                             class="w-full"
@@ -547,6 +726,108 @@ const submit = () => {
                     :loading="openingHoursForm.processing"
                 />
             </form>
+        </section>
+
+        <section class="mt-10 rounded-lg border bg-white p-5">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold">
+                    Používatelia pobočky
+                </h2>
+
+                <p class="text-sm text-gray-500">
+                    Tu vieš priradiť používateľov, ktorí majú prístup iba k tejto pobočke.
+                </p>
+            </div>
+
+            <form class="mb-8 grid gap-5 md:grid-cols-4" @submit.prevent="attachBranchUser">
+                <div>
+                    <label class="mb-1 block text-sm font-medium">
+                        Používateľ
+                    </label>
+
+                    <Select
+                        v-model="branchUserForm.user_id"
+                        :options="availableUsers"
+                        optionLabel="name"
+                        optionValue="id"
+                        placeholder="Vyber používateľa"
+                        class="w-full"
+                    />
+
+                    <p v-if="branchUserForm.errors.user_id" class="mt-1 text-sm text-red-600">
+                        {{ branchUserForm.errors.user_id }}
+                    </p>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium">
+                        Rola v pobočke
+                    </label>
+
+                    <Select
+                        v-model="branchUserForm.role"
+                        :options="branchUserRoles"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                    />
+
+                    <p v-if="branchUserForm.errors.role" class="mt-1 text-sm text-red-600">
+                        {{ branchUserForm.errors.role }}
+                    </p>
+                </div>
+
+                <div class="flex items-center gap-2 pt-7">
+                    <Checkbox
+                        v-model="branchUserForm.is_active"
+                        binary
+                        inputId="branch_user_active"
+                    />
+
+                    <label for="branch_user_active">
+                        Aktívny prístup
+                    </label>
+                </div>
+
+                <div class="pt-6">
+                    <Button
+                        type="submit"
+                        label="Priradiť"
+                        icon="pi pi-plus"
+                        :loading="branchUserForm.processing"
+                    />
+                </div>
+            </form>
+
+            <DataTable :value="branch.users ?? []" tableStyle="min-width: 50rem">
+                <Column field="name" header="Meno" />
+                <Column field="email" header="Email" />
+                <Column field="global_role" header="Globálna rola" />
+
+                <Column header="Rola v pobočke">
+                    <template #body="{ data }">
+                        {{ branchUserRoleLabel(data.pivot.role) }}
+                    </template>
+                </Column>
+
+                <Column header="Aktívny prístup">
+                    <template #body="{ data }">
+                        {{ data.pivot.is_active ? 'Áno' : 'Nie' }}
+                    </template>
+                </Column>
+
+                <Column header="Akcie">
+                    <template #body="{ data }">
+                        <Button
+                            label="Odobrať"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="detachBranchUser(data)"
+                        />
+                    </template>
+                </Column>
+            </DataTable>
         </section>
     </AdminLayout>
 </template>
