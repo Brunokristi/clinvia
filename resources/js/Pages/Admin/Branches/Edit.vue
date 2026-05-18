@@ -1,6 +1,7 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { router, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
@@ -82,6 +83,87 @@ const deleteContact = (contact) => {
     router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {
         preserveScroll: true,
     });
+};
+
+const dayNames = [
+    { value: 1, label: 'Pondelok' },
+    { value: 2, label: 'Utorok' },
+    { value: 3, label: 'Streda' },
+    { value: 4, label: 'Štvrtok' },
+    { value: 5, label: 'Piatok' },
+    { value: 6, label: 'Sobota' },
+    { value: 7, label: 'Nedeľa' },
+];
+
+const createDefaultOpeningHours = () => {
+    return dayNames.map((day) => {
+        const existingDay = props.branch.opening_hours?.find(
+            (item) => item.day_of_week === day.value
+        );
+
+        if (existingDay) {
+            return {
+                day_of_week: existingDay.day_of_week,
+                is_closed: Boolean(existingDay.is_closed),
+                note: existingDay.note ?? '',
+                sort_order: existingDay.sort_order ?? day.value,
+                intervals: existingDay.intervals?.map((interval, index) => ({
+                    opens_at: interval.opens_at?.slice(0, 5) ?? '08:00',
+                    closes_at: interval.closes_at?.slice(0, 5) ?? '16:00',
+                    sort_order: interval.sort_order ?? index,
+                })) ?? [],
+            };
+        }
+
+        return {
+            day_of_week: day.value,
+            is_closed: day.value >= 6,
+            note: '',
+            sort_order: day.value,
+            intervals: day.value >= 6
+                ? []
+                : [
+                    {
+                        opens_at: '08:00',
+                        closes_at: '16:00',
+                        sort_order: 0,
+                    },
+                ],
+        };
+    });
+};
+
+const openingHoursForm = useForm({
+    opening_hours: createDefaultOpeningHours(),
+});
+
+const saveOpeningHours = () => {
+    openingHoursForm.put(route('branches.opening-hours.update', props.branch.id), {
+        preserveScroll: true,
+    });
+};
+
+const addInterval = (day) => {
+    day.is_closed = false;
+
+    day.intervals.push({
+        opens_at: '08:00',
+        closes_at: '16:00',
+        sort_order: day.intervals.length,
+    });
+};
+
+const removeInterval = (day, intervalIndex) => {
+    day.intervals.splice(intervalIndex, 1);
+
+    day.intervals = day.intervals.map((interval, index) => ({
+        ...interval,
+        sort_order: index,
+    }));
+};
+
+const dayLabel = (dayOfWeek) => {
+    return dayNames.find((day) => day.value === dayOfWeek)?.label ?? dayOfWeek;
 };
 
 const submit = () => {
@@ -343,6 +425,128 @@ const submit = () => {
                     </template>
                 </Column>
             </DataTable>
+        </section>
+
+        <section class="mt-10 rounded-lg border bg-white p-5">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold">
+                    Otváracie hodiny
+                </h2>
+
+                <p class="text-sm text-gray-500">
+                    Nastav týždenný rozpis pobočky. Pre obednú prestávku pridaj viac intervalov v jednom dni.
+                </p>
+            </div>
+
+            <form class="space-y-5" @submit.prevent="saveOpeningHours">
+                <div
+                    v-for="(day, dayIndex) in openingHoursForm.opening_hours"
+                    :key="day.day_of_week"
+                    class="rounded-lg border p-4"
+                >
+                    <div class="mb-4 flex items-center justify-between gap-4">
+                        <div>
+                            <h3 class="font-semibold">
+                                {{ dayLabel(day.day_of_week) }}
+                            </h3>
+
+                            <p
+                                v-if="openingHoursForm.errors[`opening_hours.${dayIndex}.intervals`]"
+                                class="mt-1 text-sm text-red-600"
+                            >
+                                {{ openingHoursForm.errors[`opening_hours.${dayIndex}.intervals`] }}
+                            </p>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <Checkbox
+                                v-model="day.is_closed"
+                                binary
+                                :inputId="`closed_${day.day_of_week}`"
+                            />
+                            <label :for="`closed_${day.day_of_week}`">
+                                Zatvorené
+                            </label>
+                        </div>
+                    </div>
+
+                    <div v-if="! day.is_closed" class="space-y-3">
+                        <div
+                            v-for="(interval, intervalIndex) in day.intervals"
+                            :key="intervalIndex"
+                            class="grid items-end gap-4 md:grid-cols-[1fr_1fr_auto]"
+                        >
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">
+                                    Od
+                                </label>
+                                <input
+                                    v-model="interval.opens_at"
+                                    type="time"
+                                    class="w-full rounded-md border-gray-300"
+                                />
+                                <p
+                                    v-if="openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.opens_at`]"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.opens_at`] }}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">
+                                    Do
+                                </label>
+                                <input
+                                    v-model="interval.closes_at"
+                                    type="time"
+                                    class="w-full rounded-md border-gray-300"
+                                />
+                                <p
+                                    v-if="openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.closes_at`]"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.closes_at`] }}
+                                </p>
+                            </div>
+
+                            <Button
+                                type="button"
+                                label="Odstrániť"
+                                severity="danger"
+                                outlined
+                                @click="removeInterval(day, intervalIndex)"
+                            />
+                        </div>
+
+                        <Button
+                            type="button"
+                            label="Pridať interval"
+                            icon="pi pi-plus"
+                            outlined
+                            @click="addInterval(day)"
+                        />
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="mb-1 block text-sm font-medium">
+                            Poznámka
+                        </label>
+                        <InputText
+                            v-model="day.note"
+                            class="w-full"
+                            placeholder="napr. iba na objednanie"
+                        />
+                    </div>
+                </div>
+
+                <Button
+                    type="submit"
+                    label="Uložiť otváracie hodiny"
+                    icon="pi pi-save"
+                    :loading="openingHoursForm.processing"
+                />
+            </form>
         </section>
     </AdminLayout>
 </template>

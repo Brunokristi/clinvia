@@ -48,4 +48,9 @@ class Branch extends Model
     {
         return $this->hasMany(Contact::class)->orderBy('sort_order');
     }
+
+    public function openingHours(): HasMany
+    {
+        return $this->hasMany(OpeningHour::class)->orderBy('day_of_week');
+    }
 }

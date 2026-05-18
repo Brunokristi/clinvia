@@ -90,6 +90,7 @@ class BranchController extends Controller
         return Inertia::render('Admin/Branches/Edit', [
             'branch' => $branch->load([
                 'contacts',
+                'openingHours.intervals',
             ]),
             'companies' => Company::query()
                 ->select(['id', 'name'])
