@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Branch extends Model
@@ -64,5 +65,13 @@ class Branch extends Model
         return $this->belongsToMany(User::class, 'user_branches')
             ->withPivot(['role', 'is_active'])
             ->withTimestamps();
+    }
+
+    public function employees(): BelongsToMany
+    {
+        return $this->belongsToMany(Employee::class, 'branch_employees')
+            ->withPivot(['role', 'sort_order'])
+            ->withTimestamps()
+            ->orderBy('branch_employees.sort_order');
     }
 }

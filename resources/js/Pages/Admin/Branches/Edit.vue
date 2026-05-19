@@ -18,6 +18,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    availableEmployees: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -222,6 +226,54 @@ const detachBranchUser = (user) => {
         preserveScroll: true,
     });
 };
+
+const employeeForm = useForm({
+    create_new: false,
+    employee_id: null,
+
+    first_name: '',
+    last_name: '',
+    title_before: '',
+    title_after: '',
+    position: '',
+    bio: '',
+    email: '',
+    phone: '',
+
+    role: '',
+    sort_order: 0,
+});
+
+const employeeDisplayName = (employee) => {
+    return [
+        employee.title_before,
+        employee.first_name,
+        employee.last_name,
+        employee.title_after,
+    ].filter(Boolean).join(' ');
+};
+
+const addEmployee = () => {
+    employeeForm.post(route('branches.employees.store', props.branch.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            employeeForm.reset();
+            employeeForm.create_new = false;
+            employeeForm.sort_order = 0;
+        },
+    });
+};
+
+const removeEmployee = (employee) => {
+    if (! confirm(`Odstrániť zamestnanca ${employeeDisplayName(employee)} z tejto pobočky?`)) {
+        return;
+    }
+
+    router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
+        preserveScroll: true,
+    });
+};
+
 </script>
 
 <template>
@@ -824,6 +876,235 @@ const detachBranchUser = (user) => {
                             severity="danger"
                             outlined
                             @click="detachBranchUser(data)"
+                        />
+                    </template>
+                </Column>
+            </DataTable>
+        </section>
+
+        <section class="mt-10 rounded-lg border bg-white p-5">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold">
+                    Zamestnanci pobočky
+                </h2>
+
+                <p class="text-sm text-gray-500">
+                    Tu nastavíš zamestnancov, ktorí sa budú zobrazovať pri tejto pobočke.
+                </p>
+            </div>
+
+            <form class="mb-8 space-y-5" @submit.prevent="addEmployee">
+                <div class="flex items-center gap-2">
+                    <Checkbox
+                        v-model="employeeForm.create_new"
+                        binary
+                        inputId="create_new_employee"
+                    />
+
+                    <label for="create_new_employee">
+                        Vytvoriť nového zamestnanca
+                    </label>
+                </div>
+
+                <div v-if="! employeeForm.create_new" class="grid gap-5 md:grid-cols-3">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Existujúci zamestnanec
+                        </label>
+
+                        <Select
+                            v-model="employeeForm.employee_id"
+                            :options="availableEmployees"
+                            :optionLabel="employeeDisplayName"
+                            optionValue="id"
+                            placeholder="Vyber zamestnanca"
+                            class="w-full"
+                        />
+
+                        <p v-if="employeeForm.errors.employee_id" class="mt-1 text-sm text-red-600">
+                            {{ employeeForm.errors.employee_id }}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Rola v pobočke
+                        </label>
+
+                        <InputText
+                            v-model="employeeForm.role"
+                            class="w-full"
+                            placeholder="napr. Klinický psychológ"
+                        />
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Poradie
+                        </label>
+
+                        <InputNumber
+                            v-model="employeeForm.sort_order"
+                            class="w-full"
+                            inputClass="w-full"
+                        />
+                    </div>
+                </div>
+
+                <div v-if="employeeForm.create_new" class="space-y-5">
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Titul pred menom
+                            </label>
+
+                            <InputText v-model="employeeForm.title_before" class="w-full" />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Titul za menom
+                            </label>
+
+                            <InputText v-model="employeeForm.title_after" class="w-full" />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Meno
+                            </label>
+
+                            <InputText v-model="employeeForm.first_name" class="w-full" />
+
+                            <p v-if="employeeForm.errors.first_name" class="mt-1 text-sm text-red-600">
+                                {{ employeeForm.errors.first_name }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Priezvisko
+                            </label>
+
+                            <InputText v-model="employeeForm.last_name" class="w-full" />
+
+                            <p v-if="employeeForm.errors.last_name" class="mt-1 text-sm text-red-600">
+                                {{ employeeForm.errors.last_name }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Pozícia
+                            </label>
+
+                            <InputText
+                                v-model="employeeForm.position"
+                                class="w-full"
+                                placeholder="napr. Klinický psychológ"
+                            />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Email
+                            </label>
+
+                            <InputText v-model="employeeForm.email" class="w-full" />
+
+                            <p v-if="employeeForm.errors.email" class="mt-1 text-sm text-red-600">
+                                {{ employeeForm.errors.email }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Telefón
+                            </label>
+
+                            <InputText v-model="employeeForm.phone" class="w-full" />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Rola v pobočke
+                            </label>
+
+                            <InputText
+                                v-model="employeeForm.role"
+                                class="w-full"
+                                placeholder="napr. Vedúci pracovník"
+                            />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Poradie
+                            </label>
+
+                            <InputNumber
+                                v-model="employeeForm.sort_order"
+                                class="w-full"
+                                inputClass="w-full"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Bio
+                        </label>
+
+                        <Textarea v-model="employeeForm.bio" class="w-full" rows="5" />
+                    </div>
+                </div>
+
+                <Button
+                    type="submit"
+                    label="Pridať zamestnanca"
+                    icon="pi pi-plus"
+                    :loading="employeeForm.processing"
+                />
+            </form>
+
+            <DataTable :value="branch.employees ?? []" tableStyle="min-width: 60rem">
+                <Column header="Meno">
+                    <template #body="{ data }">
+                        {{ employeeDisplayName(data) }}
+                    </template>
+                </Column>
+
+                <Column field="position" header="Pozícia" />
+
+                <Column header="Rola v pobočke">
+                    <template #body="{ data }">
+                        {{ data.pivot.role }}
+                    </template>
+                </Column>
+
+                <Column header="Poradie">
+                    <template #body="{ data }">
+                        {{ data.pivot.sort_order }}
+                    </template>
+                </Column>
+
+                <Column field="email" header="Email" />
+                <Column field="phone" header="Telefón" />
+
+                <Column header="Aktívny">
+                    <template #body="{ data }">
+                        {{ data.is_active ? 'Áno' : 'Nie' }}
+                    </template>
+                </Column>
+
+                <Column header="Akcie">
+                    <template #body="{ data }">
+                        <Button
+                            label="Odobrať"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="removeEmployee(data)"
                         />
                     </template>
                 </Column>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\User;
+use App\Models\Employee;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -147,6 +148,7 @@ class BranchController extends Controller
                 'contacts',
                 'openingHours.intervals',
                 'users:id,name,email,global_role,is_active',
+                'employees',
             ]),
             'companies' => $companiesQuery->get(),
             'availableUsers' => User::query()
@@ -157,6 +159,27 @@ class BranchController extends Controller
                     $query->where('branches.id', $branch->id);
                 })
                 ->orderBy('name')
+                ->get(),
+            'availableEmployees' => Employee::query()
+                ->select([
+                    'id',
+                    'company_id',
+                    'first_name',
+                    'last_name',
+                    'title_before',
+                    'title_after',
+                    'position',
+                    'email',
+                    'phone',
+                    'is_active',
+                ])
+                ->where('company_id', $branch->company_id)
+                ->where('is_active', true)
+                ->whereDoesntHave('branches', function ($query) use ($branch) {
+                    $query->where('branches.id', $branch->id);
+                })
+                ->orderBy('last_name')
+                ->orderBy('first_name')
                 ->get(),
         ]);
     }
