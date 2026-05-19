@@ -239,6 +239,7 @@ const employeeForm = useForm({
     bio: '',
     email: '',
     phone: '',
+    photo: null,
 
     role: '',
     sort_order: 0,
@@ -272,6 +273,10 @@ const removeEmployee = (employee) => {
     router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
         preserveScroll: true,
     });
+};
+
+const handleEmployeePhoto = (event) => {
+    employeeForm.photo = event.target.files[0] ?? null;
 };
 
 </script>
@@ -1048,6 +1053,7 @@ const removeEmployee = (employee) => {
                                 inputClass="w-full"
                             />
                         </div>
+                        
                     </div>
 
                     <div>
@@ -1056,6 +1062,23 @@ const removeEmployee = (employee) => {
                         </label>
 
                         <Textarea v-model="employeeForm.bio" class="w-full" rows="5" />
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Fotka
+                        </label>
+
+                        <input
+                            type="file"
+                            accept="image/*"
+                            class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                            @change="handleEmployeePhoto"
+                        />
+
+                        <p v-if="employeeForm.errors.photo" class="mt-1 text-sm text-red-600">
+                            {{ employeeForm.errors.photo }}
+                        </p>
                     </div>
                 </div>
 

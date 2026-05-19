@@ -27,6 +27,7 @@ class BranchEmployeeController extends Controller
             'bio' => ['nullable', 'string'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
+            'photo' => ['nullable', 'image', 'max:4096'],
 
             'role' => ['nullable', 'string', 'max:255'],
             'sort_order' => ['nullable', 'integer'],
@@ -42,6 +43,12 @@ class BranchEmployeeController extends Controller
                 $counter++;
             }
 
+            $photoPath = null;
+
+            if ($request->hasFile('photo')) {
+                $photoPath = $request->file('photo')->store('employees', 'public');
+            }
+
             $employee = Employee::create([
                 'company_id' => $branch->company_id,
                 'first_name' => $data['first_name'],
@@ -55,6 +62,7 @@ class BranchEmployeeController extends Controller
                 'phone' => $data['phone'] ?? null,
                 'is_active' => true,
                 'sort_order' => 0,
+                'photo_path' => $photoPath,
             ]);
         } else {
             $employee = Employee::findOrFail($data['employee_id']);
