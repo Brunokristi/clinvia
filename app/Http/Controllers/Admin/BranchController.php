@@ -7,6 +7,8 @@ use App\Models\Branch;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\Employee;
+use App\Models\Category;
+use App\Models\Service;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -149,6 +151,8 @@ class BranchController extends Controller
                 'openingHours.intervals',
                 'users:id,name,email,global_role,is_active',
                 'employees',
+                'branchServices.service.category',
+                'branchServices.prices',
             ]),
             'companies' => $companiesQuery->get(),
             'availableUsers' => User::query()
@@ -172,6 +176,7 @@ class BranchController extends Controller
                     'email',
                     'phone',
                     'is_active',
+                    'photo_path',
                 ])
                 ->where('company_id', $branch->company_id)
                 ->where('is_active', true)
@@ -180,6 +185,32 @@ class BranchController extends Controller
                 })
                 ->orderBy('last_name')
                 ->orderBy('first_name')
+                ->get(),
+            'availableServices' => Service::query()
+                ->select([
+                    'id',
+                    'company_id',
+                    'category_id',
+                    'name',
+                    'slug',
+                    'short_description',
+                    'duration_minutes',
+                    'is_active',
+                ])
+                ->with('category:id,name')
+                ->where('company_id', $branch->company_id)
+                ->where('is_active', true)
+                ->whereDoesntHave('branches', function ($query) use ($branch) {
+                    $query->where('branches.id', $branch->id);
+                })
+                ->orderBy('name')
+                ->get(),
+            'categories' => Category::query()
+                ->select(['id', 'name'])
+                ->where('company_id', $branch->company_id)
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('name')
                 ->get(),
         ]);
     }

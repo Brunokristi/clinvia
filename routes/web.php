@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchOpeningHoursController;
 use App\Http\Controllers\Admin\BranchUserController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
+use App\Http\Controllers\Admin\BranchServiceController;
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
@@ -54,6 +55,15 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::delete('/branches/{branch}/employees/{employee}', [BranchEmployeeController::class, 'destroy'])
             ->name('branches.employees.destroy');
+
+        Route::post('/branches/{branch}/services', [BranchServiceController::class, 'store'])
+            ->name('branches.services.store');
+
+        Route::put('/branches/{branch}/services/{branchService}', [BranchServiceController::class, 'update'])
+            ->name('branches.services.update');
+
+        Route::delete('/branches/{branch}/services/{branchService}', [BranchServiceController::class, 'destroy'])
+            ->name('branches.services.destroy');
     });
 });
 

@@ -22,6 +22,14 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    availableServices: {
+        type: Array,
+        default: () => [],
+    },
+    categories: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -277,6 +285,109 @@ const removeEmployee = (employee) => {
 
 const handleEmployeePhoto = (event) => {
     employeeForm.photo = event.target.files[0] ?? null;
+};
+
+/**
+ * Branch services
+ */
+const serviceForm = useForm({
+    create_new: false,
+    service_id: null,
+
+    category_id: null,
+    name: '',
+    slug: '',
+    short_description: '',
+    description: '',
+    icon: '',
+    duration_minutes: null,
+
+    custom_title: '',
+    custom_description: '',
+    is_available: true,
+    sort_order: 0,
+
+    insurance_amount: null,
+    insurance_note: '',
+    self_pay_amount: null,
+    self_pay_note: '',
+});
+
+const serviceEditForms = {};
+
+const serviceDisplayName = (service) => {
+    return service?.name ?? '—';
+};
+
+const branchServiceTitle = (branchService) => {
+    return branchService.custom_title || branchService.service?.name || '—';
+};
+
+const getServicePrice = (branchService, type) => {
+    return branchService.prices?.find((price) => price.price_type === type) ?? null;
+};
+
+const formatPrice = (price) => {
+    if (! price || price.amount === null || price.amount === undefined) {
+        return '—';
+    }
+
+    return `${price.amount} ${price.currency ?? 'EUR'}`;
+};
+
+const addBranchService = () => {
+    serviceForm.post(route('branches.services.store', props.branch.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            serviceForm.reset();
+            serviceForm.create_new = false;
+            serviceForm.is_available = true;
+            serviceForm.sort_order = 0;
+        },
+    });
+};
+
+const removeBranchService = (branchService) => {
+    if (! confirm(`Odstrániť službu ${branchServiceTitle(branchService)} z tejto pobočky?`)) {
+        return;
+    }
+
+    router.delete(route('branches.services.destroy', [props.branch.id, branchService.id]), {
+        preserveScroll: true,
+    });
+};
+
+const createServiceEditForm = (branchService) => {
+    const insurancePrice = getServicePrice(branchService, 'insurance');
+    const selfPayPrice = getServicePrice(branchService, 'self_pay');
+
+    return useForm({
+        custom_title: branchService.custom_title ?? '',
+        custom_description: branchService.custom_description ?? '',
+        is_available: Boolean(branchService.is_available),
+        sort_order: branchService.sort_order ?? 0,
+
+        insurance_amount: insurancePrice?.amount ?? null,
+        insurance_note: insurancePrice?.note ?? '',
+        self_pay_amount: selfPayPrice?.amount ?? null,
+        self_pay_note: selfPayPrice?.note ?? '',
+    });
+};
+
+const getServiceEditForm = (branchService) => {
+    if (! serviceEditForms[branchService.id]) {
+        serviceEditForms[branchService.id] = createServiceEditForm(branchService);
+    }
+
+    return serviceEditForms[branchService.id];
+};
+
+const updateBranchService = (branchService) => {
+    const editForm = getServiceEditForm(branchService);
+
+    editForm.put(route('branches.services.update', [props.branch.id, branchService.id]), {
+        preserveScroll: true,
+    });
 };
 
 </script>
@@ -783,6 +894,468 @@ const handleEmployeePhoto = (event) => {
                     :loading="openingHoursForm.processing"
                 />
             </form>
+        </section>
+
+        <section class="mt-10 rounded-lg border bg-white p-5">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold">
+                    Služby pobočky
+                </h2>
+
+                <p class="text-sm text-gray-500">
+                    Tu nastavíš služby, ktoré táto pobočka ponúka, ich dostupnosť a ceny.
+                </p>
+            </div>
+
+            <form class="mb-8 space-y-5 rounded-lg border bg-gray-50 p-5" @submit.prevent="addBranchService">
+                <div class="flex items-center gap-2">
+                    <Checkbox
+                        v-model="serviceForm.create_new"
+                        binary
+                        inputId="create_new_service"
+                    />
+
+                    <label for="create_new_service">
+                        Vytvoriť novú službu
+                    </label>
+                </div>
+
+                <div v-if="! serviceForm.create_new" class="grid gap-5 md:grid-cols-3">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Existujúca služba
+                        </label>
+
+                        <Select
+                            v-model="serviceForm.service_id"
+                            :options="availableServices"
+                            optionLabel="name"
+                            optionValue="id"
+                            placeholder="Vyber službu"
+                            class="w-full"
+                        />
+
+                        <p v-if="serviceForm.errors.service_id" class="mt-1 text-sm text-red-600">
+                            {{ serviceForm.errors.service_id }}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Vlastný názov v pobočke
+                        </label>
+
+                        <InputText
+                            v-model="serviceForm.custom_title"
+                            class="w-full"
+                            placeholder="voliteľné"
+                        />
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Poradie
+                        </label>
+
+                        <InputNumber
+                            v-model="serviceForm.sort_order"
+                            class="w-full"
+                            inputClass="w-full"
+                        />
+                    </div>
+                </div>
+
+                <div v-if="serviceForm.create_new" class="space-y-5">
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Kategória
+                            </label>
+
+                            <Select
+                                v-model="serviceForm.category_id"
+                                :options="categories"
+                                optionLabel="name"
+                                optionValue="id"
+                                placeholder="Vyber kategóriu"
+                                class="w-full"
+                            />
+
+                            <p v-if="serviceForm.errors.category_id" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.category_id }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Názov služby
+                            </label>
+
+                            <InputText v-model="serviceForm.name" class="w-full" />
+
+                            <p v-if="serviceForm.errors.name" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.name }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Slug
+                            </label>
+
+                            <InputText
+                                v-model="serviceForm.slug"
+                                class="w-full"
+                                placeholder="ak necháš prázdne, vytvorí sa automaticky"
+                            />
+
+                            <p v-if="serviceForm.errors.slug" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.slug }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Ikona
+                            </label>
+
+                            <InputText
+                                v-model="serviceForm.icon"
+                                class="w-full"
+                                placeholder="napr. pi pi-heart"
+                            />
+
+                            <p v-if="serviceForm.errors.icon" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.icon }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Trvanie v minútach
+                            </label>
+
+                            <InputNumber
+                                v-model="serviceForm.duration_minutes"
+                                class="w-full"
+                                inputClass="w-full"
+                            />
+
+                            <p v-if="serviceForm.errors.duration_minutes" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.duration_minutes }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Poradie v pobočke
+                            </label>
+
+                            <InputNumber
+                                v-model="serviceForm.sort_order"
+                                class="w-full"
+                                inputClass="w-full"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Krátky popis
+                        </label>
+
+                        <InputText
+                            v-model="serviceForm.short_description"
+                            class="w-full"
+                        />
+
+                        <p v-if="serviceForm.errors.short_description" class="mt-1 text-sm text-red-600">
+                            {{ serviceForm.errors.short_description }}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Dlhý popis
+                        </label>
+
+                        <Textarea
+                            v-model="serviceForm.description"
+                            class="w-full"
+                            rows="5"
+                        />
+
+                        <p v-if="serviceForm.errors.description" class="mt-1 text-sm text-red-600">
+                            {{ serviceForm.errors.description }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid gap-5 md:grid-cols-2">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium">
+                            Vlastný popis v pobočke
+                        </label>
+
+                        <Textarea
+                            v-model="serviceForm.custom_description"
+                            class="w-full"
+                            rows="4"
+                            placeholder="voliteľné"
+                        />
+                    </div>
+
+                    <div class="space-y-5">
+                        <div class="flex items-center gap-2">
+                            <Checkbox
+                                v-model="serviceForm.is_available"
+                                binary
+                                inputId="service_is_available"
+                            />
+
+                            <label for="service_is_available">
+                                Služba je dostupná v tejto pobočke
+                            </label>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Cena cez poisťovňu
+                            </label>
+
+                            <InputNumber
+                                v-model="serviceForm.insurance_amount"
+                                class="w-full"
+                                inputClass="w-full"
+                                mode="decimal"
+                                :minFractionDigits="2"
+                                :maxFractionDigits="2"
+                            />
+
+                            <p v-if="serviceForm.errors.insurance_amount" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.insurance_amount }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Poznámka k cene cez poisťovňu
+                            </label>
+
+                            <InputText
+                                v-model="serviceForm.insurance_note"
+                                class="w-full"
+                                placeholder="napr. hradené po odporúčaní lekára"
+                            />
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Cena pre samoplatcu
+                            </label>
+
+                            <InputNumber
+                                v-model="serviceForm.self_pay_amount"
+                                class="w-full"
+                                inputClass="w-full"
+                                mode="decimal"
+                                :minFractionDigits="2"
+                                :maxFractionDigits="2"
+                            />
+
+                            <p v-if="serviceForm.errors.self_pay_amount" class="mt-1 text-sm text-red-600">
+                                {{ serviceForm.errors.self_pay_amount }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Poznámka k cene pre samoplatcu
+                            </label>
+
+                            <InputText
+                                v-model="serviceForm.self_pay_note"
+                                class="w-full"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <Button
+                    type="submit"
+                    label="Pridať službu"
+                    icon="pi pi-plus"
+                    :loading="serviceForm.processing"
+                />
+            </form>
+
+            <div class="space-y-5">
+                <div
+                    v-for="branchService in branch.branch_services ?? []"
+                    :key="branchService.id"
+                    class="rounded-lg border p-5"
+                >
+                    <div class="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-semibold">
+                                {{ branchServiceTitle(branchService) }}
+                            </h3>
+
+                            <p class="text-sm text-gray-500">
+                                Pôvodný názov: {{ serviceDisplayName(branchService.service) }}
+                            </p>
+
+                            <p v-if="branchService.service?.category" class="text-sm text-gray-500">
+                                Kategória: {{ branchService.service.category.name }}
+                            </p>
+                        </div>
+
+                        <Button
+                            label="Odobrať"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="removeBranchService(branchService)"
+                        />
+                    </div>
+
+                    <form class="space-y-5" @submit.prevent="updateBranchService(branchService)">
+                        <div class="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">
+                                    Vlastný názov
+                                </label>
+
+                                <InputText
+                                    v-model="getServiceEditForm(branchService).custom_title"
+                                    class="w-full"
+                                    placeholder="voliteľné"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="mb-1 block text-sm font-medium">
+                                    Poradie
+                                </label>
+
+                                <InputNumber
+                                    v-model="getServiceEditForm(branchService).sort_order"
+                                    class="w-full"
+                                    inputClass="w-full"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-sm font-medium">
+                                Vlastný popis
+                            </label>
+
+                            <Textarea
+                                v-model="getServiceEditForm(branchService).custom_description"
+                                class="w-full"
+                                rows="4"
+                            />
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <Checkbox
+                                v-model="getServiceEditForm(branchService).is_available"
+                                binary
+                                :inputId="`service_available_${branchService.id}`"
+                            />
+
+                            <label :for="`service_available_${branchService.id}`">
+                                Dostupná v pobočke
+                            </label>
+                        </div>
+
+                        <div class="grid gap-5 md:grid-cols-2">
+                            <div class="rounded-lg border bg-gray-50 p-4">
+                                <h4 class="mb-3 font-medium">
+                                    Cena cez poisťovňu
+                                </h4>
+
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium">
+                                            Suma
+                                        </label>
+
+                                        <InputNumber
+                                            v-model="getServiceEditForm(branchService).insurance_amount"
+                                            class="w-full"
+                                            inputClass="w-full"
+                                            mode="decimal"
+                                            :minFractionDigits="2"
+                                            :maxFractionDigits="2"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium">
+                                            Poznámka
+                                        </label>
+
+                                        <InputText
+                                            v-model="getServiceEditForm(branchService).insurance_note"
+                                            class="w-full"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border bg-gray-50 p-4">
+                                <h4 class="mb-3 font-medium">
+                                    Cena pre samoplatcu
+                                </h4>
+
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium">
+                                            Suma
+                                        </label>
+
+                                        <InputNumber
+                                            v-model="getServiceEditForm(branchService).self_pay_amount"
+                                            class="w-full"
+                                            inputClass="w-full"
+                                            mode="decimal"
+                                            :minFractionDigits="2"
+                                            :maxFractionDigits="2"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium">
+                                            Poznámka
+                                        </label>
+
+                                        <InputText
+                                            v-model="getServiceEditForm(branchService).self_pay_note"
+                                            class="w-full"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <Button
+                                type="submit"
+                                label="Uložiť službu"
+                                icon="pi pi-save"
+                                :loading="getServiceEditForm(branchService).processing"
+                            />
+
+                            <span class="text-sm text-gray-500">
+                                Aktuálne: poisťovňa {{ formatPrice(getServicePrice(branchService, 'insurance')) }},
+                                samoplatca {{ formatPrice(getServicePrice(branchService, 'self_pay')) }}
+                            </span>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </section>
 
         <section class="mt-10 rounded-lg border bg-white p-5">
