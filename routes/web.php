@@ -10,11 +10,25 @@ use App\Http\Controllers\Admin\BranchOpeningHoursController;
 use App\Http\Controllers\Admin\BranchUserController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
 use App\Http\Controllers\Admin\BranchServiceController;
+use App\Http\Controllers\Admin\ServiceController;
+use App\Http\Controllers\Admin\ServiceInformationController;
+use App\Http\Controllers\Admin\ServiceNecessityController;
+use App\Http\Controllers\Admin\ServiceStepController;
+use App\Http\Controllers\Admin\ServiceTagController;
+use App\Http\Controllers\Admin\ServiceFileController;
+use App\Http\Controllers\Api\PublicCompanyController;
+use App\Http\Controllers\Admin\ApiClientController;
+
+
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
 });
 
+Route::middleware('api.client')->prefix('public')->group(function () {
+    Route::get('/companies/{company:slug}', [PublicCompanyController::class, 'show'])
+        ->name('api.public.companies.show');
+});
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
@@ -26,6 +40,12 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::resource('/companies', CompanyController::class)
             ->except(['show']);
+
+        Route::resource('/api-clients', ApiClientController::class)
+            ->except(['show']);
+
+        Route::post('/api-clients/{apiClient}/regenerate', [ApiClientController::class, 'regenerate'])
+            ->name('api-clients.regenerate');
     });
 
     Route::middleware('manage.branches')->group(function () {
@@ -64,6 +84,42 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::delete('/branches/{branch}/services/{branchService}', [BranchServiceController::class, 'destroy'])
             ->name('branches.services.destroy');
+
+        Route::get('/services/{service}/edit', [ServiceController::class, 'edit'])
+            ->name('services.edit');
+
+        Route::put('/services/{service}', [ServiceController::class, 'update'])
+            ->name('services.update');
+
+        Route::post('/services/{service}/information', [ServiceInformationController::class, 'store'])
+            ->name('services.information.store');
+
+        Route::delete('/services/{service}/information/{information}', [ServiceInformationController::class, 'destroy'])
+            ->name('services.information.destroy');
+
+        Route::post('/services/{service}/necessities', [ServiceNecessityController::class, 'store'])
+            ->name('services.necessities.store');
+
+        Route::delete('/services/{service}/necessities/{necessity}', [ServiceNecessityController::class, 'destroy'])
+            ->name('services.necessities.destroy');
+
+        Route::post('/services/{service}/steps', [ServiceStepController::class, 'store'])
+            ->name('services.steps.store');
+
+        Route::delete('/services/{service}/steps/{step}', [ServiceStepController::class, 'destroy'])
+            ->name('services.steps.destroy');
+
+        Route::post('/services/{service}/tags', [ServiceTagController::class, 'store'])
+            ->name('services.tags.store');
+
+        Route::delete('/services/{service}/tags/{tag}', [ServiceTagController::class, 'destroy'])
+            ->name('services.tags.destroy');
+
+        Route::post('/services/{service}/files', [ServiceFileController::class, 'store'])
+            ->name('services.files.store');
+
+        Route::delete('/services/{service}/files/{file}', [ServiceFileController::class, 'destroy'])
+            ->name('services.files.destroy');
     });
 });
 

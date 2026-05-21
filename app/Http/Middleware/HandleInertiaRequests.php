@@ -40,6 +40,10 @@ class HandleInertiaRequests extends Middleware
                     'is_active' => $request->user()->is_active,
                 ] : null,
             ],
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'api_token' => fn () => $request->session()->get('api_token'),
+            ],
         ];
     }
 }

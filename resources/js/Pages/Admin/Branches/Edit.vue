@@ -1,6 +1,6 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { router, useForm, Link } from '@inertiajs/vue3';
 
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
@@ -1217,6 +1217,16 @@ const updateBranchService = (branchService) => {
                             outlined
                             @click="removeBranchService(branchService)"
                         />
+
+                        <Link
+                            :href="route('services.edit', branchService.service.id)"
+                        >
+                            <Button
+                                label="Detail služby"
+                                size="small"
+                                outlined
+                            />
+                        </Link>
                     </div>
 
                     <form class="space-y-5" @submit.prevent="updateBranchService(branchService)">

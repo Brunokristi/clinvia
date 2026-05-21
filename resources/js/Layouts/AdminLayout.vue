@@ -51,6 +51,14 @@ const page = usePage();
                 >
                     Odhlásiť sa
                 </Link>
+
+                <Link
+                    v-if="page.props.auth?.user?.global_role === 'super_admin'"
+                    :href="route('api-clients.index')"
+                    class="block rounded-lg px-3 py-2 text-sm hover:bg-gray-100"
+                >
+                    API klienti
+                </Link>
             </nav>
         </aside>
 

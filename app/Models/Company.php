@@ -54,4 +54,9 @@ class Company extends Model
     {
         return $this->hasMany(Employee::class);
     }
+
+    public function apiClients(): HasMany
+    {
+        return $this->hasMany(ApiClient::class);
+    }
 }

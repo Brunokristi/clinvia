@@ -53,4 +53,28 @@ class Service extends Model
             ->withPivot(['custom_title', 'custom_description', 'is_available', 'sort_order'])
             ->withTimestamps();
     }
+    public function information(): HasMany
+    {
+        return $this->hasMany(ServiceInformation::class)->orderBy('sort_order');
+    }
+
+    public function necessities(): HasMany
+    {
+        return $this->hasMany(ServiceNecessity::class)->orderBy('sort_order');
+    }
+
+    public function steps(): HasMany
+    {
+        return $this->hasMany(ServiceStep::class)->orderBy('sort_order');
+    }
+
+    public function tags(): HasMany
+    {
+        return $this->hasMany(ServiceTag::class)->orderBy('sort_order');
+    }
+
+    public function files(): HasMany
+    {
+        return $this->hasMany(ServiceFile::class)->orderBy('sort_order');
+    }
 }
