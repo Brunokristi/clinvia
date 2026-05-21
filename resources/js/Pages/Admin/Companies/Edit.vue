@@ -3,28 +3,40 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { useForm } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
+import { computed } from 'vue';
 
 const props = defineProps({
     company: Object,
 });
 
 const form = useForm({
-    name: props.company.name ?? '',
-    slug: props.company.slug ?? '',
     legal_name: props.company.legal_name ?? '',
     company_id_number: props.company.company_id_number ?? '',
     tax_id: props.company.tax_id ?? '',
     vat_id: props.company.vat_id ?? '',
-    description: props.company.description ?? '',
+    address_line_1: props.company.address_line_1 ?? '',
+    address_line_2: props.company.address_line_2 ?? '',
+    city: props.company.city ?? '',
+    postal_code: props.company.postal_code ?? '',
+    region: props.company.region ?? '',
+    country: props.company.country ?? '',
     email: props.company.email ?? '',
     phone: props.company.phone ?? '',
     website: props.company.website ?? '',
     is_active: Boolean(props.company.is_active),
-    sort_order: props.company.sort_order ?? 0,
 });
+
+const slugify = (value) => value
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const generatedSlug = computed(() => slugify(form.legal_name));
 
 const submit = () => {
     form.put(route('companies.update', props.company.id));
@@ -40,24 +52,18 @@ const submit = () => {
         <form class="max-w-3xl space-y-5" @submit.prevent="submit">
             <div class="grid gap-5 md:grid-cols-2">
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Názov</label>
-                    <InputText v-model="form.name" class="w-full" />
-                    <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.name }}
+                    <label class="mb-1 block text-sm font-medium">Oficiálny názov</label>
+                    <InputText v-model="form.legal_name" class="w-full" />
+                    <p v-if="form.errors.legal_name" class="mt-1 text-sm text-red-600">
+                        {{ form.errors.legal_name }}
                     </p>
                 </div>
 
                 <div>
                     <label class="mb-1 block text-sm font-medium">Slug</label>
-                    <InputText v-model="form.slug" class="w-full" />
-                    <p v-if="form.errors.slug" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.slug }}
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium">Oficiálny názov</label>
-                    <InputText v-model="form.legal_name" class="w-full" />
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                        {{ generatedSlug || 'slug-sa-zobrazí-po-zadaní-názvu' }}
+                    </div>
                 </div>
 
                 <div>
@@ -94,14 +100,34 @@ const submit = () => {
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Poradie</label>
-                    <InputNumber v-model="form.sort_order" class="w-full" inputClass="w-full" />
+                    <label class="mb-1 block text-sm font-medium">Adresa 1</label>
+                    <InputText v-model="form.address_line_1" class="w-full" />
                 </div>
-            </div>
 
-            <div>
-                <label class="mb-1 block text-sm font-medium">Popis</label>
-                <Textarea v-model="form.description" class="w-full" rows="5" />
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Adresa 2</label>
+                    <InputText v-model="form.address_line_2" class="w-full" />
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Mesto</label>
+                    <InputText v-model="form.city" class="w-full" />
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium">PSČ</label>
+                    <InputText v-model="form.postal_code" class="w-full" />
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Región</label>
+                    <InputText v-model="form.region" class="w-full" />
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium">Krajina</label>
+                    <InputText v-model="form.country" class="w-full" />
+                </div>
             </div>
 
             <div class="flex items-center gap-2">

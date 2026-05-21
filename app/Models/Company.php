@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Company extends Model
@@ -11,13 +12,17 @@ class Company extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'slug',
         'legal_name',
+        'slug',
         'company_id_number',
         'tax_id',
         'vat_id',
-        'description',
+        'address_line_1',
+        'address_line_2',
+        'city',
+        'postal_code',
+        'region',
+        'country',
         'email',
         'phone',
         'website',
@@ -31,6 +36,16 @@ class Company extends Model
             'is_active' => 'boolean',
             'sort_order' => 'integer',
         ];
+    }
+
+    public function getNameAttribute(): ?string
+    {
+        return $this->legal_name;
+    }
+
+    public function setNameAttribute(string $value): void
+    {
+        $this->attributes['legal_name'] = $value;
     }
 
     public function userCompanies(): HasMany

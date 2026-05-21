@@ -17,7 +17,8 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
         'email',
         'password',
         'global_role',
@@ -36,6 +37,27 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return trim(implode(' ', array_filter([
+            $this->first_name,
+            $this->last_name,
+        ])));
+    }
+
+    public function getNameAttribute(): string
+    {
+        return $this->full_name;
+    }
+
+    public function setNameAttribute(string $value): void
+    {
+        $parts = preg_split('/\s+/', trim($value), 2) ?: [''];
+
+        $this->attributes['first_name'] = $parts[0] !== '' ? $parts[0] : null;
+        $this->attributes['last_name'] = isset($parts[1]) && $parts[1] !== '' ? $parts[1] : null;
     }
 
     public function isSuperAdmin(): bool

@@ -226,7 +226,9 @@ const attachBranchUser = () => {
 };
 
 const detachBranchUser = (user) => {
-    if (! confirm(`Odstrániť používateľa ${user.name} z tejto pobočky?`)) {
+    const userName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+
+    if (! confirm(`Odstrániť používateľa ${userName} z tejto pobočky?`)) {
         return;
     }
 
@@ -413,7 +415,7 @@ const updateBranchService = (branchService) => {
                         <Select
                             v-model="form.company_id"
                             :options="companies"
-                            optionLabel="name"
+                            optionLabel="legal_name"
                             optionValue="id"
                             class="w-full"
                         />
@@ -826,7 +828,7 @@ const updateBranchService = (branchService) => {
                                 <input
                                     v-model="interval.opens_at"
                                     type="time"
-                                    class="w-full rounded-md border-gray-300"
+                                    class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                                 />
 
                                 <p
@@ -845,7 +847,7 @@ const updateBranchService = (branchService) => {
                                 <input
                                     v-model="interval.closes_at"
                                     type="time"
-                                    class="w-full rounded-md border-gray-300"
+                                    class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                                 />
 
                                 <p

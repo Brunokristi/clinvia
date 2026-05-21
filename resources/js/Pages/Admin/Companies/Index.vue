@@ -10,7 +10,7 @@ defineProps({
 });
 
 const deleteCompany = (company) => {
-    if (! confirm(`Naozaj chceš odstrániť firmu ${company.name}?`)) {
+    if (! confirm(`Naozaj chceš odstrániť firmu ${company.legal_name}?`)) {
         return;
     }
 
@@ -36,9 +36,10 @@ const deleteCompany = (company) => {
         </div>
 
         <DataTable :value="companies.data" tableStyle="min-width: 60rem">
-            <Column field="name" header="Názov" />
-            <Column field="slug" header="Slug" />
             <Column field="legal_name" header="Oficiálny názov" />
+            <Column field="slug" header="Slug" />
+            <Column field="city" header="Mesto" />
+            <Column field="country" header="Krajina" />
             <Column field="email" header="Email" />
             <Column field="phone" header="Telefón" />
 
@@ -47,8 +48,6 @@ const deleteCompany = (company) => {
                     {{ data.is_active ? 'Áno' : 'Nie' }}
                 </template>
             </Column>
-
-            <Column field="sort_order" header="Poradie" />
 
             <Column header="Akcie">
                 <template #body="{ data }">

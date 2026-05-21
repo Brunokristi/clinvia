@@ -37,7 +37,7 @@ const deleteBranch = (branch) => {
 
         <DataTable :value="branches.data" tableStyle="min-width: 60rem">
             <Column field="name" header="Názov" />
-            <Column field="company.name" header="Firma" />
+            <Column field="company.legal_name" header="Firma" />
             <Column field="slug" header="Slug" />
             <Column field="type" header="Typ" />
             <Column field="city" header="Mesto" />

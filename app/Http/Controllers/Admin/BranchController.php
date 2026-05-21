@@ -23,7 +23,7 @@ class BranchController extends Controller
         $user = request()->user();
 
         $query = Branch::query()
-            ->with('company:id,name')
+            ->with('company:id,legal_name')
             ->select([
                 'id',
                 'company_id',
@@ -65,10 +65,10 @@ class BranchController extends Controller
         abort_if(! request()->user()->canAccessBranch($branch), 403);
         $user = request()->user();
 
-        $companiesQuery = Company::query()
-            ->select(['id', 'name'])
-            ->where('is_active', true)
-            ->orderBy('name');
+            $companiesQuery = Company::query()
+                ->select(['id', 'legal_name'])
+                ->where('is_active', true)
+                ->orderBy('legal_name');
 
         if (! $user->isSuperAdmin()) {
             $companyIds = $user->companies()
@@ -132,10 +132,10 @@ class BranchController extends Controller
 
         $user = request()->user();
 
-        $companiesQuery = Company::query()
-            ->select(['id', 'name'])
-            ->where('is_active', true)
-            ->orderBy('name');
+            $companiesQuery = Company::query()
+                ->select(['id', 'legal_name'])
+                ->where('is_active', true)
+                ->orderBy('legal_name');
 
         if (! $user->isSuperAdmin()) {
             $companyIds = $user->companies()
@@ -149,20 +149,21 @@ class BranchController extends Controller
             'branch' => $branch->load([
                 'contacts',
                 'openingHours.intervals',
-                'users:id,name,email,global_role,is_active',
+                'users:id,first_name,last_name,email,global_role,is_active',
                 'employees',
                 'branchServices.service.category',
                 'branchServices.prices',
             ]),
             'companies' => $companiesQuery->get(),
             'availableUsers' => User::query()
-                ->select(['id', 'name', 'email', 'global_role', 'is_active'])
+                ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
                 ->whereIn('global_role', ['admin', 'editor', 'viewer'])
                 ->where('is_active', true)
                 ->whereDoesntHave('branches', function ($query) use ($branch) {
                     $query->where('branches.id', $branch->id);
                 })
-                ->orderBy('name')
+                ->orderBy('first_name')
+                ->orderBy('last_name')
                 ->get(),
             'availableEmployees' => Employee::query()
                 ->select([

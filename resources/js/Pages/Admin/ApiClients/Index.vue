@@ -66,7 +66,7 @@ const regenerateApiClient = (apiClient) => {
 
         <DataTable :value="apiClients.data" tableStyle="min-width: 70rem">
             <Column field="name" header="Názov" />
-            <Column field="company.name" header="Firma" />
+            <Column field="company.legal_name" header="Firma" />
             <Column field="rate_limit_per_minute" header="Limit/min" />
 
             <Column header="Domény">

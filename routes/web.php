@@ -38,6 +38,12 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::resource('/users', UserController::class)
             ->except(['show']);
 
+        Route::get('/companies/onboard', [CompanyController::class, 'onboard'])
+            ->name('companies.onboard');
+
+        Route::post('/companies/onboard', [CompanyController::class, 'storeOnboard'])
+            ->name('companies.onboard.store');
+
         Route::resource('/companies', CompanyController::class)
             ->except(['show']);
 

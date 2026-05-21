@@ -68,7 +68,7 @@ const submit = () => {
                         <Select
                             v-model="form.company_id"
                             :options="companies"
-                            optionLabel="name"
+                            optionLabel="legal_name"
                             optionValue="id"
                             class="w-full"
                         />

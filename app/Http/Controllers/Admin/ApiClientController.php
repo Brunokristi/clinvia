@@ -19,7 +19,7 @@ class ApiClientController extends Controller
     {
         return Inertia::render('Admin/ApiClients/Index', [
             'apiClients' => ApiClient::query()
-                ->with(['company:id,name', 'domains'])
+                ->with(['company:id,legal_name', 'domains'])
                 ->latest()
                 ->paginate(10),
         ]);
@@ -29,9 +29,9 @@ class ApiClientController extends Controller
     {
         return Inertia::render('Admin/ApiClients/Create', [
             'companies' => Company::query()
-                ->select(['id', 'name'])
+                ->select(['id', 'legal_name'])
                 ->where('is_active', true)
-                ->orderBy('name')
+                ->orderBy('legal_name')
                 ->get(),
         ]);
     }
@@ -77,11 +77,11 @@ class ApiClientController extends Controller
     public function edit(ApiClient $apiClient): Response
     {
         return Inertia::render('Admin/ApiClients/Edit', [
-            'apiClient' => $apiClient->load(['domains', 'company:id,name']),
+            'apiClient' => $apiClient->load(['domains', 'company:id,legal_name']),
             'companies' => Company::query()
-                ->select(['id', 'name'])
+                ->select(['id', 'legal_name'])
                 ->where('is_active', true)
-                ->orderBy('name')
+                ->orderBy('legal_name')
                 ->get(),
         ]);
     }

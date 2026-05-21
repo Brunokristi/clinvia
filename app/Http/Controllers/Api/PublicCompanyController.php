@@ -90,13 +90,17 @@ class PublicCompanyController extends Controller
         return response()->json([
             'data' => [
                 'id' => $company->id,
-                'name' => $company->name,
                 'slug' => $company->slug,
                 'legal_name' => $company->legal_name,
-                'description' => $company->description,
                 'email' => $company->email,
                 'phone' => $company->phone,
                 'website' => $company->website,
+                'address_line_1' => $company->address_line_1,
+                'address_line_2' => $company->address_line_2,
+                'city' => $company->city,
+                'postal_code' => $company->postal_code,
+                'region' => $company->region,
+                'country' => $company->country,
 
                 'branches' => $company->branches->map(function ($branch) {
                     return [

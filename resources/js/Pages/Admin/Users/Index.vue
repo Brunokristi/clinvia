@@ -10,7 +10,9 @@ defineProps({
 });
 
 const deleteUser = (user) => {
-    if (! confirm(`Naozaj chceš odstrániť používateľa ${user.name}?`)) {
+    const userName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+
+    if (! confirm(`Naozaj chceš odstrániť používateľa ${userName}?`)) {
         return;
     }
 
@@ -36,7 +38,8 @@ const deleteUser = (user) => {
         </div>
 
         <DataTable :value="users.data" tableStyle="min-width: 50rem">
-            <Column field="name" header="Meno" />
+            <Column field="first_name" header="First name" />
+            <Column field="last_name" header="Last name" />
             <Column field="email" header="Email" />
             <Column field="global_role" header="Rola" />
             <Column header="Aktívny">

@@ -12,7 +12,8 @@ const props = defineProps({
 });
 
 const form = useForm({
-    name: props.user.name,
+    first_name: props.user.first_name,
+    last_name: props.user.last_name,
     email: props.user.email,
     password: '',
     global_role: props.user.global_role,
@@ -39,10 +40,18 @@ const submit = () => {
 
         <form class="max-w-xl space-y-5" @submit.prevent="submit">
             <div>
-                <label class="mb-1 block text-sm font-medium">Meno</label>
-                <InputText v-model="form.name" class="w-full" />
-                <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
-                    {{ form.errors.name }}
+                <label class="mb-1 block text-sm font-medium">First name</label>
+                <InputText v-model="form.first_name" class="w-full" />
+                <p v-if="form.errors.first_name" class="mt-1 text-sm text-red-600">
+                    {{ form.errors.first_name }}
+                </p>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-sm font-medium">Last name</label>
+                <InputText v-model="form.last_name" class="w-full" />
+                <p v-if="form.errors.last_name" class="mt-1 text-sm text-red-600">
+                    {{ form.errors.last_name }}
                 </p>
             </div>
 

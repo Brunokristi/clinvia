@@ -17,7 +17,7 @@ class UserController extends Controller
     {
         return Inertia::render('Admin/Users/Index', [
             'users' => User::query()
-                ->select(['id', 'name', 'email', 'global_role', 'is_active', 'created_at'])
+                ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active', 'created_at'])
                 ->latest()
                 ->paginate(10),
         ]);
@@ -31,7 +31,8 @@ class UserController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
             'global_role' => ['required', Rule::in(['super_admin', 'admin', 'editor', 'viewer'])],
@@ -51,14 +52,15 @@ class UserController extends Controller
     public function edit(User $user): Response
     {
         return Inertia::render('Admin/Users/Edit', [
-            'user' => $user->only(['id', 'name', 'email', 'global_role', 'is_active']),
+            'user' => $user->only(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active']),
         ]);
     }
 
     public function update(Request $request, User $user): RedirectResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8'],
             'global_role' => ['required', Rule::in(['super_admin', 'admin', 'editor', 'viewer'])],
