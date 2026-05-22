@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\BranchInvitationController;
+use App\Http\Controllers\Auth\CompanyInvitationController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
@@ -57,3 +59,15 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 });
+
+Route::get('invite/{token}', [CompanyInvitationController::class, 'show'])
+    ->name('company-invitations.accept');
+
+Route::post('invite/{token}', [CompanyInvitationController::class, 'store'])
+    ->name('company-invitations.accept.store');
+
+Route::get('branch-invite/{token}', [BranchInvitationController::class, 'show'])
+    ->name('branch-invitations.accept');
+
+Route::post('branch-invite/{token}', [BranchInvitationController::class, 'store'])
+    ->name('branch-invitations.accept.store');

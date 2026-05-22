@@ -7,28 +7,15 @@ import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import Tag from 'primevue/tag';
-import UserForm from '@/Components/Users/UserForm.vue';
+import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
 
 const props = defineProps({
     branch: Object,
 });
 
-const userForm = useForm({
-    first_name: '',
-    last_name: '',
-    email: '',
-    password: '',
-    global_role: 'admin',
-    is_active: true,
-    role: 'branch_admin',
+const inviteForm = useForm({
+    invite_email: '',
 });
-
-const userRoles = [
-    {
-        label: 'Admin',
-        value: 'admin',
-    },
-];
 
 const userDisplayName = (user) => {
     return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.name || '—';
@@ -65,18 +52,11 @@ const adminUsers = computed(() => {
     });
 });
 
-const createBranchAdmin = () => {
-    userForm.global_role = 'admin';
-    userForm.role = 'branch_admin';
-    userForm.is_active = true;
-
-    userForm.post(route('branches.users.store', props.branch.id), {
+const inviteBranchAdmin = () => {
+    inviteForm.post(route('branches.users.store', props.branch.id), {
         preserveScroll: true,
         onSuccess: () => {
-            userForm.reset();
-            userForm.global_role = 'admin';
-            userForm.role = 'branch_admin';
-            userForm.is_active = true;
+            inviteForm.reset('invite_email');
         },
     });
 };
@@ -101,11 +81,11 @@ const detachBranchUser = (user) => {
                 </p>
 
                 <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                    Používatelia pobočky
+                    Pozvánky do pobočky
                 </h1>
 
                 <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Vytvorte nového používateľa. Každý používateľ vytvorený na tejto stránke bude admin tejto pobočky.
+                    Pošlite pozvánku na email. Ak už používateľ existuje, priradí sa ako branch admin. Ak nie, vytvorí si účet po prijatí pozvánky.
                 </p>
             </div>
 
@@ -121,26 +101,16 @@ const detachBranchUser = (user) => {
         </div>
 
         <div class="space-y-6">
-            <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div class="mb-6">
-                    <h2 class="text-lg font-semibold text-slate-900">
-                        Vytvoriť branch admina
-                    </h2>
-
-                    <p class="mt-1 text-sm leading-6 text-slate-600">
-                        Používateľ bude automaticky vytvorený ako admin a priradený k tejto pobočke.
-                    </p>
-                </div>
-
-                <form @submit.prevent="createBranchAdmin">
-                    <UserForm
-                        :form="userForm"
-                        :roles="userRoles"
-                        submitLabel="Vytvoriť branch admina"
-                        :loading="userForm.processing"
-                    />
-                </form>
-            </section>
+            <form @submit.prevent="inviteBranchAdmin">
+                <InvitationFormSection
+                    :form="inviteForm"
+                    title="Pozvať branch admina"
+                    description="Pozvánka ide na email a po prijatí sa používateľ priradí s rolou branch_admin."
+                    input-label="Email branch admina"
+                    submit-label="Poslať pozvánku"
+                    :loading="inviteForm.processing"
+                />
+            </form>
 
             <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b border-slate-200 p-6">

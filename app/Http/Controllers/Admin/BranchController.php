@@ -9,8 +9,10 @@ use App\Models\User;
 use App\Models\Employee;
 use App\Models\Category;
 use App\Models\Service;
+use App\Services\UserInvitationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -110,6 +112,7 @@ class BranchController extends Controller
             'country' => ['nullable', 'string', 'max:255'],
 
             'website' => ['nullable', 'string', 'max:255'],
+            'invite_email' => ['nullable', 'email', 'max:255'],
         ]);
 
         if (! $request->user()->canAccessCompany((int) $data['company_id'])) {
@@ -127,11 +130,19 @@ class BranchController extends Controller
             $data['longitude'] = $coordinates['longitude'];
         }
 
-        Branch::create($data);
+        $branch = Branch::create($data);
+
+        if (! empty($data['invite_email'])) {
+            app(UserInvitationService::class)->sendBranchInvitation(
+                $branch,
+                $data['invite_email'],
+                $request->user(),
+            );
+        }
 
         return redirect()
             ->route('branches.index')
-            ->with('success', 'Pobočka bola vytvorená.');
+            ->with('success', 'Pobočka bola vytvorená' . (! empty($data['invite_email']) ? ' a pozvánka bola odoslaná.' : '.'));
     }
 
     public function edit(Branch $branch): Response

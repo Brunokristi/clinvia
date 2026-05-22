@@ -1,7 +1,7 @@
 <script setup>
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
     form: {
@@ -105,13 +105,19 @@ const requiredMark = computed(() => {
 });
 
 const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const addressLine1Ref = ref(null);
-let autocomplete = null;
-let placeChangedListener = null;
+
+const addressSuggestions = ref([]);
+const showAddressSuggestions = ref(false);
+const isLoadingAddressSuggestions = ref(false);
+const addressSuggestionError = ref('');
+const suppressAddressWatch = ref(false);
+
+let autocompleteService = null;
+let autocompleteSessionToken = null;
+let addressSuggestionDebounceTimer = null;
+let mapsScriptLoadingPromise = null;
 
 const mapsAutocompleteEnabled = computed(() => Boolean(googleMapsApiKey));
-
-let mapsScriptLoadingPromise = null;
 
 const loadGoogleMapsPlacesScript = () => {
     if (window.google?.maps?.places) {
@@ -145,16 +151,111 @@ const loadGoogleMapsPlacesScript = () => {
     return mapsScriptLoadingPromise;
 };
 
+const ensurePlacesServices = () => {
+    if (!window.google?.maps?.places) {
+        return false;
+    }
+
+    if (!autocompleteService && window.google.maps.places.AutocompleteService) {
+        autocompleteService = new window.google.maps.places.AutocompleteService();
+    }
+
+    if (!autocompleteSessionToken && window.google.maps.places.AutocompleteSessionToken) {
+        autocompleteSessionToken = new window.google.maps.places.AutocompleteSessionToken();
+    }
+
+    return Boolean(autocompleteService);
+};
+
 const setField = (name, value) => {
     props.form[fieldKey(name)] = value;
 };
 
 const extractComponent = (components, type) => {
-    return components.find((component) => component.types.includes(type))?.long_name ?? '';
+    const component = components.find((item) => item.types.includes(type));
+
+    return component?.longText
+        || component?.long_name
+        || '';
+};
+
+const clearAddressSuggestions = () => {
+    addressSuggestions.value = [];
+    showAddressSuggestions.value = false;
+    addressSuggestionError.value = '';
+};
+
+const lookupPlaceDetails = async (placeId) => {
+    if (!window.google?.maps?.places?.Place) {
+        throw new Error('Place API unavailable');
+    }
+
+    const place = new window.google.maps.places.Place({
+        id: placeId,
+    });
+
+    await place.fetchFields({
+        fields: [
+            'addressComponents',
+            'displayName',
+            'formattedAddress',
+        ],
+    });
+
+    return place;
+};
+
+const fetchAddressSuggestions = async (query) => {
+    if (!ensurePlacesServices()) {
+        return;
+    }
+
+    isLoadingAddressSuggestions.value = true;
+    addressSuggestionError.value = '';
+
+    try {
+        const response = await new Promise((resolve, reject) => {
+            autocompleteService.getPlacePredictions(
+                {
+                    input: query,
+                    types: ['address'],
+                    componentRestrictions: {
+                        country: ['sk'],
+                    },
+                    sessionToken: autocompleteSessionToken,
+                },
+                (predictions, status) => {
+                    if (
+                        status !== window.google.maps.places.PlacesServiceStatus.OK
+                        && status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS
+                    ) {
+                        reject(new Error(status));
+                        return;
+                    }
+
+                    resolve(predictions ?? []);
+                },
+            );
+        });
+
+        addressSuggestions.value = response.map((prediction) => ({
+            label: prediction.description,
+            value: prediction.place_id,
+            place_id: prediction.place_id,
+            description: prediction.description,
+            main_text: prediction.structured_formatting?.main_text ?? prediction.description,
+            secondary_text: prediction.structured_formatting?.secondary_text ?? '',
+        }));
+    } catch {
+        addressSuggestions.value = [];
+        addressSuggestionError.value = 'Návrhy adries sa nepodarilo načítať.';
+    } finally {
+        isLoadingAddressSuggestions.value = false;
+    }
 };
 
 const applySelectedPlace = (place) => {
-    const components = place?.address_components ?? [];
+    const components = place?.addressComponents ?? place?.address_components ?? [];
 
     const streetNumber = extractComponent(components, 'street_number');
     const route = extractComponent(components, 'route');
@@ -170,6 +271,8 @@ const applySelectedPlace = (place) => {
 
     if (line1) {
         setField('address_line_1', line1);
+    } else if (place?.displayName) {
+        setField('address_line_1', place.displayName);
     } else if (place?.name) {
         setField('address_line_1', place.name);
     }
@@ -195,26 +298,56 @@ const applySelectedPlace = (place) => {
     }
 };
 
-const initAddressAutocomplete = () => {
-    const inputEl = addressLine1Ref.value?.$el?.querySelector('input')
-        ?? addressLine1Ref.value?.$el
-        ?? addressLine1Ref.value
-        ?? null;
-
-    if (!inputEl || !window.google?.maps?.places || typeof inputEl !== 'object' || !('tagName' in inputEl)) {
+const selectAddressSuggestion = async (suggestion) => {
+    if (!suggestion || typeof suggestion === 'string') {
         return;
     }
 
-    autocomplete = new window.google.maps.places.Autocomplete(inputEl, {
-        types: ['address'],
-        fields: ['address_components', 'name'],
-    });
+    suppressAddressWatch.value = true;
+    setField('address_line_1', suggestion.description);
+    showAddressSuggestions.value = false;
 
-    placeChangedListener = autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
+    try {
+        const place = await lookupPlaceDetails(suggestion.place_id);
         applySelectedPlace(place);
-    });
+
+        autocompleteSessionToken = null;
+    } catch {
+        // Keep selected text even if details lookup fails.
+    }
 };
+
+const handleAddressInput = (event) => {
+    const value = event?.target?.value ?? '';
+
+    showAddressSuggestions.value = true;
+    setField('address_line_1', value);
+};
+
+watch(
+    () => fieldValue('address_line_1'),
+    (newValue) => {
+        if (suppressAddressWatch.value) {
+            suppressAddressWatch.value = false;
+            return;
+        }
+
+        if (addressSuggestionDebounceTimer) {
+            clearTimeout(addressSuggestionDebounceTimer);
+        }
+
+        const query = String(newValue || '').trim();
+
+        if (!mapsAutocompleteEnabled.value || !query || query.length < 3) {
+            clearAddressSuggestions();
+            return;
+        }
+
+        addressSuggestionDebounceTimer = setTimeout(() => {
+            fetchAddressSuggestions(query);
+        }, 250);
+    },
+);
 
 onMounted(async () => {
     if (!mapsAutocompleteEnabled.value) {
@@ -222,21 +355,20 @@ onMounted(async () => {
     }
 
     try {
-        await nextTick();
         await loadGoogleMapsPlacesScript();
-        initAddressAutocomplete();
+        ensurePlacesServices();
     } catch {
-        // silently degrade to normal text input when API is unavailable
+        // Silently degrade to normal text input when API is unavailable.
     }
 });
 
 onBeforeUnmount(() => {
-    if (placeChangedListener) {
-        window.google?.maps?.event?.removeListener(placeChangedListener);
+    if (addressSuggestionDebounceTimer) {
+        clearTimeout(addressSuggestionDebounceTimer);
     }
 
-    placeChangedListener = null;
-    autocomplete = null;
+    autocompleteService = null;
+    autocompleteSessionToken = null;
 });
 </script>
 
@@ -383,18 +515,60 @@ onBeforeUnmount(() => {
                     </label>
 
                     <InputText
-                        ref="addressLine1Ref"
                         v-model="form[fieldKey('address_line_1')]"
                         :class="inputClasses('address_line_1')"
-                        placeholder="Ulica a číslo"
+                        placeholder="Začnite písať adresu"
                         autocomplete="address-line1"
+                        @input="handleAddressInput"
                     />
 
+                    <div
+                        v-if="showAddressSuggestions && addressSuggestions.length"
+                        class="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+                    >
+                        <button
+                            v-for="suggestion in addressSuggestions"
+                            :key="suggestion.place_id"
+                            type="button"
+                            class="flex w-full items-start gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                            @mousedown.prevent="selectAddressSuggestion(suggestion)"
+                        >
+                            <i class="pi pi-map-marker mt-0.5 text-slate-400" />
+
+                            <div>
+                                <div class="text-sm font-medium text-slate-800">
+                                    {{ suggestion.main_text }}
+                                </div>
+
+                                <div
+                                    v-if="suggestion.secondary_text"
+                                    class="text-xs text-slate-500"
+                                >
+                                    {{ suggestion.secondary_text }}
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+
                     <p
-                        v-if="mapsAutocompleteEnabled"
+                        v-if="addressSuggestionError"
+                        class="mt-1 text-xs text-red-600"
+                    >
+                        {{ addressSuggestionError }}
+                    </p>
+
+                    <p
+                        v-else-if="isLoadingAddressSuggestions"
                         class="mt-1 text-xs text-slate-500"
                     >
-                        Začni písať adresu a vyber návrh z Google Maps.
+                        Hľadám adresy...
+                    </p>
+
+                    <p
+                        v-else-if="mapsAutocompleteEnabled"
+                        class="mt-1 text-xs text-slate-500"
+                    >
+                        Začnite písať adresu a vyberte návrh zo zoznamu.
                     </p>
 
                     <p

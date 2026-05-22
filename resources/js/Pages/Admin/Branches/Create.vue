@@ -2,6 +2,7 @@
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { useForm } from '@inertiajs/vue3';
 import BranchForm from '@/Components/Branches/BranchForm.vue';
+import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
 
 const props = defineProps({
     company: {
@@ -22,6 +23,7 @@ const form = useForm({
     postal_code: '',
     country: 'Slovensko',
     website: '',
+    invite_email: '',
 });
 
 const submit = () => {
@@ -35,7 +37,7 @@ const submit = () => {
             Pridať pobočku
         </h1>
 
-        <form class="max-w-4xl" @submit.prevent="submit">
+        <form class="max-w-4xl space-y-6" @submit.prevent="submit">
             <BranchForm
                 :form="form"
                 :company="company"
@@ -43,6 +45,16 @@ const submit = () => {
                 :show-company-select="!company"
                 submit-label="Vytvoriť"
                 :loading="form.processing"
+            />
+
+            <InvitationFormSection
+                :form="form"
+                title="Pozvánka pre branch admina"
+                description="Ak chcete, môžete hneď po vytvorení pobočky poslať pozvánku osobe, ktorá ju bude spravovať."
+                input-label="Email branch admina"
+                submit-label="Vytvoriť pobočku a poslať pozvánku"
+                :loading="form.processing"
+                :show-button="false"
             />
         </form>
     </AdminLayout>

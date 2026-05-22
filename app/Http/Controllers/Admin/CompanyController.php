@@ -4,15 +4,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Models\CompanyInvitation;
 use App\Models\User;
 use App\Models\UserCompany;
+use App\Services\UserInvitationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -95,21 +94,8 @@ class CompanyController extends Controller
             'company_phone' => ['nullable', 'string', 'max:255'],
             'company_website' => ['nullable', 'string', 'max:255'],
             'company_is_active' => ['required', 'boolean'],
-            'admin_email' => ['required', 'email', 'max:255'],
-            'admin_first_name' => ['nullable', 'string', 'max:255'],
-            'admin_last_name' => ['nullable', 'string', 'max:255'],
-            'admin_password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'invite_email' => ['required', 'email', 'max:255'],
         ]);
-
-        $existingAdmin = User::where('email', $data['admin_email'])->first();
-
-        if (! $existingAdmin) {
-            Validator::make($request->all(), [
-                'admin_first_name' => ['required', 'string', 'max:255'],
-                'admin_last_name' => ['required', 'string', 'max:255'],
-                'admin_password' => ['required', 'string', 'min:8', 'confirmed'],
-            ])->validate();
-        }
 
         $slug = Str::slug($data['company_legal_name']);
 
@@ -119,39 +105,24 @@ class CompanyController extends Controller
             ])->withInput();
         }
 
-        $company = DB::transaction(function () use ($data, $slug, $existingAdmin) {
+        $company = DB::transaction(function () use ($data, $slug) {
             $company = Company::create([
                 ...$this->companyDataFromRequest($data),
                 'slug' => $slug,
             ]);
 
-            $adminUser = $existingAdmin;
-
-            if (! $adminUser) {
-                $adminUser = User::create([
-                    'first_name' => $data['admin_first_name'],
-                    'last_name' => $data['admin_last_name'],
-                    'email' => $data['admin_email'],
-                    'password' => Hash::make($data['admin_password']),
-                    'global_role' => 'admin',
-                    'is_active' => true,
-                ]);
-            }
-
-            UserCompany::firstOrCreate([
-                'user_id' => $adminUser->id,
-                'company_id' => $company->id,
-            ], [
-                'role' => 'company_admin',
-                'is_active' => true,
-            ]);
-
             return $company;
         });
 
+        app(UserInvitationService::class)->sendCompanyInvitation(
+            $company,
+            $data['invite_email'],
+            $request->user(),
+        );
+
         return redirect()
-            ->route('companies.edit', $company)
-            ->with('success', 'Firma a prvý administrátor boli vytvorení.');
+            ->route('dashboard', $company)
+            ->with('success', 'Firma bola vytvorená a pozvánka bola odoslaná.');
     }
 
     public function store(Request $request): RedirectResponse
@@ -293,7 +264,7 @@ class CompanyController extends Controller
         });
 
         return redirect()
-            ->route('companies.index')
+            ->route('dashboard')
             ->with('success', 'Firma bola odstránená.');
     }
 }
