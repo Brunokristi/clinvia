@@ -22,13 +22,14 @@ class CompanyController extends Controller
     {
         $user = request()->user();
 
-        return Inertia::render('Companies/Index', [
+        return Inertia::render('Admin/Companies/Index', [
             'companies' => Company::query()
                 ->accessibleTo($user)
                 ->select([
                     'id',
                     'slug',
                     'legal_name',
+                    'company_id_number',
                     'email',
                     'phone',
                     'address_line_1',
@@ -47,12 +48,12 @@ class CompanyController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Companies/Create');
+        return Inertia::render('Admin/Companies/Create');
     }
 
     public function onboard(): Response
     {
-        return Inertia::render('Companies/Onboard');
+        return Inertia::render('Admin/Companies/Onboard');
     }
 
     private function companyDataFromRequest(array $data): array
@@ -193,20 +194,41 @@ class CompanyController extends Controller
 
         abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
 
-        return Inertia::render('Companies/Edit', [
+        return Inertia::render('Admin/Companies/Edit', [
+            'company' => $company,
+        ]);
+    }
+
+    public function branches(Company $company): Response
+    {
+        $user = request()->user();
+
+        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+
+        return Inertia::render('Admin/Companies/Branches', [
             'company' => $company,
             'branches' => $company->branches()
                 ->select(['id', 'company_id', 'name', 'slug', 'city', 'is_active', 'created_at'])
                 ->orderBy('name')
                 ->get(),
-            'apiClients' => $user->isSuperAdmin()
-                ? $company->apiClients()
-                    ->select(['id', 'company_id', 'name', 'is_active', 'rate_limit_per_minute', 'last_used_at', 'created_at'])
-                    ->with('domains:id,api_client_id,domain,is_active')
-                    ->orderBy('name')
-                    ->get()
-                : [],
-            'canSeeApiKeys' => $user->isSuperAdmin(),
+        ]);
+    }
+
+    public function apiClients(Company $company): Response
+    {
+        $user = request()->user();
+
+        abort_unless($user->isSuperAdmin(), 403);
+        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+
+        return Inertia::render('Admin/Companies/ApiClients', [
+            'company' => $company,
+            'apiClients' => $company->apiClients()
+                ->select(['id', 'company_id', 'name', 'is_active', 'rate_limit_per_minute', 'last_used_at', 'created_at'])
+                ->with('domains:id,api_client_id,domain,is_active')
+                ->orderBy('name')
+                ->get(),
+            'canSeeApiKeys' => true,
         ]);
     }
 
@@ -251,7 +273,24 @@ class CompanyController extends Controller
     {
         abort_if(! request()->user()->canAccessCompany($company->id), 403);
 
-        $company->delete();
+        $companyUserIds = $company->users()
+            ->pluck('users.id')
+            ->all();
+
+        DB::transaction(function () use ($company, $companyUserIds) {
+            foreach ($companyUserIds as $userId) {
+                $hasOtherCompany = DB::table('user_companies')
+                    ->where('user_id', $userId)
+                    ->where('company_id', '!=', $company->id)
+                    ->exists();
+
+                if (! $hasOtherCompany) {
+                    DB::table('users')->where('id', $userId)->delete();
+                }
+            }
+
+            $company->delete();
+        });
 
         return redirect()
             ->route('companies.index')

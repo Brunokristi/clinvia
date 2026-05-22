@@ -2,6 +2,7 @@
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import UserForm from '@/Components/Users/UserForm.vue';
 import { useForm } from '@inertiajs/vue3';
+import { useToast } from 'primevue/usetoast';
 
 const props = defineProps({
     user: Object,
@@ -23,8 +24,16 @@ const roles = [
     { label: 'Viewer', value: 'viewer' },
 ];
 
+const toast = useToast();
+
 const submit = () => {
-    form.put(route('users.update', props.user.id));
+    form.put(route('users.update', props.user.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            toast.add({ severity: 'success', summary: 'Úspech', detail: 'Používateľ bol úspešne upravený.', life: 3000 });
+        },
+        onError: () => { toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa upraviť používateľa.', life: 3000 }); },
+    });
 };
 </script>
 

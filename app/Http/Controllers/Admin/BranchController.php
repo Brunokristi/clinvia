@@ -11,8 +11,8 @@ use App\Models\Category;
 use App\Models\Service;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -62,13 +62,24 @@ class BranchController extends Controller
 
     public function create(): Response
     {
-        abort_if(! request()->user()->canAccessBranch($branch), 403);
         $user = request()->user();
 
-            $companiesQuery = Company::query()
+        $selectedCompany = null;
+
+        if (request()->filled('company')) {
+            $companyId = request()->integer('company');
+
+            abort_if(! Company::query()->accessibleTo($user)->whereKey($companyId)->exists(), 403);
+
+            $selectedCompany = Company::query()
                 ->select(['id', 'legal_name'])
-                ->where('is_active', true)
-                ->orderBy('legal_name');
+                ->findOrFail($companyId);
+        }
+
+        $companiesQuery = Company::query()
+            ->select(['id', 'legal_name'])
+            ->where('is_active', true)
+            ->orderBy('legal_name');
 
         if (! $user->isSuperAdmin()) {
             $companyIds = $user->companies()
@@ -79,22 +90,16 @@ class BranchController extends Controller
         }
 
         return Inertia::render('Admin/Branches/Create', [
+            'company' => $selectedCompany,
             'companies' => $companiesQuery->get(),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        abort_if(! request()->user()->canAccessBranch($branch), 403);
         $data = $request->validate([
             'company_id' => ['required', 'exists:companies,id'],
             'name' => ['required', 'string', 'max:255'],
-            'slug' => [
-                'nullable',
-                'string',
-                'max:255',
-                Rule::unique('branches', 'slug')->where('company_id', $request->integer('company_id')),
-            ],
             'type' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
 
@@ -104,20 +109,23 @@ class BranchController extends Controller
             'postal_code' => ['nullable', 'string', 'max:255'],
             'country' => ['nullable', 'string', 'max:255'],
 
-            'latitude' => ['nullable', 'numeric'],
-            'longitude' => ['nullable', 'numeric'],
-
             'website' => ['nullable', 'string', 'max:255'],
-            'is_active' => ['required', 'boolean'],
-            'sort_order' => ['nullable', 'integer'],
         ]);
 
         if (! $request->user()->canAccessCompany((int) $data['company_id'])) {
             abort(403);
         }
 
-        $data['slug'] = $data['slug'] ?: Str::slug($data['name']);
-        $data['sort_order'] = $data['sort_order'] ?? 0;
+        $data['slug'] = Str::slug($data['name']);
+        $data['is_active'] = true;
+        $data['sort_order'] = 0;
+
+        $coordinates = $this->geocodeCoordinates($data);
+
+        if ($coordinates) {
+            $data['latitude'] = $coordinates['latitude'];
+            $data['longitude'] = $coordinates['longitude'];
+        }
 
         Branch::create($data);
 
@@ -130,31 +138,39 @@ class BranchController extends Controller
     {
         abort_if(! request()->user()->canAccessBranch($branch), 403);
 
-        $user = request()->user();
-
-            $companiesQuery = Company::query()
-                ->select(['id', 'legal_name'])
-                ->where('is_active', true)
-                ->orderBy('legal_name');
-
-        if (! $user->isSuperAdmin()) {
-            $companyIds = $user->companies()
-                ->wherePivot('is_active', true)
-                ->pluck('companies.id');
-
-            $companiesQuery->whereIn('id', $companyIds);
-        }
-
         return Inertia::render('Admin/Branches/Edit', [
+            'company' => $branch->company()->select(['id', 'legal_name'])->first(),
             'branch' => $branch->load([
-                'contacts',
-                'openingHours.intervals',
-                'users:id,first_name,last_name,email,global_role,is_active',
-                'employees',
-                'branchServices.service.category',
-                'branchServices.prices',
+                'company:id,legal_name,slug',
+                'company',
             ]),
-            'companies' => $companiesQuery->get(),
+        ]);
+    }
+
+    public function contacts(Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        return Inertia::render('Admin/Branches/Contacts', [
+            'branch' => $branch->load(['company:id,legal_name,slug', 'contacts']),
+        ]);
+    }
+
+    public function openingHours(Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        return Inertia::render('Admin/Branches/OpeningHours', [
+            'branch' => $branch->load(['company:id,legal_name,slug', 'openingHours.intervals']),
+        ]);
+    }
+
+    public function users(Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        return Inertia::render('Admin/Branches/Users', [
+            'branch' => $branch->load(['company:id,legal_name,slug', 'company.users:id,first_name,last_name,email,global_role,is_active', 'users:id,first_name,last_name,email,global_role,is_active']),
             'availableUsers' => User::query()
                 ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
                 ->whereIn('global_role', ['admin', 'editor', 'viewer'])
@@ -165,6 +181,15 @@ class BranchController extends Controller
                 ->orderBy('first_name')
                 ->orderBy('last_name')
                 ->get(),
+        ]);
+    }
+
+    public function employees(Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        return Inertia::render('Admin/Branches/Employees', [
+            'branch' => $branch->load(['company:id,legal_name,slug', 'employees']),
             'availableEmployees' => Employee::query()
                 ->select([
                     'id',
@@ -187,6 +212,15 @@ class BranchController extends Controller
                 ->orderBy('last_name')
                 ->orderBy('first_name')
                 ->get(),
+        ]);
+    }
+
+    public function services(Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        return Inertia::render('Admin/Branches/Services', [
+            'branch' => $branch->load(['company:id,legal_name,slug', 'branchServices.service.category', 'branchServices.prices']),
             'availableServices' => Service::query()
                 ->select([
                     'id',
@@ -223,14 +257,6 @@ class BranchController extends Controller
         $data = $request->validate([
             'company_id' => ['required', 'exists:companies,id'],
             'name' => ['required', 'string', 'max:255'],
-            'slug' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('branches', 'slug')
-                    ->where('company_id', $request->integer('company_id'))
-                    ->ignore($branch->id),
-            ],
             'type' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
 
@@ -240,19 +266,23 @@ class BranchController extends Controller
             'postal_code' => ['nullable', 'string', 'max:255'],
             'country' => ['nullable', 'string', 'max:255'],
 
-            'latitude' => ['nullable', 'numeric'],
-            'longitude' => ['nullable', 'numeric'],
-
             'website' => ['nullable', 'string', 'max:255'],
             'is_active' => ['required', 'boolean'],
-            'sort_order' => ['nullable', 'integer'],
         ]);
 
         if (! $request->user()->canAccessCompany((int) $data['company_id'])) {
             abort(403);
         }
 
-        $data['sort_order'] = $data['sort_order'] ?? 0;
+        $data['slug'] = Str::slug($data['name']);
+        $data['sort_order'] = $branch->sort_order;
+
+        $coordinates = $this->geocodeCoordinates($data);
+
+        if ($coordinates) {
+            $data['latitude'] = $coordinates['latitude'];
+            $data['longitude'] = $coordinates['longitude'];
+        }
 
         $branch->update($data);
 
@@ -270,5 +300,47 @@ class BranchController extends Controller
         return redirect()
             ->route('branches.index')
             ->with('success', 'Pobočka bola odstránená.');
+    }
+
+    private function geocodeCoordinates(array $data): ?array
+    {
+        $parts = array_filter([
+            $data['address_line_1'] ?? null,
+            $data['address_line_2'] ?? null,
+            $data['postal_code'] ?? null,
+            $data['city'] ?? null,
+            $data['country'] ?? null,
+        ]);
+
+        if ($parts === []) {
+            return null;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'User-Agent' => 'Clinvia/1.0 (+https://clinvia.local)',
+            ])->get('https://nominatim.openstreetmap.org/search', [
+                'format' => 'jsonv2',
+                'limit' => 1,
+                'q' => implode(', ', $parts),
+            ]);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $result = $response->json()[0] ?? null;
+
+            if (! $result || ! isset($result['lat'], $result['lon'])) {
+                return null;
+            }
+
+            return [
+                'latitude' => $result['lat'],
+                'longitude' => $result['lon'],
+            ];
+        } catch (\Throwable $throwable) {
+            return null;
+        }
     }
 }

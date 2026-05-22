@@ -70,6 +70,9 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/companies/{company}/edit', [CompanyController::class, 'edit'])
             ->name('companies.edit');
 
+        Route::get('/companies/{company}/branches', [CompanyController::class, 'branches'])
+            ->name('companies.branches');
+
         Route::put('/companies/{company}', [CompanyController::class, 'update'])
             ->name('companies.update');
 
@@ -77,9 +80,28 @@ Route::middleware(['auth', 'active'])->group(function () {
             ->name('companies.destroy');
     });
 
+    Route::get('/companies/{company}/api-clients', [CompanyController::class, 'apiClients'])
+        ->middleware('superadmin')
+        ->name('companies.api-clients');
+
     Route::middleware('manage.branches')->group(function () {
         Route::resource('/branches', BranchController::class)
             ->except(['show']);
+
+        Route::get('/branches/{branch}/contacts', [BranchController::class, 'contacts'])
+            ->name('branches.contacts.page');
+
+        Route::get('/branches/{branch}/opening-hours', [BranchController::class, 'openingHours'])
+            ->name('branches.opening-hours.page');
+
+        Route::get('/branches/{branch}/users', [BranchController::class, 'users'])
+            ->name('branches.users.page');
+
+        Route::get('/branches/{branch}/employees', [BranchController::class, 'employees'])
+            ->name('branches.employees.page');
+
+        Route::get('/branches/{branch}/services', [BranchController::class, 'services'])
+            ->name('branches.services.page');
 
         Route::post('/branches/{branch}/contacts', [BranchContactController::class, 'store'])
             ->name('branches.contacts.store');

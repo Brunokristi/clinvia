@@ -8,6 +8,7 @@ import { createApp, h } from 'vue';
 
 import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
+import ToastService from 'primevue/toastservice';
 
 createInertiaApp({
     title: (title) => `${title} - Clinvia`,
@@ -27,6 +28,7 @@ createInertiaApp({
                     preset: Aura,
                 },
             })
+            .use(ToastService)
             .mount(el);
     },
     progress: {

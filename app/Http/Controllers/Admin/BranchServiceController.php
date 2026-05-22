@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\BranchService;
 use App\Models\Service;
+use App\Models\Category;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +32,8 @@ class BranchServiceController extends Controller
             'icon' => ['nullable', 'string', 'max:255'],
             'duration_minutes' => ['nullable', 'integer', 'min:0'],
 
+            'new_category_name' => ['nullable', 'string', 'max:255'],
+
             'custom_title' => ['nullable', 'string', 'max:255'],
             'custom_description' => ['nullable', 'string'],
             'is_available' => ['required', 'boolean'],
@@ -41,8 +45,37 @@ class BranchServiceController extends Controller
             'self_pay_note' => ['nullable', 'string'],
         ]);
 
-        DB::transaction(function () use ($data, $branch) {
+        // ensure we have a category name when creating a new service without selecting existing category
+        if ($data['create_new'] && empty($data['category_id']) && empty($data['new_category_name'])) {
+            throw ValidationException::withMessages(['new_category_name' => ['Pri vytváraní novej kategórie je potrebný názov.']]);
+        }
+
+        DB::transaction(function () use ($data, $branch, $request) {
             if ($data['create_new']) {
+                // If the user requested a new category name, create it first
+                $categoryId = $data['category_id'] ?? null;
+
+                if (empty($categoryId) && ! empty($data['new_category_name'])) {
+                    $baseCatSlug = Str::slug($data['new_category_name']);
+                    $catSlug = $baseCatSlug;
+                    $catCounter = 1;
+
+                    while (Category::where('company_id', $branch->company_id)->where('slug', $catSlug)->exists()) {
+                        $catSlug = $baseCatSlug . '-' . $catCounter;
+                        $catCounter++;
+                    }
+
+                    $category = Category::create([
+                        'company_id' => $branch->company_id,
+                        'name' => $data['new_category_name'],
+                        'slug' => $catSlug,
+                        'is_active' => true,
+                        'sort_order' => 0,
+                    ]);
+
+                    $categoryId = $category->id;
+                }
+
                 $baseSlug = $data['slug'] ?: Str::slug($data['name']);
                 $slug = $baseSlug;
                 $counter = 1;
@@ -54,7 +87,7 @@ class BranchServiceController extends Controller
 
                 $service = Service::create([
                     'company_id' => $branch->company_id,
-                    'category_id' => $data['category_id'] ?? null,
+                    'category_id' => $categoryId ?? ($data['category_id'] ?? null),
                     'name' => $data['name'],
                     'slug' => $slug,
                     'short_description' => $data['short_description'] ?? null,

@@ -1,8 +1,12 @@
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
+import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
-import { computed } from 'vue';
+import InputText from 'primevue/inputtext';
+import Dialog from 'primevue/dialog';
+import { FilterMatchMode } from '@primevue/core/api';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     companies: {
@@ -39,36 +43,108 @@ const props = defineProps({
     },
 });
 
-const rows = computed(() => Array.isArray(props.companies) ? props.companies : (props.companies?.data ?? []));
-const paginationLinks = computed(() => Array.isArray(props.companies?.links) ? props.companies.links : []);
+const rows = computed(() => {
+    return Array.isArray(props.companies)
+        ? props.companies
+        : props.companies?.data ?? [];
+});
 
-const deleteCompany = (company) => {
-    if (! confirm(`Naozaj chceš odstrániť firmu ${company.legal_name}?`)) {
+const paginationLinks = computed(() => {
+    return Array.isArray(props.companies?.links)
+        ? props.companies.links
+        : [];
+});
+
+const filters = ref({
+    global: {
+        value: null,
+        matchMode: FilterMatchMode.CONTAINS,
+    },
+    legal_name: {
+        value: null,
+        matchMode: FilterMatchMode.CONTAINS,
+    },
+    company_number: {
+        value: null,
+        matchMode: FilterMatchMode.CONTAINS,
+    },
+});
+
+const deleteDialogVisible = ref(false);
+const selectedCompanyToDelete = ref(null);
+
+const tableRows = computed(() => {
+    return rows.value.map((company) => ({
+        ...company,
+        legal_name: company.legal_name || company.name || '',
+        company_number: company.id_number || company.company_id_number || '',
+    }));
+});
+
+const companyName = (company) => {
+    return company.legal_name || company.name || 'Bez názvu';
+};
+
+const openDeleteDialog = (company) => {
+    selectedCompanyToDelete.value = company;
+    deleteDialogVisible.value = true;
+};
+
+const closeDeleteDialog = () => {
+    deleteDialogVisible.value = false;
+    selectedCompanyToDelete.value = null;
+};
+
+const deleteCompany = () => {
+    if (!selectedCompanyToDelete.value) {
         return;
     }
 
-    router.delete(route('companies.destroy', company.id));
+    router.delete(route('companies.destroy', { company: selectedCompanyToDelete.value.id }), {
+        preserveScroll: true,
+        onSuccess: closeDeleteDialog,
+        onError: closeDeleteDialog,
+    });
+};
+
+const clearFilters = () => {
+    filters.value = {
+        global: {
+            value: null,
+            matchMode: FilterMatchMode.CONTAINS,
+        },
+        legal_name: {
+            value: null,
+            matchMode: FilterMatchMode.CONTAINS,
+        },
+        company_number: {
+            value: null,
+            matchMode: FilterMatchMode.CONTAINS,
+        },
+    };
 };
 
 const linkClass = (link) => {
     return [
-        'inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition',
+        'inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-3 text-sm font-medium transition',
         link.active
             ? 'border-slate-900 bg-slate-900 text-white'
-            : 'border-slate-300 text-slate-700 hover:bg-slate-50',
+            : link.url
+                ? 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                : 'cursor-not-allowed border-slate-200 text-slate-300',
     ].join(' ');
 };
 </script>
 
 <template>
-    <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
                 <h1 class="text-2xl font-semibold text-slate-900">
                     {{ title }}
                 </h1>
 
-                <p class="text-sm text-slate-500">
+                <p class="mt-1 text-sm text-slate-500">
                     {{ description }}
                 </p>
             </div>
@@ -76,59 +152,114 @@ const linkClass = (link) => {
             <Link
                 v-if="showCreateButton"
                 :href="route(createHref)"
-                class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-                <i class="pi pi-plus text-xs"></i>
-                {{ createLabel }}
+                <Button
+                    :label="createLabel"
+                    icon="pi pi-plus"
+                />
             </Link>
         </div>
 
-        <DataTable v-if="rows.length > 0" :value="rows" tableStyle="min-width: 60rem">
-            <Column field="legal_name" header="Oficiálny názov" />
-            <Column field="slug" header="Slug" />
-            <Column field="city" header="Mesto" />
-            <Column field="country" header="Krajina" />
-            <Column field="email" header="Email" />
-            <Column field="phone" header="Telefón" />
+        <DataTable
+            v-if="rows.length > 0"
+            v-model:filters="filters"
+            :value="tableRows"
+            :globalFilterFields="[
+                'legal_name',
+                'company_number'
+            ]"
+            filterDisplay="row"
+            paginator
+            :rows="10"
+            :rowsPerPageOptions="[10, 25, 50, 100]"
+            removableSort
+            stripedRows
+            rowHover
+            tableStyle="min-width: 40rem"
+            emptyMessage="Nenašli sa žiadne firmy."
+        >
+            <template #header>
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <InputText
+                        v-model="filters.global.value"
+                        class="w-full md:max-w-md"
+                        placeholder="Hľadať podľa názvu alebo IČO..."
+                    />
 
-            <Column header="Aktívna">
-                <template #body="{ data }">
-                    {{ data.is_active ? 'Áno' : 'Nie' }}
-                </template>
-            </Column>
+                    <Button
+                        type="button"
+                        label="Vyčistiť filtre"
+                        icon="pi pi-filter-slash"
+                        severity="secondary"
+                        outlined
+                        @click="clearFilters"
+                    />
+                </div>
+            </template>
 
-            <Column v-if="showActions" header="Akcie">
+            <Column
+                field="legal_name"
+                header="Názov firmy"
+                sortable
+                filter
+                filterPlaceholder="Filtrovať názov"
+            />
+
+            <Column
+                field="company_number"
+                header="IČO"
+                sortable
+                filter
+                filterPlaceholder="Filtrovať IČO"
+            />
+
+            <Column
+                v-if="showActions"
+                header="Akcie"
+                style="width: 180px"
+            >
                 <template #body="{ data }">
                     <div class="flex gap-2">
                         <Link
-                            :href="route('companies.edit', data.id)"
+                            :href="route('companies.edit', { company: data.id })"
                             class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                         >
-                            Upraviť
+                            Zobraziť
                         </Link>
 
-                        <button
+                        <Button
                             type="button"
-                            class="inline-flex items-center rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
-                            @click="deleteCompany(data)"
-                        >
-                            Zmazať
-                        </button>
+                            label="Zmazať"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="openDeleteDialog(data)"
+                        />
                     </div>
                 </template>
             </Column>
         </DataTable>
 
-        <div v-else class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-sm text-slate-500">
+        <div
+            v-else
+            class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500"
+        >
             {{ emptyMessage }}
         </div>
 
-        <div v-if="paginationLinks.length > 3" class="mt-6 flex flex-wrap gap-2">
-            <template v-for="link in paginationLinks" :key="link.label">
+        <div
+            v-if="paginationLinks.length > 3"
+            class="mt-6 flex flex-wrap gap-2"
+        >
+            <template
+                v-for="link in paginationLinks"
+                :key="link.label"
+            >
                 <Link
                     v-if="link.url"
                     :href="link.url"
                     :class="linkClass(link)"
+                    preserve-scroll
                     v-html="link.label"
                 />
 
@@ -139,5 +270,38 @@ const linkClass = (link) => {
                 />
             </template>
         </div>
+
+        <Dialog
+            v-model:visible="deleteDialogVisible"
+            modal
+            header="Odstrániť firmu"
+            :style="{ width: '32rem' }"
+            @hide="closeDeleteDialog"
+        >
+            <div class="space-y-4">
+                <p class="text-sm text-slate-600">
+                    Naozaj chceš odstrániť firmu <strong>{{ companyName(selectedCompanyToDelete) }}</strong>?
+                </p>
+
+                <p class="text-sm text-red-600">
+                    Táto akcia sa nedá vrátiť späť.
+                </p>
+            </div>
+
+            <template #footer>
+                <Button
+                    label="Zrušiť"
+                    severity="secondary"
+                    outlined
+                    @click="closeDeleteDialog"
+                />
+
+                <Button
+                    label="Odstrániť"
+                    severity="danger"
+                    @click="deleteCompany"
+                />
+            </template>
+        </Dialog>
     </section>
 </template>

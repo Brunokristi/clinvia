@@ -1,7 +1,7 @@
 <script setup>
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const props = defineProps({
     form: {
@@ -102,6 +102,141 @@ const generatedSlug = computed(() => slugify(fieldValue('legal_name')));
 
 const requiredMark = computed(() => {
     return props.requiredFields.length ? '*' : '';
+});
+
+const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const addressLine1Ref = ref(null);
+let autocomplete = null;
+let placeChangedListener = null;
+
+const mapsAutocompleteEnabled = computed(() => Boolean(googleMapsApiKey));
+
+let mapsScriptLoadingPromise = null;
+
+const loadGoogleMapsPlacesScript = () => {
+    if (window.google?.maps?.places) {
+        return Promise.resolve();
+    }
+
+    if (mapsScriptLoadingPromise) {
+        return mapsScriptLoadingPromise;
+    }
+
+    mapsScriptLoadingPromise = new Promise((resolve, reject) => {
+        const existingScript = document.querySelector('script[data-google-maps-places]');
+
+        if (existingScript) {
+            existingScript.addEventListener('load', () => resolve(), { once: true });
+            existingScript.addEventListener('error', () => reject(new Error('Google Maps script load failed.')), { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places&v=weekly&loading=async`;
+        script.async = true;
+        script.defer = true;
+        script.dataset.googleMapsPlaces = 'true';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Google Maps script load failed.'));
+
+        document.head.appendChild(script);
+    });
+
+    return mapsScriptLoadingPromise;
+};
+
+const setField = (name, value) => {
+    props.form[fieldKey(name)] = value;
+};
+
+const extractComponent = (components, type) => {
+    return components.find((component) => component.types.includes(type))?.long_name ?? '';
+};
+
+const applySelectedPlace = (place) => {
+    const components = place?.address_components ?? [];
+
+    const streetNumber = extractComponent(components, 'street_number');
+    const route = extractComponent(components, 'route');
+    const subpremise = extractComponent(components, 'subpremise');
+    const city = extractComponent(components, 'locality')
+        || extractComponent(components, 'postal_town')
+        || extractComponent(components, 'administrative_area_level_2');
+    const postalCode = extractComponent(components, 'postal_code');
+    const region = extractComponent(components, 'administrative_area_level_1');
+    const country = extractComponent(components, 'country');
+
+    const line1 = [streetNumber, route].filter(Boolean).join(' ').trim();
+
+    if (line1) {
+        setField('address_line_1', line1);
+    } else if (place?.name) {
+        setField('address_line_1', place.name);
+    }
+
+    if (subpremise && !String(fieldValue('address_line_2') || '').trim()) {
+        setField('address_line_2', subpremise);
+    }
+
+    if (city) {
+        setField('city', city);
+    }
+
+    if (postalCode) {
+        setField('postal_code', postalCode);
+    }
+
+    if (region) {
+        setField('region', region);
+    }
+
+    if (country) {
+        setField('country', country);
+    }
+};
+
+const initAddressAutocomplete = () => {
+    const inputEl = addressLine1Ref.value?.$el?.querySelector('input')
+        ?? addressLine1Ref.value?.$el
+        ?? addressLine1Ref.value
+        ?? null;
+
+    if (!inputEl || !window.google?.maps?.places || typeof inputEl !== 'object' || !('tagName' in inputEl)) {
+        return;
+    }
+
+    autocomplete = new window.google.maps.places.Autocomplete(inputEl, {
+        types: ['address'],
+        fields: ['address_components', 'name'],
+    });
+
+    placeChangedListener = autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        applySelectedPlace(place);
+    });
+};
+
+onMounted(async () => {
+    if (!mapsAutocompleteEnabled.value) {
+        return;
+    }
+
+    try {
+        await nextTick();
+        await loadGoogleMapsPlacesScript();
+        initAddressAutocomplete();
+    } catch {
+        // silently degrade to normal text input when API is unavailable
+    }
+});
+
+onBeforeUnmount(() => {
+    if (placeChangedListener) {
+        window.google?.maps?.event?.removeListener(placeChangedListener);
+    }
+
+    placeChangedListener = null;
+    autocomplete = null;
 });
 </script>
 
@@ -248,10 +383,19 @@ const requiredMark = computed(() => {
                     </label>
 
                     <InputText
+                        ref="addressLine1Ref"
                         v-model="form[fieldKey('address_line_1')]"
                         :class="inputClasses('address_line_1')"
                         placeholder="Ulica a číslo"
+                        autocomplete="address-line1"
                     />
+
+                    <p
+                        v-if="mapsAutocompleteEnabled"
+                        class="mt-1 text-xs text-slate-500"
+                    >
+                        Začni písať adresu a vyber návrh z Google Maps.
+                    </p>
 
                     <p
                         v-if="errorMessage('address_line_1', 'Adresa 1')"

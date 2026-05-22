@@ -5,7 +5,7 @@ import { useForm } from '@inertiajs/vue3';
 
 const form = useForm({
     legal_name: '',
-    company_id_number: '',
+    id_number: '',
     tax_id: '',
     vat_id: '',
     address_line_1: '',
