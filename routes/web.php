@@ -38,20 +38,43 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::resource('/users', UserController::class)
             ->except(['show']);
 
-        Route::get('/companies/onboard', [CompanyController::class, 'onboard'])
-            ->name('companies.onboard');
-
-        Route::post('/companies/onboard', [CompanyController::class, 'storeOnboard'])
-            ->name('companies.onboard.store');
-
-        Route::resource('/companies', CompanyController::class)
-            ->except(['show']);
-
         Route::resource('/api-clients', ApiClientController::class)
             ->except(['show']);
 
         Route::post('/api-clients/{apiClient}/regenerate', [ApiClientController::class, 'regenerate'])
             ->name('api-clients.regenerate');
+
+        Route::get('/companies/create', [CompanyController::class, 'create'])
+            ->name('companies.create');
+
+        Route::post('/companies', [CompanyController::class, 'store'])
+            ->name('companies.store');
+
+        Route::get('/companies/onboard', [CompanyController::class, 'onboard'])
+            ->name('companies.onboard');
+
+        Route::post('/companies/onboard', [CompanyController::class, 'storeOnboard'])
+            ->name('companies.onboard.store');
+    });
+
+    Route::middleware('manage.companies')->group(function () {
+        Route::get('/users/lookup/by-email', [UserController::class, 'lookupByEmail'])
+            ->name('users.lookup-by-email');
+
+        Route::get('/users/lookup/email-suggestions', [UserController::class, 'emailSuggestions'])
+            ->name('users.lookup-email-suggestions');
+
+        Route::get('/companies', [CompanyController::class, 'index'])
+            ->name('companies.index');
+
+        Route::get('/companies/{company}/edit', [CompanyController::class, 'edit'])
+            ->name('companies.edit');
+
+        Route::put('/companies/{company}', [CompanyController::class, 'update'])
+            ->name('companies.update');
+
+        Route::delete('/companies/{company}', [CompanyController::class, 'destroy'])
+            ->name('companies.destroy');
     });
 
     Route::middleware('manage.branches')->group(function () {

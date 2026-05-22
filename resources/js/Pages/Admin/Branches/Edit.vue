@@ -1,6 +1,7 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { router, useForm, Link } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
@@ -392,6 +393,17 @@ const updateBranchService = (branchService) => {
     });
 };
 
+const activeTab = ref('basic');
+
+const branchTabs = [
+    { key: 'basic', label: 'Základné údaje' },
+    { key: 'contacts', label: 'Kontakty' },
+    { key: 'opening-hours', label: 'Otváracie hodiny' },
+    { key: 'services', label: 'Služby' },
+    { key: 'users', label: 'Používatelia' },
+    { key: 'employees', label: 'Zamestnanci' },
+];
+
 </script>
 
 <template>
@@ -400,7 +412,24 @@ const updateBranchService = (branchService) => {
             Upraviť pobočku
         </h1>
 
-        <form class="max-w-4xl space-y-6" @submit.prevent="submit">
+        <div class="mb-6 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div class="flex flex-wrap gap-2">
+                <button
+                    v-for="tab in branchTabs"
+                    :key="tab.key"
+                    type="button"
+                    class="rounded-lg px-3 py-2 text-sm font-medium transition"
+                    :class="activeTab === tab.key
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                    @click="activeTab = tab.key"
+                >
+                    {{ tab.label }}
+                </button>
+            </div>
+        </div>
+
+        <form v-if="activeTab === 'basic'" class="max-w-4xl space-y-6" @submit.prevent="submit">
             <div class="rounded-lg border bg-white p-5">
                 <h2 class="mb-4 text-lg font-semibold">
                     Základné údaje
@@ -638,7 +667,7 @@ const updateBranchService = (branchService) => {
             />
         </form>
 
-        <section class="mt-10 rounded-lg border bg-white p-5">
+        <section v-if="activeTab === 'contacts'" class="mt-10 rounded-lg border bg-white p-5">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">
                     Kontakty pobočky
@@ -770,7 +799,7 @@ const updateBranchService = (branchService) => {
             </DataTable>
         </section>
 
-        <section class="mt-10 rounded-lg border bg-white p-5">
+        <section v-if="activeTab === 'opening-hours'" class="mt-10 rounded-lg border bg-white p-5">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">
                     Otváracie hodiny
@@ -898,7 +927,7 @@ const updateBranchService = (branchService) => {
             </form>
         </section>
 
-        <section class="mt-10 rounded-lg border bg-white p-5">
+        <section v-if="activeTab === 'services'" class="mt-10 rounded-lg border bg-white p-5">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">
                     Služby pobočky
@@ -1370,7 +1399,7 @@ const updateBranchService = (branchService) => {
             </div>
         </section>
 
-        <section class="mt-10 rounded-lg border bg-white p-5">
+        <section v-if="activeTab === 'users'" class="mt-10 rounded-lg border bg-white p-5">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">
                     Používatelia pobočky
@@ -1472,7 +1501,7 @@ const updateBranchService = (branchService) => {
             </DataTable>
         </section>
 
-        <section class="mt-10 rounded-lg border bg-white p-5">
+        <section v-if="activeTab === 'employees'" class="mt-10 rounded-lg border bg-white p-5">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">
                     Zamestnanci pobočky

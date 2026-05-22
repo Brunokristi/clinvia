@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,8 +20,11 @@ class CompanyController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('Admin/Companies/Index', [
+        $user = request()->user();
+
+        return Inertia::render('Companies/Index', [
             'companies' => Company::query()
+                ->accessibleTo($user)
                 ->select([
                     'id',
                     'slug',
@@ -43,12 +47,12 @@ class CompanyController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Admin/Companies/Create');
+        return Inertia::render('Companies/Create');
     }
 
     public function onboard(): Response
     {
-        return Inertia::render('Admin/Companies/Onboard');
+        return Inertia::render('Companies/Onboard');
     }
 
     private function companyDataFromRequest(array $data): array
@@ -90,11 +94,21 @@ class CompanyController extends Controller
             'company_phone' => ['nullable', 'string', 'max:255'],
             'company_website' => ['nullable', 'string', 'max:255'],
             'company_is_active' => ['required', 'boolean'],
-            'admin_first_name' => ['required', 'string', 'max:255'],
-            'admin_last_name' => ['required', 'string', 'max:255'],
-            'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'admin_password' => ['required', 'string', 'min:8', 'confirmed'],
+            'admin_email' => ['required', 'email', 'max:255'],
+            'admin_first_name' => ['nullable', 'string', 'max:255'],
+            'admin_last_name' => ['nullable', 'string', 'max:255'],
+            'admin_password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
+
+        $existingAdmin = User::where('email', $data['admin_email'])->first();
+
+        if (! $existingAdmin) {
+            Validator::make($request->all(), [
+                'admin_first_name' => ['required', 'string', 'max:255'],
+                'admin_last_name' => ['required', 'string', 'max:255'],
+                'admin_password' => ['required', 'string', 'min:8', 'confirmed'],
+            ])->validate();
+        }
 
         $slug = Str::slug($data['company_legal_name']);
 
@@ -104,24 +118,29 @@ class CompanyController extends Controller
             ])->withInput();
         }
 
-        $company = DB::transaction(function () use ($data, $slug) {
+        $company = DB::transaction(function () use ($data, $slug, $existingAdmin) {
             $company = Company::create([
                 ...$this->companyDataFromRequest($data),
                 'slug' => $slug,
             ]);
 
-            $adminUser = User::create([
-                'first_name' => $data['admin_first_name'],
-                'last_name' => $data['admin_last_name'],
-                'email' => $data['admin_email'],
-                'password' => Hash::make($data['admin_password']),
-                'global_role' => 'admin',
-                'is_active' => true,
-            ]);
+            $adminUser = $existingAdmin;
 
-            UserCompany::create([
+            if (! $adminUser) {
+                $adminUser = User::create([
+                    'first_name' => $data['admin_first_name'],
+                    'last_name' => $data['admin_last_name'],
+                    'email' => $data['admin_email'],
+                    'password' => Hash::make($data['admin_password']),
+                    'global_role' => 'admin',
+                    'is_active' => true,
+                ]);
+            }
+
+            UserCompany::firstOrCreate([
                 'user_id' => $adminUser->id,
                 'company_id' => $company->id,
+            ], [
                 'role' => 'company_admin',
                 'is_active' => true,
             ]);
@@ -170,13 +189,31 @@ class CompanyController extends Controller
 
     public function edit(Company $company): Response
     {
-        return Inertia::render('Admin/Companies/Edit', [
+        $user = request()->user();
+
+        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+
+        return Inertia::render('Companies/Edit', [
             'company' => $company,
+            'branches' => $company->branches()
+                ->select(['id', 'company_id', 'name', 'slug', 'city', 'is_active', 'created_at'])
+                ->orderBy('name')
+                ->get(),
+            'apiClients' => $user->isSuperAdmin()
+                ? $company->apiClients()
+                    ->select(['id', 'company_id', 'name', 'is_active', 'rate_limit_per_minute', 'last_used_at', 'created_at'])
+                    ->with('domains:id,api_client_id,domain,is_active')
+                    ->orderBy('name')
+                    ->get()
+                : [],
+            'canSeeApiKeys' => $user->isSuperAdmin(),
         ]);
     }
 
     public function update(Request $request, Company $company): RedirectResponse
     {
+        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+
         $data = $request->validate([
             'legal_name' => ['required', 'string', 'max:255'],
             'company_id_number' => ['nullable', 'string', 'max:255'],
@@ -212,6 +249,8 @@ class CompanyController extends Controller
 
     public function destroy(Company $company): RedirectResponse
     {
+        abort_if(! request()->user()->canAccessCompany($company->id), 403);
+
         $company->delete();
 
         return redirect()

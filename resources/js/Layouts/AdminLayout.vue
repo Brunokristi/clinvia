@@ -28,6 +28,7 @@ const userInitials = computed(() => {
 });
 
 const isSuperAdmin = computed(() => user.value?.global_role === 'super_admin');
+const canManageCompanies = computed(() => ['super_admin', 'admin'].includes(user.value?.global_role));
 
 const canManageBranches = computed(() => {
     return ['super_admin', 'admin', 'editor'].includes(user.value?.global_role);
@@ -71,7 +72,7 @@ const closeUserMenu = () => {
                     </Link>
 
                     <Link
-                        v-if="isSuperAdmin"
+                        v-if="canManageCompanies"
                         :href="route('companies.index')"
                         class="flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-slate-950"
                     >

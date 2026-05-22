@@ -7,6 +7,7 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\EnsureUserIsSuperAdmin;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\EnsureUserCanManageBranches;
+use App\Http\Middleware\EnsureUserCanManageCompanies;
 use App\Http\Middleware\EnsureValidApiClient;
 
 
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'superadmin' => EnsureUserIsSuperAdmin::class,
             'manage.branches' => EnsureUserCanManageBranches::class,
+            'manage.companies' => EnsureUserCanManageCompanies::class,
             'active' => EnsureUserIsActive::class,
             'api.client' => EnsureValidApiClient::class,
         ]);

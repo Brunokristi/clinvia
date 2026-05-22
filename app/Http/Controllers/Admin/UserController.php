@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,9 +14,52 @@ use Inertia\Response;
 
 class UserController extends Controller
 {
+    public function emailSuggestions(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $query = mb_strtolower(trim($data['q'] ?? ''));
+
+        if ($query === '' || mb_strlen($query) < 2) {
+            return response()->json([
+                'users' => [],
+            ]);
+        }
+
+        $users = User::query()
+            ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
+            ->whereRaw('LOWER(email) like ?', ["{$query}%"])
+            ->orderBy('email')
+            ->limit(8)
+            ->get();
+
+        return response()->json([
+            'users' => $users,
+        ]);
+    }
+
+    public function lookupByEmail(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $user = User::query()
+            ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
+            ->where('email', $data['email'])
+            ->first();
+
+        return response()->json([
+            'exists' => (bool) $user,
+            'user' => $user,
+        ]);
+    }
+
     public function index(): Response
     {
-        return Inertia::render('Admin/Users/Index', [
+        return Inertia::render('Users/Index', [
             'users' => User::query()
                 ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active', 'created_at'])
                 ->latest()
@@ -25,7 +69,7 @@ class UserController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Admin/Users/Create');
+        return Inertia::render('Users/Create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -51,7 +95,7 @@ class UserController extends Controller
 
     public function edit(User $user): Response
     {
-        return Inertia::render('Admin/Users/Edit', [
+        return Inertia::render('Users/Edit', [
             'user' => $user->only(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active']),
         ]);
     }

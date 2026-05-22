@@ -1,12 +1,17 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
-import { Link, usePage } from '@inertiajs/vue3';
-import Button from 'primevue/button';
+import CompanyList from '@/Components/Companies/CompanyList.vue';
+import { usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+
+defineProps({
+    companies: Object,
+});
 
 const page = usePage();
 
-const isSuperAdmin = computed(() => page.props.auth?.user?.global_role === 'super_admin');
+const canManageCompanies = computed(() => ['super_admin', 'admin'].includes(page.props.auth?.user?.global_role));
+const canCreateCompanies = computed(() => page.props.auth?.user?.global_role === 'super_admin');
 </script>
 
 <template>
@@ -26,12 +31,15 @@ const isSuperAdmin = computed(() => page.props.auth?.user?.global_role === 'supe
                 </div>
             </div>
 
-            <div v-if="isSuperAdmin" class="flex flex-wrap gap-3">
-                <Link :href="route('companies.onboard')">
-                    <Button label="Onboardovať firmu" icon="pi pi-plus" />
-                </Link>
-            </div>
-            
+            <CompanyList
+                v-if="canManageCompanies"
+                :companies="companies"
+                title="Moje firmy"
+                description="Rýchly prehľad firiem, ku ktorým máš prístup."
+                create-label="Onboardovať firmu"
+                create-href="companies.onboard"
+                :show-create-button="canCreateCompanies"
+            />
         </div>
     </AdminLayout>
 </template>

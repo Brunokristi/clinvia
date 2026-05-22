@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Builder;
 
 class Company extends Model
 {
@@ -73,5 +74,17 @@ class Company extends Model
     public function apiClients(): HasMany
     {
         return $this->hasMany(ApiClient::class);
+    }
+
+    public function scopeAccessibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->whereHas('users', function (Builder $query) use ($user) {
+            $query->where('users.id', $user->id)
+                ->where('user_companies.is_active', true);
+        });
     }
 }
