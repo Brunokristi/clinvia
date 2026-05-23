@@ -8,6 +8,7 @@ use App\Models\Employee;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 
 class BranchEmployeeController extends Controller
 {
@@ -78,6 +79,49 @@ class BranchEmployeeController extends Controller
         ]);
 
         return back()->with('success', 'Zamestnanec bol pridaný k pobočke.');
+    }
+
+    public function update(Request $request, Branch $branch, Employee $employee): RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        abort_if($employee->company_id !== $branch->company_id, 403);
+
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'title_before' => ['nullable', 'string', 'max:255'],
+            'title_after' => ['nullable', 'string', 'max:255'],
+            'position' => ['required', 'string', 'max:255'],
+            'bio' => ['nullable', 'string'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'photo' => ['nullable', 'image', 'max:4096'],
+        ]);
+
+        $photoPath = $employee->photo_path;
+
+        if ($request->hasFile('photo')) {
+            if ($photoPath) {
+                Storage::disk('public')->delete($photoPath);
+            }
+
+            $photoPath = $request->file('photo')->store('employees', 'public');
+        }
+
+        $employee->update([
+            'first_name' => $data['first_name'],
+            'last_name' => $data['last_name'],
+            'title_before' => $data['title_before'] ?? null,
+            'title_after' => $data['title_after'] ?? null,
+            'position' => $data['position'],
+            'bio' => $data['bio'] ?? null,
+            'email' => $data['email'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'photo_path' => $photoPath,
+        ]);
+
+        return back()->with('success', 'Zamestnanec bol upravený.');
     }
 
     public function destroy(Request $request, Branch $branch, Employee $employee): RedirectResponse

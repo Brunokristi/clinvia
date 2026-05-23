@@ -25,9 +25,9 @@ const form = useForm({
     is_active: Boolean(props.company.is_active),
 });
 
-const submit = () => {
-    const toast = useToast();
+const toast = useToast();
 
+const submit = () => {
     form.put(route('companies.update', props.company.id), {
         preserveScroll: true,
         onSuccess: () => {
@@ -49,7 +49,7 @@ const submit = () => {
             Upraviť môžeš len základné údaje firmy. Ďalšie sekcie nájdeš v hornej navigácii.
         </p>
 
-        <form class="max-w-3xl" @submit.prevent="submit">
+        <form class="w-full" @submit.prevent="submit">
             <CompanyForm
                 :form="form"
                 submit-label="Uložiť"

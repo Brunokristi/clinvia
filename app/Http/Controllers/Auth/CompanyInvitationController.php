@@ -13,6 +13,7 @@ use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\UserInvitationService;
+use Illuminate\Support\Facades\Hash;
 
 class CompanyInvitationController extends Controller
 {

@@ -1,20 +1,29 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import EmployeeForm from '@/Components/Branches/EmployeeForm.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { useToast } from 'primevue/usetoast';
 
 import Button from 'primevue/button';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
-import FileUpload from 'primevue/fileupload';
-import InputText from 'primevue/inputtext';
+import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
-import Textarea from 'primevue/textarea';
 
 const props = defineProps({
     branch: Object,
 });
 
-const employeeForm = useForm({
+const createEmployeeDialogVisible = ref(false);
+const editEmployeeDialogVisible = ref(false);
+const editingEmployee = ref(null);
+
+const toast = useToast();
+
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
+
+const createEmployeeForm = useForm({
     create_new: true,
     first_name: '',
     last_name: '',
@@ -25,7 +34,19 @@ const employeeForm = useForm({
     email: '',
     phone: '',
     photo: null,
-    role: '',
+    sort_order: 0,
+});
+
+const editEmployeeForm = useForm({
+    first_name: '',
+    last_name: '',
+    title_before: '',
+    title_after: '',
+    position: '',
+    bio: '',
+    email: '',
+    phone: '',
+    photo: null,
     sort_order: 0,
 });
 
@@ -38,32 +59,168 @@ const employeeDisplayName = (employee) => {
     ].filter(Boolean).join(' ');
 };
 
-const addEmployee = () => {
-    employeeForm.sort_order = 0;
+const employeeInitials = (employee) => {
+    return [
+        employee.first_name?.charAt(0),
+        employee.last_name?.charAt(0),
+    ].filter(Boolean).join('').toUpperCase();
+};
 
-    employeeForm.post(route('branches.employees.store', props.branch.id), {
+const employeePhotoUrl = (employee) => {
+    return employee.photo_url
+        || (employee.photo_path ? `/storage/${employee.photo_path}` : null)
+        || employee.photo
+        || employee.image_url
+        || employee.avatar_url
+        || null;
+};
+
+const employeeCardBackground = (employee) => {
+    const photoUrl = employeePhotoUrl(employee);
+
+    if (!photoUrl) {
+        return {};
+    }
+
+    return {
+        backgroundImage: `linear-gradient(180deg, rgba(15, 23, 42, 0.1) 0%, rgba(15, 23, 42, 0.85) 100%), url('${photoUrl}')`,
+    };
+};
+
+const resetCreateEmployeeForm = () => {
+    createEmployeeForm.reset();
+    createEmployeeForm.clearErrors();
+    createEmployeeForm.create_new = true;
+    createEmployeeForm.sort_order = 0;
+};
+
+const resetEditEmployeeForm = () => {
+    editEmployeeForm.reset();
+    editEmployeeForm.clearErrors();
+};
+
+const openCreateEmployeeDialog = () => {
+    resetCreateEmployeeForm();
+    createEmployeeDialogVisible.value = true;
+};
+
+const closeCreateEmployeeDialog = () => {
+    createEmployeeDialogVisible.value = false;
+    resetCreateEmployeeForm();
+};
+
+const fillEditEmployeeForm = (employee) => {
+    editEmployeeForm.first_name = employee.first_name ?? '';
+    editEmployeeForm.last_name = employee.last_name ?? '';
+    editEmployeeForm.title_before = employee.title_before ?? '';
+    editEmployeeForm.title_after = employee.title_after ?? '';
+    editEmployeeForm.position = employee.position ?? '';
+    editEmployeeForm.bio = employee.bio ?? '';
+    editEmployeeForm.email = employee.email ?? '';
+    editEmployeeForm.phone = employee.phone ?? '';
+    editEmployeeForm.photo = null;
+    editEmployeeForm.sort_order = employee.sort_order ?? 0;
+    editEmployeeForm.clearErrors();
+};
+
+const openEditEmployeeDialog = (employee) => {
+    editingEmployee.value = employee;
+    fillEditEmployeeForm(employee);
+    editEmployeeDialogVisible.value = true;
+};
+
+const closeEditEmployeeDialog = () => {
+    editEmployeeDialogVisible.value = false;
+    editingEmployee.value = null;
+    resetEditEmployeeForm();
+};
+
+const addEmployee = () => {
+    createEmployeeForm.sort_order = 0;
+
+    createEmployeeForm.post(route('branches.employees.store', props.branch.id), {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: () => {
-            employeeForm.reset();
-            employeeForm.create_new = true;
-            employeeForm.sort_order = 0;
+            toast.add({
+                severity: 'success',
+                summary: 'Úspech',
+                detail: 'Zamestnanec bol pridaný k pobočke.',
+                life: 3000,
+            });
+
+            closeCreateEmployeeDialog();
+        },
+        onError: () => {
+            toast.add({
+                severity: 'error',
+                summary: 'Chyba',
+                detail: 'Nepodarilo sa pridať zamestnanca.',
+                life: 3000,
+            });
+        },
+    });
+};
+
+const saveEmployee = () => {
+    if (!editingEmployee.value) {
+        return;
+    }
+
+    editEmployeeForm.post(route('branches.employees.update', [props.branch.id, editingEmployee.value.id]), {
+        preserveScroll: true,
+        forceFormData: true,
+        data: {
+            _method: 'put',
+        },
+        onSuccess: () => {
+            toast.add({
+                severity: 'success',
+                summary: 'Úspech',
+                detail: 'Zamestnanec bol upravený.',
+                life: 3000,
+            });
+
+            closeEditEmployeeDialog();
+        },
+        onError: () => {
+            toast.add({
+                severity: 'error',
+                summary: 'Chyba',
+                detail: 'Nepodarilo sa upraviť zamestnanca.',
+                life: 3000,
+            });
         },
     });
 };
 
 const removeEmployee = (employee) => {
-    if (!confirm(`Odstrániť zamestnanca ${employeeDisplayName(employee)} z tejto pobočky?`)) {
-        return;
-    }
-
-    router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
-        preserveScroll: true,
+    openDialog({
+        title: 'Odstrániť zamestnanca',
+        message: `Odstrániť zamestnanca ${employeeDisplayName(employee)} z tejto pobočky?`,
+        confirmLabel: 'Zmazať',
+        onConfirm: () => {
+            router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.add({
+                        severity: 'success',
+                        summary: 'Úspech',
+                        detail: 'Zamestnanec bol odstránený z pobočky.',
+                        life: 3000,
+                    });
+                },
+                onError: () => {
+                    toast.add({
+                        severity: 'error',
+                        summary: 'Chyba',
+                        detail: 'Nepodarilo sa odstrániť zamestnanca.',
+                        life: 3000,
+                    });
+                },
+            });
+        },
     });
-};
-
-const handleEmployeePhoto = (event) => {
-    employeeForm.photo = event.files?.[0] ?? null;
 };
 </script>
 
@@ -80,368 +237,227 @@ const handleEmployeePhoto = (event) => {
                 </h1>
 
                 <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Vytvorte profil zamestnanca a priraďte ho k tejto pobočke.
+                    Spravujte zamestnancov tejto pobočky. Nového zamestnanca môžete pridať cez jednoduché okno.
                 </p>
             </div>
 
-            <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                    Aktívna pobočka
-                </p>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                        Aktívna pobočka
+                    </p>
 
-                <p class="mt-1 text-sm font-semibold text-slate-900">
-                    {{ branch.name }}
-                </p>
-            </div>
-        </div>
-
-        <div class="space-y-6">
-            <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div class="mb-6">
-                    <h2 class="text-lg font-semibold text-slate-900">
-                        Pridať zamestnanca
-                    </h2>
-
-                    <p class="mt-1 text-sm leading-6 text-slate-600">
-                        Vyplňte základné údaje zamestnanca. Meno, priezvisko a pozícia sú povinné.
+                    <p class="mt-1 text-sm font-semibold text-slate-900">
+                        {{ branch.name }}
                     </p>
                 </div>
 
-                <form class="space-y-6" @submit.prevent="addEmployee">
+                <Button
+                    label="Pridať zamestnanca"
+                    icon="pi pi-plus"
+                    @click="openCreateEmployeeDialog"
+                />
+            </div>
+        </div>
+
+        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="border-b border-slate-200 p-6">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 class="text-base font-semibold text-slate-900">
-                            Osobné údaje
-                        </h3>
+                        <h2 class="text-lg font-semibold text-slate-900">
+                            Existujúci zamestnanci
+                        </h2>
 
                         <p class="mt-1 text-sm text-slate-600">
-                            Tituly, meno a pracovná pozícia zamestnanca.
+                            Zamestnanci aktuálne priradení k tejto pobočke.
                         </p>
                     </div>
 
-                    <div class="grid gap-5 md:grid-cols-2">
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Titul pred menom
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.title_before"
-                                class="w-full"
-                                placeholder="Mgr., PhDr., MUDr."
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.title_before"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.title_before }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Titul za menom
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.title_after"
-                                class="w-full"
-                                placeholder="PhD., MBA"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.title_after"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.title_after }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Meno <span class="text-red-500">*</span>
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.first_name"
-                                class="w-full"
-                                placeholder="Ján"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.first_name"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.first_name }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Priezvisko <span class="text-red-500">*</span>
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.last_name"
-                                class="w-full"
-                                placeholder="Novák"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.last_name"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.last_name }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Pozícia <span class="text-red-500">*</span>
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.position"
-                                class="w-full"
-                                placeholder="Klinický psychológ"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.position"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.position }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Rola v pobočke
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.role"
-                                class="w-full"
-                                placeholder="Napr. vedúci pobočky"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.role"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.role }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="border-t border-slate-200 pt-6">
-                        <h3 class="text-base font-semibold text-slate-900">
-                            Kontakt a profil
-                        </h3>
-
-                        <p class="mt-1 text-sm text-slate-600">
-                            Nepovinné údaje, ktoré môžu byť použité v profile zamestnanca.
-                        </p>
-                    </div>
-
-                    <div class="grid gap-5 md:grid-cols-2">
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Email
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.email"
-                                class="w-full"
-                                placeholder="meno@firma.sk"
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.email"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.email }}
-                            </p>
-                        </div>
-
-                        <div>
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Telefón
-                            </label>
-
-                            <InputText
-                                v-model="employeeForm.phone"
-                                class="w-full"
-                                placeholder="+421..."
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.phone"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.phone }}
-                            </p>
-                        </div>
-
-                        <div class="md:col-span-2">
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Bio
-                            </label>
-
-                            <Textarea
-                                v-model="employeeForm.bio"
-                                class="w-full"
-                                rows="4"
-                                placeholder="Krátky popis, špecializácia alebo prax..."
-                            />
-
-                            <p
-                                v-if="employeeForm.errors.bio"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.bio }}
-                            </p>
-                        </div>
-
-                        <div class="md:col-span-2">
-                            <label class="mb-1 block text-sm font-medium text-slate-700">
-                                Fotografia
-                            </label>
-
-                            <FileUpload
-                                mode="basic"
-                                name="photo"
-                                accept="image/*"
-                                chooseLabel="Vybrať fotografiu"
-                                customUpload
-                                auto
-                                @select="handleEmployeePhoto"
-                            />
-
-                            <p
-                                v-if="employeeForm.photo"
-                                class="mt-2 text-sm text-slate-500"
-                            >
-                                Vybraný súbor: {{ employeeForm.photo.name }}
-                            </p>
-
-                            <p
-                                v-if="employeeForm.errors.photo"
-                                class="mt-1 text-sm text-red-600"
-                            >
-                                {{ employeeForm.errors.photo }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end border-t border-slate-200 pt-5">
-                        <Button
-                            type="submit"
-                            label="Pridať zamestnanca"
-                            icon="pi pi-plus"
-                            :loading="employeeForm.processing"
-                        />
-                    </div>
-                </form>
-            </section>
-
-            <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="border-b border-slate-200 p-6">
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 class="text-lg font-semibold text-slate-900">
-                                Existujúci zamestnanci
-                            </h2>
-
-                            <p class="mt-1 text-sm text-slate-600">
-                                Zamestnanci aktuálne priradení k tejto pobočke.
-                            </p>
-                        </div>
-
-                        <Tag
-                            :value="`${branch.employees?.length ?? 0} zamestnancov`"
-                            severity="secondary"
-                        />
-                    </div>
+                    <Tag
+                        :value="`${branch.employees?.length ?? 0} zamestnancov`"
+                        severity="secondary"
+                    />
                 </div>
+            </div>
 
-                <DataTable
-                    :value="branch.employees ?? []"
-                    tableStyle="min-width: 56rem"
-                    emptyMessage="Táto pobočka zatiaľ nemá priradených zamestnancov."
+            <div class="p-6">
+                <div
+                    v-if="branch.employees?.length"
+                    class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3"
                 >
-                    <Column header="Zamestnanec">
-                        <template #body="{ data }">
-                            <div class="flex items-center gap-3">
-                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-700">
-                                    {{ data.first_name?.charAt(0) }}{{ data.last_name?.charAt(0) }}
-                                </div>
+                    <article
+                        v-for="employee in branch.employees"
+                        :key="employee.id"
+                        class="group relative min-h-[22rem] overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                    >
+                        <div
+                            v-if="employeePhotoUrl(employee)"
+                            class="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-105"
+                            :style="employeeCardBackground(employee)"
+                        />
 
-                                <div>
-                                    <p class="text-sm font-semibold text-slate-900">
-                                        {{ employeeDisplayName(data) }}
-                                    </p>
+                        <div
+                            v-else
+                            class="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-900 to-slate-950"
+                        />
 
-                                    <p class="text-xs text-slate-500">
-                                        {{ data.position || 'Pozícia nie je zadaná' }}
-                                    </p>
-                                </div>
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent" />
+
+                        <div class="relative flex h-full min-h-[22rem] flex-col justify-between p-5">
+                            <div class="flex justify-end">
+                                <Tag
+                                    :value="employee.is_active ? 'Aktívny' : 'Neaktívny'"
+                                    :severity="employee.is_active ? 'success' : 'secondary'"
+                                />
                             </div>
-                        </template>
-                    </Column>
 
-                    <Column header="Rola v pobočke">
-                        <template #body="{ data }">
-                            <span class="text-sm text-slate-700">
-                                {{ data.pivot?.role || '—' }}
-                            </span>
-                        </template>
-                    </Column>
+                            <div>
+                                <div
+                                    v-if="!employeePhotoUrl(employee)"
+                                    class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 text-xl font-semibold text-white ring-1 ring-white/20"
+                                >
+                                    {{ employeeInitials(employee) }}
+                                </div>
 
-                    <Column header="Kontakt">
-                        <template #body="{ data }">
-                            <div class="space-y-1 text-sm text-slate-700">
-                                <p v-if="data.email">
-                                    {{ data.email }}
+                                <p class="text-xl font-semibold text-white">
+                                    {{ employeeDisplayName(employee) }}
                                 </p>
 
-                                <p v-if="data.phone">
-                                    {{ data.phone }}
+                                <p class="mt-1 text-sm font-medium text-white/80">
+                                    {{ employee.position || 'Pozícia nie je zadaná' }}
                                 </p>
 
                                 <p
-                                    v-if="!data.email && !data.phone"
-                                    class="text-slate-400"
+                                    v-if="employee.bio"
+                                    class="mt-4 line-clamp-3 text-sm leading-6 text-white/75"
                                 >
-                                    —
+                                    {{ employee.bio }}
                                 </p>
+
+                                <div class="mt-5 space-y-2">
+                                    <p
+                                        v-if="employee.email"
+                                        class="flex items-center gap-2 text-sm text-white/80"
+                                    >
+                                        <i class="pi pi-envelope text-xs" />
+                                        <span class="truncate">{{ employee.email }}</span>
+                                    </p>
+
+                                    <p
+                                        v-if="employee.phone"
+                                        class="flex items-center gap-2 text-sm text-white/80"
+                                    >
+                                        <i class="pi pi-phone text-xs" />
+                                        <span class="truncate">{{ employee.phone }}</span>
+                                    </p>
+                                </div>
+
+                                <div class="mt-5 flex justify-end gap-2">
+                                    <Button
+                                        label="Upraviť"
+                                        size="small"
+                                        severity="secondary"
+                                        outlined
+                                        icon="pi pi-pencil"
+                                        class="border-white/30 bg-white/10 text-white hover:bg-white/20"
+                                        @click="openEditEmployeeDialog(employee)"
+                                    />
+
+                                    <Button
+                                        label="Odobrať"
+                                        size="small"
+                                        severity="danger"
+                                        outlined
+                                        icon="pi pi-trash"
+                                        class="border-white/30 bg-white/10 text-white hover:bg-white/20"
+                                        @click="removeEmployee(employee)"
+                                    />
+                                </div>
                             </div>
-                        </template>
-                    </Column>
+                        </div>
+                    </article>
+                </div>
 
-                    <Column header="Stav">
-                        <template #body="{ data }">
-                            <Tag
-                                :value="data.is_active ? 'Aktívny' : 'Neaktívny'"
-                                :severity="data.is_active ? 'success' : 'secondary'"
-                            />
-                        </template>
-                    </Column>
+                <div
+                    v-else
+                    class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"
+                >
+                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+                        <i class="pi pi-users text-xl" />
+                    </div>
 
-                    <Column header="Akcie">
-                        <template #body="{ data }">
-                            <Button
-                                label="Odobrať"
-                                size="small"
-                                severity="danger"
-                                outlined
-                                icon="pi pi-trash"
-                                @click="removeEmployee(data)"
-                            />
-                        </template>
-                    </Column>
-                </DataTable>
-            </section>
-        </div>
+                    <h3 class="mt-4 text-sm font-semibold text-slate-900">
+                        Žiadni zamestnanci
+                    </h3>
+
+                    <p class="mt-1 text-sm text-slate-500">
+                        Táto pobočka zatiaľ nemá priradených zamestnancov.
+                    </p>
+
+                    <Button
+                        label="Pridať prvého zamestnanca"
+                        icon="pi pi-plus"
+                        class="mt-5"
+                        @click="openCreateEmployeeDialog"
+                    />
+                </div>
+            </div>
+        </section>
+
+        <Dialog
+            v-model:visible="createEmployeeDialogVisible"
+            modal
+            header="Pridať zamestnanca"
+            class="w-[95vw] max-w-5xl"
+            :draggable="false"
+            :dismissable-mask="!createEmployeeForm.processing"
+            @hide="resetCreateEmployeeForm"
+        >
+            <form @submit.prevent="addEmployee">
+                <EmployeeForm
+                    :form="createEmployeeForm"
+                    heading="Nový zamestnanec"
+                    description="Vyplňte základné údaje zamestnanca. Meno, priezvisko a pozícia sú povinné."
+                    submit-label="Pridať zamestnanca"
+                    :loading="createEmployeeForm.processing"
+                />
+            </form>
+        </Dialog>
+
+        <Dialog
+            v-model:visible="editEmployeeDialogVisible"
+            modal
+            header="Upraviť zamestnanca"
+            class="w-[95vw] max-w-5xl"
+            :draggable="false"
+            :dismissable-mask="!editEmployeeForm.processing"
+            @hide="closeEditEmployeeDialog"
+        >
+            <form
+                v-if="editingEmployee"
+                @submit.prevent="saveEmployee"
+            >
+                <EmployeeForm
+                    :form="editEmployeeForm"
+                    heading="Upraviť profil zamestnanca"
+                    :description="employeeDisplayName(editingEmployee)"
+                    submit-label="Uložiť zmeny"
+                    :loading="editEmployeeForm.processing"
+                    :photo-preview-url="employeePhotoUrl(editingEmployee)"
+                />
+            </form>
+        </Dialog>
+
+        <ConfirmationDialog
+            :show="dialog.visible"
+            :title="dialog.title"
+            :message="dialog.message"
+            :confirm-label="dialog.confirmLabel"
+            :cancel-label="dialog.cancelLabel"
+            :confirm-severity="dialog.confirmSeverity"
+            :icon="dialog.icon"
+            @cancel="closeDialog"
+            @confirm="confirmDialog"
+        />
     </AdminLayout>
 </template>

@@ -54,6 +54,13 @@ class Company extends Model
         return $this->hasMany(UserCompany::class);
     }
 
+    public function companyInvitations(): HasMany
+    {
+        return $this->hasMany(CompanyInvitation::class)
+            ->whereNull('accepted_at')
+            ->latest();
+    }
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'user_companies')

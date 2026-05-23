@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\ServiceNecessityController;
 use App\Http\Controllers\Admin\ServiceStepController;
 use App\Http\Controllers\Admin\ServiceTagController;
 use App\Http\Controllers\Admin\ServiceFileController;
+use App\Http\Controllers\Admin\CompanyUserController;
 use App\Http\Controllers\Api\PublicCompanyController;
 use App\Http\Controllers\Admin\ApiClientController;
 
@@ -73,6 +74,21 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/companies/{company}/branches', [CompanyController::class, 'branches'])
             ->name('companies.branches');
 
+        Route::get('/companies/{company}/users', [CompanyController::class, 'users'])
+            ->name('companies.users.page');
+
+        Route::post('/companies/{company}/users', [CompanyUserController::class, 'store'])
+            ->name('companies.users.store');
+
+        Route::delete('/companies/{company}/users/{user}', [CompanyUserController::class, 'destroy'])
+            ->name('companies.users.destroy');
+
+        Route::post('/companies/{company}/invitations/{companyInvitation}/resend', [CompanyUserController::class, 'resendInvitation'])
+            ->name('companies.invitations.resend');
+
+        Route::delete('/companies/{company}/invitations/{companyInvitation}', [CompanyUserController::class, 'destroyInvitation'])
+            ->name('companies.invitations.destroy');
+
         Route::put('/companies/{company}', [CompanyController::class, 'update'])
             ->name('companies.update');
 
@@ -97,6 +113,18 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/branches/{branch}/users', [BranchController::class, 'users'])
             ->name('branches.users.page');
 
+        Route::post('/branches/{branch}/users', [BranchUserController::class, 'store'])
+            ->name('branches.users.store');
+
+        Route::delete('/branches/{branch}/users/{user}', [BranchUserController::class, 'destroy'])
+            ->name('branches.users.destroy');
+
+        Route::post('/branches/{branch}/invitations/{branchInvitation}/resend', [BranchUserController::class, 'resendInvitation'])
+            ->name('branches.invitations.resend');
+
+        Route::delete('/branches/{branch}/invitations/{branchInvitation}', [BranchUserController::class, 'destroyInvitation'])
+            ->name('branches.invitations.destroy');
+
         Route::get('/branches/{branch}/employees', [BranchController::class, 'employees'])
             ->name('branches.employees.page');
 
@@ -115,14 +143,11 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::put('/branches/{branch}/opening-hours', [BranchOpeningHoursController::class, 'update'])
             ->name('branches.opening-hours.update');
         
-        Route::post('/branches/{branch}/users', [BranchUserController::class, 'store'])
-            ->name('branches.users.store');
-
-        Route::delete('/branches/{branch}/users/{user}', [BranchUserController::class, 'destroy'])
-            ->name('branches.users.destroy');
-        
         Route::post('/branches/{branch}/employees', [BranchEmployeeController::class, 'store'])
             ->name('branches.employees.store');
+
+        Route::put('/branches/{branch}/employees/{employee}', [BranchEmployeeController::class, 'update'])
+            ->name('branches.employees.update');
 
         Route::delete('/branches/{branch}/employees/{employee}', [BranchEmployeeController::class, 'destroy'])
             ->name('branches.employees.destroy');

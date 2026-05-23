@@ -11,6 +11,10 @@ class Employee extends Model
 {
     use HasFactory;
 
+    protected $appends = [
+        'photo_url',
+    ];
+
     protected $fillable = [
         'company_id',
         'first_name',
@@ -62,5 +66,14 @@ class Employee extends Model
                 $this->title_after,
             ])->filter()->implode(' ')
         );
+    }
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        if (! $this->photo_path) {
+            return null;
+        }
+
+        return '/storage/' . ltrim($this->photo_path, '/');
     }
 }

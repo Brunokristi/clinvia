@@ -1,11 +1,14 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
+import InputMask from 'primevue/inputmask';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
@@ -23,13 +26,60 @@ const contactForm = useForm({
     sort_order: 0,
 });
 
+const selectedPhoneCountryCode = ref('SK');
+
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
+
+const phoneCountries = [
+    {
+        label: 'Slovakia',
+        value: 'SK',
+        dialCode: '+421',
+        flag: '🇸🇰',
+        mask: '999 999 999',
+        placeholder: '900 123 456',
+    },
+    {
+        label: 'Czech Republic',
+        value: 'CZ',
+        dialCode: '+420',
+        flag: '🇨🇿',
+        mask: '999 999 999',
+        placeholder: '777 123 456',
+    },
+    {
+        label: 'Austria',
+        value: 'AT',
+        dialCode: '+43',
+        flag: '🇦🇹',
+        mask: '999 999 9999',
+        placeholder: '660 123 4567',
+    },
+    {
+        label: 'Hungary',
+        value: 'HU',
+        dialCode: '+36',
+        flag: '🇭🇺',
+        mask: '99 999 9999',
+        placeholder: '30 123 4567',
+    },
+    {
+        label: 'Poland',
+        value: 'PL',
+        dialCode: '+48',
+        flag: '🇵🇱',
+        mask: '999 999 999',
+        placeholder: '500 123 456',
+    },
+];
+
 const contactTypes = [
     {
         label: 'Telefón',
         value: 'phone',
         icon: 'pi pi-phone',
         valueLabel: 'Telefónne číslo',
-        placeholder: '+421 900 000 000',
+        placeholder: '900 123 456',
         inputType: 'tel',
     },
     {
@@ -69,7 +119,7 @@ const contactTypes = [
         value: 'booking_phone',
         icon: 'pi pi-calendar-plus',
         valueLabel: 'Telefónne číslo',
-        placeholder: '+421 900 000 000',
+        placeholder: '900 123 456',
         inputType: 'tel',
     },
     {
@@ -143,8 +193,16 @@ const selectedType = computed(() => {
     return contactTypes.find((item) => item.value === contactForm.type) ?? contactTypes[0];
 });
 
+const selectedPhoneCountry = computed(() => {
+    return phoneCountries.find((item) => item.value === selectedPhoneCountryCode.value) ?? phoneCountries[0];
+});
+
 const labelOptions = computed(() => {
     return labelOptionsByType[contactForm.type] ?? labelOptionsByType.other;
+});
+
+const isPhoneType = computed(() => {
+    return ['phone', 'booking_phone'].includes(contactForm.type);
 });
 
 const isCustomLabel = computed(() => contactForm.label === 'other');
@@ -157,9 +215,25 @@ const finalLabel = computed(() => {
     return contactForm.label;
 });
 
+const formattedPhonePreview = computed(() => {
+    if (!isPhoneType.value || !contactForm.value) {
+        return '';
+    }
+
+    return `${selectedPhoneCountry.value.dialCode} ${contactForm.value}`.trim();
+});
+
+const previewValue = computed(() => {
+    if (isPhoneType.value) {
+        return formattedPhonePreview.value || selectedType.value.placeholder;
+    }
+
+    return contactForm.value || selectedType.value.placeholder;
+});
+
 const valueHelpText = computed(() => {
-    if (['phone', 'booking_phone'].includes(contactForm.type)) {
-        return 'Použite medzinárodný formát, napríklad +421 900 000 000.';
+    if (isPhoneType.value) {
+        return 'Vyberte predvoľbu krajiny a zadajte iba čísla. Formát sa doplní automaticky.';
     }
 
     if (['email', 'billing_email'].includes(contactForm.type)) {
@@ -167,7 +241,7 @@ const valueHelpText = computed(() => {
     }
 
     if (['website', 'facebook', 'instagram'].includes(contactForm.type)) {
-        return 'Vložte celý odkaz vrátane https://.';
+        return 'Vložte celý odkaz vrátane https://. Ak ho nezadáte, doplní sa automaticky.';
     }
 
     return 'Zadajte hodnotu kontaktu podľa zvoleného názvu.';
@@ -176,7 +250,7 @@ const valueHelpText = computed(() => {
 const canSubmit = computed(() => {
     return Boolean(contactForm.type)
         && Boolean(finalLabel.value)
-        && Boolean(contactForm.value.trim());
+        && Boolean(String(contactForm.value || '').trim());
 });
 
 const contactTypeLabel = (type) => {
@@ -187,13 +261,68 @@ const contactTypeIcon = (type) => {
     return contactTypes.find((item) => item.value === type)?.icon ?? 'pi pi-link';
 };
 
+const normalizeEmail = (value) => {
+    return String(value || '')
+        .trim()
+        .toLowerCase();
+};
+
+const normalizeUrl = (value) => {
+    const cleanValue = String(value || '').trim();
+
+    if (!cleanValue) {
+        return '';
+    }
+
+    if (/^https?:\/\//i.test(cleanValue)) {
+        return cleanValue;
+    }
+
+    return `https://${cleanValue}`;
+};
+
+const normalizeContactValueBeforeSubmit = () => {
+    if (isPhoneType.value) {
+        contactForm.value = `${selectedPhoneCountry.value.dialCode} ${contactForm.value}`.trim();
+        return;
+    }
+
+    if (['email', 'billing_email'].includes(contactForm.type)) {
+        contactForm.value = normalizeEmail(contactForm.value);
+        return;
+    }
+
+    if (['website', 'facebook', 'instagram'].includes(contactForm.type)) {
+        contactForm.value = normalizeUrl(contactForm.value);
+    }
+};
+
+const resetContactForm = () => {
+    contactForm.reset();
+
+    contactForm.type = 'phone';
+    contactForm.label = 'Hlavný telefón';
+    contactForm.custom_label = '';
+    contactForm.value = '';
+    contactForm.is_primary = false;
+    contactForm.sort_order = 0;
+
+    selectedPhoneCountryCode.value = 'SK';
+};
+
 watch(() => contactForm.type, (newType) => {
     contactForm.value = '';
     contactForm.custom_label = '';
     contactForm.label = labelOptionsByType[newType]?.[0]?.value ?? '';
+
+    if (['phone', 'booking_phone'].includes(newType)) {
+        selectedPhoneCountryCode.value = 'SK';
+    }
 });
 
 const addContact = () => {
+    normalizeContactValueBeforeSubmit();
+
     contactForm.label = finalLabel.value;
     contactForm.is_primary = false;
     contactForm.sort_order = 0;
@@ -201,24 +330,21 @@ const addContact = () => {
     contactForm.post(route('branches.contacts.store', props.branch.id), {
         preserveScroll: true,
         onSuccess: () => {
-            contactForm.reset();
-            contactForm.type = 'phone';
-            contactForm.label = 'Hlavný telefón';
-            contactForm.custom_label = '';
-            contactForm.value = '';
-            contactForm.is_primary = false;
-            contactForm.sort_order = 0;
+            resetContactForm();
         },
     });
 };
 
 const deleteContact = (contact) => {
-    if (! confirm(`Naozaj chceš odstrániť kontakt ${contact.value}?`)) {
-        return;
-    }
-
-    router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {
-        preserveScroll: true,
+    openDialog({
+        title: 'Odstrániť kontakt',
+        message: `Naozaj chceš odstrániť kontakt ${contact.value}?`,
+        confirmLabel: 'Zmazať',
+        onConfirm: () => {
+            router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {
+                preserveScroll: true,
+            });
+        },
     });
 };
 </script>
@@ -318,12 +444,55 @@ const deleteContact = (contact) => {
                         />
                     </div>
 
-                    <div :class="isCustomLabel ? '' : 'lg:col-span-1'">
+                    <div :class="isCustomLabel ? 'lg:col-span-3' : 'lg:col-span-1'">
                         <label class="mb-1 block text-sm font-medium text-slate-700">
                             {{ selectedType.valueLabel }}
                         </label>
 
+                        <div
+                            v-if="isPhoneType"
+                            class="grid gap-3 sm:grid-cols-[4.5rem_1fr]"
+                        >
+                            <Select
+                                v-model="selectedPhoneCountryCode"
+                                :options="phoneCountries"
+                                optionLabel="label"
+                                optionValue="value"
+                                class="w-full"
+                            >
+                                <template #value="{ value }">
+                                    <div class="flex items-center gap-2">
+                                        <span>{{ selectedPhoneCountry.flag }}</span>
+                                        <span class="font-medium">{{ selectedPhoneCountry.dialCode }}</span>
+                                    </div>
+                                </template>
+
+                                <template #option="{ option }">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="flex items-center gap-2">
+                                            <span>{{ option.flag }}</span>
+                                            <span>{{ option.label }}</span>
+                                        </div>
+
+                                        <span class="text-sm text-slate-500">
+                                            {{ option.dialCode }}
+                                        </span>
+                                    </div>
+                                </template>
+                            </Select>
+
+                            <InputMask
+                                v-model="contactForm.value"
+                                :mask="selectedPhoneCountry.mask"
+                                :placeholder="selectedPhoneCountry.placeholder"
+                                class="w-full"
+                                inputmode="numeric"
+                                slotChar=""
+                            />
+                        </div>
+
                         <InputText
+                            v-else
                             v-model="contactForm.value"
                             :type="selectedType.inputType"
                             class="w-full"
@@ -342,7 +511,7 @@ const deleteContact = (contact) => {
                         </p>
                     </div>
 
-                    <div class="lg:col-span-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:col-span-3">
                         <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                             Náhľad
                         </p>
@@ -358,7 +527,7 @@ const deleteContact = (contact) => {
                                 </p>
 
                                 <p class="mt-1 truncate text-sm text-slate-500">
-                                    {{ contactForm.value || selectedType.placeholder }}
+                                    {{ previewValue }}
                                 </p>
                             </div>
                         </div>
@@ -447,5 +616,17 @@ const deleteContact = (contact) => {
                 </DataTable>
             </section>
         </div>
+
+        <ConfirmationDialog
+            :show="dialog.visible"
+            :title="dialog.title"
+            :message="dialog.message"
+            :confirm-label="dialog.confirmLabel"
+            :cancel-label="dialog.cancelLabel"
+            :confirm-severity="dialog.confirmSeverity"
+            :icon="dialog.icon"
+            @cancel="closeDialog"
+            @confirm="confirmDialog"
+        />
     </AdminLayout>
 </template>

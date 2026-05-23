@@ -20,6 +20,7 @@ class DashboardController extends Controller
                     'id',
                     'slug',
                     'legal_name',
+                    'company_id_number',
                     'email',
                     'phone',
                     'address_line_1',

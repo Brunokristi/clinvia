@@ -1,5 +1,7 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { Link, router } from '@inertiajs/vue3';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -8,14 +10,19 @@ defineProps({
     users: Object,
 });
 
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
+
 const deleteUser = (user) => {
     const userName = [user.first_name, user.last_name].filter(Boolean).join(' ');
 
-    if (! confirm(`Naozaj chceš odstrániť používateľa ${userName}?`)) {
-        return;
-    }
-
-    router.delete(route('users.destroy', user.id));
+    openDialog({
+        title: 'Odstrániť používateľa',
+        message: `Naozaj chceš odstrániť používateľa ${userName}?`,
+        confirmLabel: 'Zmazať',
+        onConfirm: () => {
+            router.delete(route('users.destroy', user.id));
+        },
+    });
 };
 </script>
 
@@ -69,5 +76,17 @@ const deleteUser = (user) => {
                 </template>
             </Column>
         </DataTable>
+
+        <ConfirmationDialog
+            :show="dialog.visible"
+            :title="dialog.title"
+            :message="dialog.message"
+            :confirm-label="dialog.confirmLabel"
+            :cancel-label="dialog.cancelLabel"
+            :confirm-severity="dialog.confirmSeverity"
+            :icon="dialog.icon"
+            @cancel="closeDialog"
+            @confirm="confirmDialog"
+        />
     </AdminLayout>
 </template>

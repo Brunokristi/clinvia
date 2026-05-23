@@ -3,6 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { useForm } from '@inertiajs/vue3';
 import BranchForm from '@/Components/Branches/BranchForm.vue';
 import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
+import { useToast } from 'primevue/usetoast';
 
 const props = defineProps({
     company: {
@@ -21,13 +22,34 @@ const form = useForm({
     address_line_2: '',
     city: '',
     postal_code: '',
+    region: '',
     country: 'Slovensko',
     website: '',
     invite_email: '',
 });
 
+const toast = useToast();
+
 const submit = () => {
-    form.post(route('branches.store'));
+    form.post(route('branches.store'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            toast.add({
+                severity: 'success',
+                summary: 'Úspech',
+                detail: 'Pobočka bola úspešne vytvorená.',
+                life: 3000,
+            });
+        },
+        onError: () => {
+            toast.add({
+                severity: 'error',
+                summary: 'Chyba',
+                detail: 'Nepodarilo sa vytvoriť pobočku.',
+                life: 3000,
+            });
+        },
+    });
 };
 </script>
 
@@ -37,7 +59,7 @@ const submit = () => {
             Pridať pobočku
         </h1>
 
-        <form class="max-w-4xl space-y-6" @submit.prevent="submit">
+        <form class="space-y-6" @submit.prevent="submit">
             <BranchForm
                 :form="form"
                 :company="company"
@@ -45,16 +67,6 @@ const submit = () => {
                 :show-company-select="!company"
                 submit-label="Vytvoriť"
                 :loading="form.processing"
-            />
-
-            <InvitationFormSection
-                :form="form"
-                title="Pozvánka pre branch admina"
-                description="Ak chcete, môžete hneď po vytvorení pobočky poslať pozvánku osobe, ktorá ju bude spravovať."
-                input-label="Email branch admina"
-                submit-label="Vytvoriť pobočku a poslať pozvánku"
-                :loading="form.processing"
-                :show-button="false"
             />
         </form>
     </AdminLayout>

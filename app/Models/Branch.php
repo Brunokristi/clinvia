@@ -22,6 +22,7 @@ class Branch extends Model
         'address_line_2',
         'city',
         'postal_code',
+        'region',
         'country',
         'latitude',
         'longitude',
@@ -58,6 +59,13 @@ class Branch extends Model
     public function userBranches(): HasMany
     {
         return $this->hasMany(UserBranch::class);
+    }
+
+    public function branchInvitations(): HasMany
+    {
+        return $this->hasMany(BranchInvitation::class)
+            ->whereNull('accepted_at')
+            ->latest();
     }
 
     public function users(): BelongsToMany

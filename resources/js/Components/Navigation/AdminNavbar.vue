@@ -75,6 +75,12 @@ const companyLinks = computed(() => {
             active: route().current('companies.branches'),
             icon: 'pi pi-map-marker',
         },
+        {
+            label: 'Používatelia',
+            href: route('companies.users.page', company.value),
+            active: route().current('companies.users.page'),
+            icon: 'pi pi-users',
+        },
         ...(isSuperAdmin.value ? [
             {
                 label: 'API kľúče',

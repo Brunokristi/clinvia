@@ -16,12 +16,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class UserInvitationService
 {
     public function sendCompanyInvitation(Company $company, string $email, ?User $invitedBy = null): CompanyInvitation
     {
-        [$invitation, $plainToken] = $this->createCompanyInvitation($company, $email, $invitedBy);
+        $this->ensureCompanyInvitationCanBeSent($company, $email);
+
+        [$invitation, $plainToken] = $this->issueCompanyInvitation($company, $email, $invitedBy);
+
+        Mail::to($invitation->email)->send(new CompanyInvitationMail($invitation, $plainToken));
+
+        return $invitation;
+    }
+
+    public function resendCompanyInvitation(CompanyInvitation $invitation, ?User $invitedBy = null): CompanyInvitation
+    {
+        [$invitation, $plainToken] = $this->issueCompanyInvitation($invitation->company, $invitation->email, $invitedBy, $invitation);
 
         Mail::to($invitation->email)->send(new CompanyInvitationMail($invitation, $plainToken));
 
@@ -30,7 +42,18 @@ class UserInvitationService
 
     public function sendBranchInvitation(Branch $branch, string $email, ?User $invitedBy = null): BranchInvitation
     {
-        [$invitation, $plainToken] = $this->createBranchInvitation($branch, $email, $invitedBy);
+        $this->ensureBranchInvitationCanBeSent($branch, $email, $invitedBy);
+
+        [$invitation, $plainToken] = $this->issueBranchInvitation($branch, $email, $invitedBy);
+
+        Mail::to($invitation->email)->send(new BranchInvitationMail($invitation, $plainToken));
+
+        return $invitation;
+    }
+
+    public function resendBranchInvitation(BranchInvitation $invitation, ?User $invitedBy = null): BranchInvitation
+    {
+        [$invitation, $plainToken] = $this->issueBranchInvitation($invitation->branch, $invitation->email, $invitedBy, $invitation);
 
         Mail::to($invitation->email)->send(new BranchInvitationMail($invitation, $plainToken));
 
@@ -40,6 +63,12 @@ class UserInvitationService
     public function acceptExistingCompanyInvitation(CompanyInvitation $invitation, User $user): void
     {
         DB::transaction(function () use ($invitation, $user) {
+            if (! $user->isSuperAdmin()) {
+                $user->forceFill([
+                    'global_role' => 'admin',
+                ])->save();
+            }
+
             UserCompany::firstOrCreate([
                 'user_id' => $user->id,
                 'company_id' => $invitation->company_id,
@@ -127,33 +156,114 @@ class UserInvitationService
         });
     }
 
-    private function createCompanyInvitation(Company $company, string $email, ?User $invitedBy): array
+    private function issueCompanyInvitation(Company $company, string $email, ?User $invitedBy, ?CompanyInvitation $invitation = null): array
     {
         $plainToken = Str::random(64);
 
-        $invitation = CompanyInvitation::create([
+        $payload = [
             'company_id' => $company->id,
             'invited_by_user_id' => $invitedBy?->id,
             'email' => $email,
             'token_hash' => Hash::make($plainToken),
             'expires_at' => now()->addDays(7),
-        ]);
+            'accepted_at' => null,
+        ];
+
+        if ($invitation) {
+            $invitation->forceFill($payload)->save();
+
+            return [$invitation, $plainToken];
+        }
+
+        $invitation = CompanyInvitation::create($payload);
 
         return [$invitation, $plainToken];
     }
 
-    private function createBranchInvitation(Branch $branch, string $email, ?User $invitedBy): array
+    private function issueBranchInvitation(Branch $branch, string $email, ?User $invitedBy, ?BranchInvitation $invitation = null): array
     {
         $plainToken = Str::random(64);
 
-        $invitation = BranchInvitation::create([
+        $payload = [
             'branch_id' => $branch->id,
             'invited_by_user_id' => $invitedBy?->id,
             'email' => $email,
             'token_hash' => Hash::make($plainToken),
             'expires_at' => now()->addDays(7),
-        ]);
+            'accepted_at' => null,
+        ];
+
+        if ($invitation) {
+            $invitation->forceFill($payload)->save();
+
+            return [$invitation, $plainToken];
+        }
+
+        $invitation = BranchInvitation::create($payload);
 
         return [$invitation, $plainToken];
+    }
+
+    private function ensureCompanyInvitationCanBeSent(Company $company, string $email): void
+    {
+        $normalizedEmail = Str::lower($email);
+
+        if ($company->users()
+            ->whereRaw('LOWER(users.email) = ?', [$normalizedEmail])
+            ->wherePivot('is_active', true)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Tento používateľ už má aktívny prístup k firme.',
+            ]);
+        }
+
+        if ($company->companyInvitations()
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->whereNull('accepted_at')
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Pre tento email už existuje pozvánka. Použi znovu odoslať.',
+            ]);
+        }
+    }
+
+    private function ensureBranchInvitationCanBeSent(Branch $branch, string $email, ?User $invitedBy): void
+    {
+        $normalizedEmail = Str::lower($email);
+
+        $existingUser = User::query()
+            ->select(['id', 'email', 'global_role'])
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->first();
+
+        if ($invitedBy !== null && Str::lower($invitedBy->email) === $normalizedEmail) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Nemôžeš pozvať samého seba ako branch admina.',
+            ]);
+        }
+
+        if ($existingUser && in_array($existingUser->global_role, ['super_admin', 'admin'], true)) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Admina nemožno pozvať ako branch admina. Pošli mu pozvánku do firmy.',
+            ]);
+        }
+
+        if ($branch->users()
+            ->whereRaw('LOWER(users.email) = ?', [$normalizedEmail])
+            ->wherePivot('is_active', true)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Tento používateľ už má aktívny prístup k pobočke.',
+            ]);
+        }
+
+        if ($branch->branchInvitations()
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->whereNull('accepted_at')
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'invite_email' => 'Pre tento email už existuje pozvánka. Použi znovu odoslať.',
+            ]);
+        }
     }
 }

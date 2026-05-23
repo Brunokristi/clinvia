@@ -1,6 +1,8 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
-import { Link } from '@inertiajs/vue3';
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
+import { Link, router } from '@inertiajs/vue3';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 
@@ -11,6 +13,21 @@ defineProps({
         default: () => [],
     },
 });
+
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
+
+const deleteBranch = (branch) => {
+    openDialog({
+        title: 'Odstrániť pobočku',
+        message: `Naozaj chceš odstrániť pobočku ${branch.name}?`,
+        confirmLabel: 'Odstrániť',
+        onConfirm: () => {
+            router.delete(route('branches.destroy', branch.id), {
+                preserveScroll: true,
+            });
+        },
+    });
+};
 </script>
 
 <template>
@@ -59,15 +76,37 @@ defineProps({
 
                 <Column header="Akcie">
                     <template #body="{ data }">
-                        <Link
-                            :href="route('branches.edit', data.id)"
-                            class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                            Otvoriť detail
-                        </Link>
+                        <div class="flex gap-2">
+                            <Link
+                                :href="route('branches.edit', data.id)"
+                                class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                            >
+                                Otvoriť detail
+                            </Link>
+
+                            <button
+                                type="button"
+                                class="inline-flex items-center rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
+                                @click="deleteBranch(data)"
+                            >
+                                Zmazať
+                            </button>
+                        </div>
                     </template>
                 </Column>
             </DataTable>
+
+            <ConfirmationDialog
+                :show="dialog.visible"
+                :title="dialog.title"
+                :message="dialog.message"
+                :confirm-label="dialog.confirmLabel"
+                :cancel-label="dialog.cancelLabel"
+                :confirm-severity="dialog.confirmSeverity"
+                :icon="dialog.icon"
+                @cancel="closeDialog"
+                @confirm="confirmDialog"
+            />
         </section>
     </AdminLayout>
 </template>

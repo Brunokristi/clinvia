@@ -28,6 +28,7 @@ const form = useForm({
     address_line_2: props.branch.address_line_2 ?? '',
     city: props.branch.city ?? '',
     postal_code: props.branch.postal_code ?? '',
+    region: props.branch.region ?? '',
     country: props.branch.country ?? 'Slovensko',
     website: props.branch.website ?? '',
     invite_email: props.branch.invite_email ?? '',
@@ -65,7 +66,7 @@ const submit = () => {
             Upraviť pobočku
         </h1>
 
-        <form class="max-w-4xl" @submit.prevent="submit">
+        <form class="space-y-6" @submit.prevent="submit">
             <BranchForm
                 :form="form"
                 :company="company"

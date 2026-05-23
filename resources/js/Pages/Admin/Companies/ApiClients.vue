@@ -1,6 +1,8 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import ApiClientForm from '@/Components/ApiClients/ApiClientForm.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -21,18 +23,24 @@ defineProps({
 const page = usePage();
 
 const createDialogOpen = ref(false);
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
 const closeCreateDialog = () => {
     createDialogOpen.value = false;
 };
 
 const regenerateApiClient = (apiClient) => {
-    if (!confirm(`Pregenerovať token pre ${apiClient.name}? Starý token prestane fungovať.`)) {
-        return;
-    }
-
-    router.post(route('api-clients.regenerate', apiClient.id), {}, {
-        preserveScroll: true,
+    openDialog({
+        title: 'Pregenerovať API token',
+        message: `Pregenerovať token pre ${apiClient.name}? Starý token prestane fungovať.`,
+        confirmLabel: 'Pregenerovať',
+        confirmSeverity: 'warning',
+        icon: 'pi pi-refresh',
+        onConfirm: () => {
+            router.post(route('api-clients.regenerate', apiClient.id), {}, {
+                preserveScroll: true,
+            });
+        },
     });
 };
 
@@ -200,5 +208,17 @@ const formatDateTime = (value) => {
                 @created="closeCreateDialog"
             />
         </Dialog>
+
+        <ConfirmationDialog
+            :show="dialog.visible"
+            :title="dialog.title"
+            :message="dialog.message"
+            :confirm-label="dialog.confirmLabel"
+            :cancel-label="dialog.cancelLabel"
+            :confirm-severity="dialog.confirmSeverity"
+            :icon="dialog.icon"
+            @cancel="closeDialog"
+            @confirm="confirmDialog"
+        />
     </AdminLayout>
 </template>

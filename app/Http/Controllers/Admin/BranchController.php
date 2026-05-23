@@ -109,6 +109,7 @@ class BranchController extends Controller
             'address_line_2' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:255'],
+            'region' => ['nullable', 'string', 'max:255'],
             'country' => ['nullable', 'string', 'max:255'],
 
             'website' => ['nullable', 'string', 'max:255'],
@@ -141,7 +142,7 @@ class BranchController extends Controller
         }
 
         return redirect()
-            ->route('branches.index')
+            ->route('branches.edit', $branch)
             ->with('success', 'Pobočka bola vytvorená' . (! empty($data['invite_email']) ? ' a pozvánka bola odoslaná.' : '.'));
     }
 
@@ -181,7 +182,12 @@ class BranchController extends Controller
         abort_if(! request()->user()->canAccessBranch($branch), 403);
 
         return Inertia::render('Admin/Branches/Users', [
-            'branch' => $branch->load(['company:id,legal_name,slug', 'company.users:id,first_name,last_name,email,global_role,is_active', 'users:id,first_name,last_name,email,global_role,is_active']),
+            'branch' => $branch->load([
+                'company:id,legal_name,slug',
+                'company.users:id,first_name,last_name,email,global_role,is_active',
+                'users:id,first_name,last_name,email,global_role,is_active',
+                'branchInvitations.invitedBy:id,first_name,last_name,email',
+            ]),
             'availableUsers' => User::query()
                 ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
                 ->whereIn('global_role', ['admin', 'editor', 'viewer'])
@@ -275,6 +281,7 @@ class BranchController extends Controller
             'address_line_2' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:255'],
+            'region' => ['nullable', 'string', 'max:255'],
             'country' => ['nullable', 'string', 'max:255'],
 
             'website' => ['nullable', 'string', 'max:255'],
@@ -298,7 +305,7 @@ class BranchController extends Controller
         $branch->update($data);
 
         return redirect()
-            ->route('branches.index')
+            ->route('branches.edit', $branch)
             ->with('success', 'Pobočka bola upravená.');
     }
 
@@ -309,7 +316,7 @@ class BranchController extends Controller
         $branch->delete();
 
         return redirect()
-            ->route('branches.index')
+            ->route('companies.branches', $branch->company_id)
             ->with('success', 'Pobočka bola odstránená.');
     }
 
@@ -319,6 +326,7 @@ class BranchController extends Controller
             $data['address_line_1'] ?? null,
             $data['address_line_2'] ?? null,
             $data['postal_code'] ?? null,
+            $data['region'] ?? null,
             $data['city'] ?? null,
             $data['country'] ?? null,
         ]);

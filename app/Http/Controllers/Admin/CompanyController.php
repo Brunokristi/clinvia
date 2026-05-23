@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
-use App\Models\CompanyInvitation;
 use App\Models\User;
 use App\Models\UserCompany;
 use App\Services\UserInvitationService;
@@ -203,6 +202,20 @@ class CompanyController extends Controller
         ]);
     }
 
+    public function users(Company $company): Response
+    {
+        $user = request()->user();
+
+        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+
+        return Inertia::render('Admin/Companies/Users', [
+            'company' => $company->load([
+                'users:id,first_name,last_name,email,global_role,is_active',
+                'companyInvitations.invitedBy:id,first_name,last_name,email',
+            ]),
+        ]);
+    }
+
     public function update(Request $request, Company $company): RedirectResponse
     {
         abort_if(! $request->user()->canAccessCompany($company->id), 403);
@@ -236,7 +249,7 @@ class CompanyController extends Controller
         $company->update($data);
 
         return redirect()
-            ->route('companies.index')
+            ->route('companies.edit', $company)
             ->with('success', 'Firma bola upravená.');
     }
 

@@ -1,10 +1,11 @@
 <script setup>
+import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { Link, router } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import InputText from 'primevue/inputtext';
-import Dialog from 'primevue/dialog';
 import { FilterMatchMode } from '@primevue/core/api';
 import { computed, ref } from 'vue';
 
@@ -43,6 +44,8 @@ const props = defineProps({
     },
 });
 
+const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
+
 const rows = computed(() => {
     return Array.isArray(props.companies)
         ? props.companies
@@ -70,14 +73,13 @@ const filters = ref({
     },
 });
 
-const deleteDialogVisible = ref(false);
 const selectedCompanyToDelete = ref(null);
 
 const tableRows = computed(() => {
     return rows.value.map((company) => ({
         ...company,
         legal_name: company.legal_name || company.name || '',
-        company_number: company.id_number || company.company_id_number || '',
+        company_number: String(company.id_number || company.company_id_number || ''),
     }));
 });
 
@@ -87,12 +89,18 @@ const companyName = (company) => {
 
 const openDeleteDialog = (company) => {
     selectedCompanyToDelete.value = company;
-    deleteDialogVisible.value = true;
+
+    openDialog({
+        title: 'Odstrániť firmu',
+        message: `Naozaj chceš odstrániť firmu ${companyName(company)}?`,
+        confirmLabel: 'Odstrániť',
+        onConfirm: deleteCompany,
+    });
 };
 
 const closeDeleteDialog = () => {
-    deleteDialogVisible.value = false;
     selectedCompanyToDelete.value = null;
+    closeDialog();
 };
 
 const deleteCompany = () => {
@@ -211,7 +219,11 @@ const linkClass = (link) => {
                 sortable
                 filter
                 filterPlaceholder="Filtrovať IČO"
-            />
+            >
+                <template #body="{ data }">
+                    <span>{{ data.company_number || '—' }}</span>
+                </template>
+            </Column>
 
             <Column
                 v-if="showActions"
@@ -271,37 +283,16 @@ const linkClass = (link) => {
             </template>
         </div>
 
-        <Dialog
-            v-model:visible="deleteDialogVisible"
-            modal
-            header="Odstrániť firmu"
-            :style="{ width: '32rem' }"
-            @hide="closeDeleteDialog"
-        >
-            <div class="space-y-4">
-                <p class="text-sm text-slate-600">
-                    Naozaj chceš odstrániť firmu <strong>{{ companyName(selectedCompanyToDelete) }}</strong>?
-                </p>
-
-                <p class="text-sm text-red-600">
-                    Táto akcia sa nedá vrátiť späť.
-                </p>
-            </div>
-
-            <template #footer>
-                <Button
-                    label="Zrušiť"
-                    severity="secondary"
-                    outlined
-                    @click="closeDeleteDialog"
-                />
-
-                <Button
-                    label="Odstrániť"
-                    severity="danger"
-                    @click="deleteCompany"
-                />
-            </template>
-        </Dialog>
+        <ConfirmationDialog
+            :show="dialog.visible"
+            :title="dialog.title"
+            :message="dialog.message"
+            :confirm-label="dialog.confirmLabel"
+            :cancel-label="dialog.cancelLabel"
+            :confirm-severity="dialog.confirmSeverity"
+            :icon="dialog.icon"
+            @cancel="closeDeleteDialog"
+            @confirm="confirmDialog"
+        />
     </section>
 </template>
