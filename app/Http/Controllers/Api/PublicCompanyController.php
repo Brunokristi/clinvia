@@ -44,43 +44,37 @@ class PublicCompanyController extends Controller
                     ->orderBy('employees.first_name');
             },
 
-            'branches.branchServices' => function ($query) {
-                $query
-                    ->where('is_available', true)
-                    ->orderBy('sort_order');
-            },
-
-            'branches.branchServices.prices' => function ($query) {
-                $query
-                    ->where('is_visible', true)
-                    ->orderBy('sort_order');
-            },
-
-            'branches.branchServices.service.category',
-
-            'branches.branchServices.service.information' => function ($query) {
+            'branches.services' => function ($query) {
                 $query
                     ->where('is_active', true)
                     ->orderBy('sort_order');
             },
 
-            'branches.branchServices.service.necessities' => function ($query) {
+            'branches.services.category',
+
+            'branches.services.information' => function ($query) {
                 $query
                     ->where('is_active', true)
                     ->orderBy('sort_order');
             },
 
-            'branches.branchServices.service.steps' => function ($query) {
+            'branches.services.necessities' => function ($query) {
                 $query
                     ->where('is_active', true)
                     ->orderBy('sort_order');
             },
 
-            'branches.branchServices.service.tags' => function ($query) {
+            'branches.services.steps' => function ($query) {
+                $query
+                    ->where('is_active', true)
+                    ->orderBy('sort_order');
+            },
+
+            'branches.services.tags' => function ($query) {
                 $query->orderBy('sort_order');
             },
 
-            'branches.branchServices.service.files' => function ($query) {
+            'branches.services.files' => function ($query) {
                 $query
                     ->where('is_active', true)
                     ->orderBy('sort_order');
@@ -122,35 +116,29 @@ class PublicCompanyController extends Controller
                         'opening_hours' => $branch->openingHours,
                         'employees' => $branch->employees,
 
-                        'services' => $branch->branchServices->map(function ($branchService) {
-                            $service = $branchService->service;
-
+                        'services' => $branch->services->map(function ($service) {
                             return [
-                                'id' => $branchService->id,
-                                'service_id' => $service->id,
-                                'title' => $branchService->custom_title ?: $service->name,
-                                'custom_title' => $branchService->custom_title,
-                                'custom_description' => $branchService->custom_description,
-                                'is_available' => $branchService->is_available,
-                                'sort_order' => $branchService->sort_order,
-                                'prices' => $branchService->prices,
-
-                                'service' => [
-                                    'id' => $service->id,
-                                    'category' => $service->category,
-                                    'name' => $service->name,
-                                    'slug' => $service->slug,
-                                    'short_description' => $service->short_description,
-                                    'description' => $service->description,
-                                    'icon' => $service->icon,
-                                    'featured_image_path' => $service->featured_image_path,
-                                    'duration_minutes' => $service->duration_minutes,
-                                    'information' => $service->information,
-                                    'necessities' => $service->necessities,
-                                    'steps' => $service->steps,
-                                    'tags' => $service->tags,
-                                    'files' => $service->files,
-                                ],
+                                'id' => $service->id,
+                                'name' => $service->name,
+                                'slug' => $service->slug,
+                                'short_description' => $service->short_description,
+                                'description' => $service->description,
+                                'icon' => $service->icon,
+                                'featured_image_path' => $service->featured_image_path,
+                                'duration_sessions' => $service->duration_sessions,
+                                'duration_minutes' => $service->duration_minutes,
+                                'is_active' => $service->is_active,
+                                'sort_order' => $service->sort_order,
+                                'insurance_amount' => $service->insurance_amount,
+                                'insurance_note' => $service->insurance_note,
+                                'self_pay_amount' => $service->self_pay_amount,
+                                'self_pay_note' => $service->self_pay_note,
+                                'category' => $service->category,
+                                'information' => $service->information,
+                                'necessities' => $service->necessities,
+                                'steps' => $service->steps,
+                                'tags' => $service->tags,
+                                'files' => $service->files,
                             ];
                         }),
                     ];

@@ -237,26 +237,7 @@ class BranchController extends Controller
         abort_if(! request()->user()->canAccessBranch($branch), 403);
 
         return Inertia::render('Admin/Branches/Services', [
-            'branch' => $branch->load(['company:id,legal_name,slug', 'branchServices.service.category', 'branchServices.prices']),
-            'availableServices' => Service::query()
-                ->select([
-                    'id',
-                    'company_id',
-                    'category_id',
-                    'name',
-                    'slug',
-                    'short_description',
-                    'duration_minutes',
-                    'is_active',
-                ])
-                ->with('category:id,name')
-                ->where('company_id', $branch->company_id)
-                ->where('is_active', true)
-                ->whereDoesntHave('branches', function ($query) use ($branch) {
-                    $query->where('branches.id', $branch->id);
-                })
-                ->orderBy('name')
-                ->get(),
+            'branch' => $branch->load(['company:id,legal_name,slug', 'services.category']),
             'categories' => Category::query()
                 ->select(['id', 'name'])
                 ->where('company_id', $branch->company_id)

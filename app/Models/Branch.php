@@ -83,15 +83,8 @@ class Branch extends Model
             ->orderBy('branch_employees.sort_order');
     }
 
-    public function branchServices(): HasMany
+    public function services(): HasMany
     {
-        return $this->hasMany(BranchService::class)->orderBy('sort_order');
-    }
-
-    public function services(): BelongsToMany
-    {
-        return $this->belongsToMany(Service::class, 'branch_services')
-            ->withPivot(['custom_title', 'custom_description', 'is_available', 'sort_order'])
-            ->withTimestamps();
+        return $this->hasMany(Service::class)->orderBy('sort_order');
     }
 }

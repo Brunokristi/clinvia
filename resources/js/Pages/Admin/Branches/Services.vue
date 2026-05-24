@@ -23,76 +23,34 @@ const props = defineProps({
 
 const toast = useToast();
 
-const createServiceDialogVisible = ref(false);
-const editServiceDialogVisible = ref(false);
-const editingBranchService = ref(null);
+const createDialogVisible = ref(false);
+const editDialogVisible = ref(false);
+const editingService = ref(null);
 
 const newCategoryValue = '__new_category__';
 
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
 const makeEmptyServiceData = () => ({
-    service: {
-        category_id: null,
-        new_category_name: '',
-        name: '',
-        slug: '',
-        short_description: '',
-        description: '',
-        icon: '',
-        duration_sessions: 1,
-        duration_minutes: null,
-        is_active: true,
-        sort_order: 0,
-    },
-
-    branch_service: {
-        custom_title: '',
-        custom_description: '',
-        is_available: true,
-        sort_order: 0,
-    },
-
-    prices: {
-        insurance_amount: null,
-        insurance_note: '',
-        self_pay_amount: null,
-        self_pay_note: '',
-    },
-
-    information: [
-        {
-            text: '',
-            is_active: true,
-            sort_order: 0,
-        },
-    ],
-
-    necessities: [
-        {
-            text: '',
-            is_active: true,
-            sort_order: 0,
-        },
-    ],
-
-    steps: [
-        {
-            number: 1,
-            title: '',
-            text: '',
-            is_active: true,
-            sort_order: 0,
-        },
-    ],
-
-    tags: [],
-    tag_name: '',
-    files: [],
+    category_id: null,
+    new_category_name: '',
+    name: '',
+    slug: '',
+    short_description: '',
+    description: '',
+    icon: '',
+    duration_sessions: 1,
+    duration_minutes: null,
+    is_available: true,
+    sort_order: 0,
+    insurance_amount: null,
+    insurance_note: '',
+    self_pay_amount: null,
+    self_pay_note: '',
 });
 
-const createServiceForm = useForm(makeEmptyServiceData());
-const editServiceForm = useForm(makeEmptyServiceData());
+const createForm = useForm(makeEmptyServiceData());
+const editForm = useForm(makeEmptyServiceData());
 
 const categoryOptions = computed(() => {
     return [
@@ -115,304 +73,151 @@ const slugify = (value) => {
         .replace(/^-+|-+$/g, '');
 };
 
-const generatedCreateSlug = computed(() => {
-    return slugify(createServiceForm.service.name);
-});
+const generatedCreateSlug = computed(() => slugify(createForm.name));
 
-const branchServiceTitle = (branchService) => {
-    return branchService.custom_title || branchService.service?.name || '—';
+const serviceTitle = (service) => service.name || '—';
+const serviceCategoryName = (service) => service.category?.name || 'Bez kategórie';
+const serviceIcon = (service) => service.icon || 'pi pi-briefcase';
+
+const formatPrice = (amount) => {
+    if (amount === null || amount === undefined) return '—';
+    return `${amount} EUR`;
 };
 
-const serviceDisplayName = (service) => {
-    return service?.name ?? '—';
-};
+const serviceDuration = (service) => {
+    const sessions = service.duration_sessions;
+    const minutes = service.duration_minutes;
 
-const getServicePrice = (branchService, type) => {
-    return branchService.prices?.find((price) => price.price_type === type) ?? null;
-};
-
-const formatPrice = (price) => {
-    if (!price || price.amount === null || price.amount === undefined) {
-        return '—';
-    }
-
-    return `${price.amount} ${price.currency ?? 'EUR'}`;
-};
-
-const serviceCategoryName = (branchService) => {
-    return branchService.service?.category?.name || 'Bez kategórie';
-};
-
-const serviceIcon = (branchService) => {
-    return branchService.service?.icon || 'pi pi-briefcase';
-};
-
-const serviceDuration = (branchService) => {
-    const sessions = branchService.service?.duration_sessions;
-    const minutes = branchService.service?.duration_minutes;
-
-    if (!minutes) {
-        return '—';
-    }
-
-    if (!sessions || sessions === 1) {
-        return `${minutes} min`;
-    }
-
+    if (!minutes) return '—';
+    if (!sessions || sessions === 1) return `${minutes} min`;
     return `${sessions} × ${minutes} min`;
 };
 
-const resetServiceForm = (form) => {
-    const emptyData = makeEmptyServiceData();
-
+const resetForm = (form) => {
+    const empty = makeEmptyServiceData();
     form.clearErrors();
-
-    form.service = { ...emptyData.service };
-    form.branch_service = { ...emptyData.branch_service };
-    form.prices = { ...emptyData.prices };
-    form.information = [...emptyData.information];
-    form.necessities = [...emptyData.necessities];
-    form.steps = [...emptyData.steps];
-    form.tags = [];
-    form.tag_name = '';
-    form.files = [];
+    Object.assign(form, empty);
 };
 
-const openCreateServiceDialog = () => {
-    resetServiceForm(createServiceForm);
-    createServiceDialogVisible.value = true;
+const openCreateDialog = () => {
+    resetForm(createForm);
+    createDialogVisible.value = true;
 };
 
-const closeCreateServiceDialog = () => {
-    createServiceDialogVisible.value = false;
-    resetServiceForm(createServiceForm);
+const closeCreateDialog = () => {
+    createDialogVisible.value = false;
+    resetForm(createForm);
 };
 
-const fillEditServiceForm = (branchService) => {
-    const service = branchService.service ?? {};
-    const insurancePrice = getServicePrice(branchService, 'insurance');
-    const selfPayPrice = getServicePrice(branchService, 'self_pay');
-
-    editServiceForm.clearErrors();
-
-    editServiceForm.service = {
-        category_id: service.category_id ?? service.category?.id ?? null,
-        new_category_name: '',
-        name: service.name ?? '',
-        slug: service.slug ?? '',
-        short_description: service.short_description ?? '',
-        description: service.description ?? '',
-        icon: service.icon ?? '',
-        duration_sessions: service.duration_sessions ?? 1,
-        duration_minutes: service.duration_minutes ?? null,
-        is_active: Boolean(service.is_active ?? true),
-        sort_order: service.sort_order ?? 0,
-    };
-
-    editServiceForm.branch_service = {
-        custom_title: branchService.custom_title ?? '',
-        custom_description: branchService.custom_description ?? '',
-        is_available: Boolean(branchService.is_available ?? true),
-        sort_order: branchService.sort_order ?? 0,
-    };
-
-    editServiceForm.prices = {
-        insurance_amount: insurancePrice?.amount ?? null,
-        insurance_note: insurancePrice?.note ?? '',
-        self_pay_amount: selfPayPrice?.amount ?? null,
-        self_pay_note: selfPayPrice?.note ?? '',
-    };
-
-    editServiceForm.information = service.information?.length
-        ? service.information.map((item, index) => ({
-            text: item.text ?? '',
-            is_active: Boolean(item.is_active ?? true),
-            sort_order: item.sort_order ?? index,
-        }))
-        : [
-            {
-                text: '',
-                is_active: true,
-                sort_order: 0,
-            },
-        ];
-
-    editServiceForm.necessities = service.necessities?.length
-        ? service.necessities.map((item, index) => ({
-            text: item.text ?? '',
-            is_active: Boolean(item.is_active ?? true),
-            sort_order: item.sort_order ?? index,
-        }))
-        : [
-            {
-                text: '',
-                is_active: true,
-                sort_order: 0,
-            },
-        ];
-
-    editServiceForm.steps = service.steps?.length
-        ? service.steps.map((step, index) => ({
-            number: step.number ?? index + 1,
-            title: step.title ?? '',
-            text: step.text ?? '',
-            is_active: Boolean(step.is_active ?? true),
-            sort_order: step.sort_order ?? index,
-        }))
-        : [
-            {
-                number: 1,
-                title: '',
-                text: '',
-                is_active: true,
-                sort_order: 0,
-            },
-        ];
-
-    editServiceForm.tags = service.tags?.length
-        ? service.tags.map((tag, index) => ({
-            name: tag.name ?? '',
-            sort_order: tag.sort_order ?? index,
-        }))
-        : [];
-
-    editServiceForm.tag_name = '';
-    editServiceForm.files = [];
+const fillEditForm = (service) => {
+    editForm.clearErrors();
+    editForm.category_id = service.category_id ?? service.category?.id ?? null;
+    editForm.new_category_name = '';
+    editForm.name = service.name ?? '';
+    editForm.slug = service.slug ?? '';
+    editForm.short_description = service.short_description ?? '';
+    editForm.description = service.description ?? '';
+    editForm.icon = service.icon ?? '';
+    editForm.duration_sessions = service.duration_sessions ?? 1;
+    editForm.duration_minutes = service.duration_minutes ?? null;
+    editForm.is_available = Boolean(service.is_active ?? true);
+    editForm.sort_order = service.sort_order ?? 0;
+    editForm.insurance_amount = service.insurance_amount ?? null;
+    editForm.insurance_note = service.insurance_note ?? '';
+    editForm.self_pay_amount = service.self_pay_amount ?? null;
+    editForm.self_pay_note = service.self_pay_note ?? '';
 };
 
-const openEditServiceDialog = (branchService) => {
-    editingBranchService.value = branchService;
-    fillEditServiceForm(branchService);
-    editServiceDialogVisible.value = true;
+const openEditDialog = (service) => {
+    editingService.value = service;
+    fillEditForm(service);
+    editDialogVisible.value = true;
 };
 
-const closeEditServiceDialog = () => {
-    editServiceDialogVisible.value = false;
-    editingBranchService.value = null;
-    resetServiceForm(editServiceForm);
+const closeEditDialog = () => {
+    editDialogVisible.value = false;
+    editingService.value = null;
+    resetForm(editForm);
 };
 
-const makeCreateServicePayload = (form, slug) => {
+const createService = () => {
     const payload = {
-        create_new: true,
-        category_id: form.service.category_id === newCategoryValue ? null : form.service.category_id,
-        new_category_name: form.service.new_category_name,
-        name: form.service.name,
-        slug,
-        short_description: form.service.short_description,
-        description: form.service.description,
-        icon: form.service.icon,
-        duration_sessions: form.service.duration_sessions,
-        duration_minutes: form.service.duration_minutes,
-
-        custom_title: form.branch_service.custom_title,
-        custom_description: form.branch_service.custom_description,
-        is_available: form.branch_service.is_available,
-        sort_order: form.branch_service.sort_order,
+        category_id: createForm.category_id === newCategoryValue ? null : createForm.category_id,
+        new_category_name: createForm.new_category_name,
+        name: createForm.name,
+        slug: generatedCreateSlug.value,
+        short_description: createForm.short_description,
+        description: createForm.description,
+        icon: createForm.icon,
+        duration_sessions: createForm.duration_sessions,
+        duration_minutes: createForm.duration_minutes,
+        is_available: createForm.is_available,
+        sort_order: createForm.sort_order,
+        insurance_amount: createForm.insurance_amount,
+        insurance_note: createForm.insurance_note,
+        self_pay_amount: createForm.self_pay_amount,
+        self_pay_note: createForm.self_pay_note,
     };
 
-    return payload;
-};
-
-const makeUpdateServicePayload = (form) => {
-    return {
-        custom_title: form.branch_service.custom_title,
-        custom_description: form.branch_service.custom_description,
-        is_available: form.branch_service.is_available,
-        sort_order: form.branch_service.sort_order,
-
-        insurance_amount: form.prices.insurance_amount,
-        insurance_note: form.prices.insurance_note,
-        self_pay_amount: form.prices.self_pay_amount,
-        self_pay_note: form.prices.self_pay_note,
-    };
-};
-
-const createFullService = () => {
-    const payload = makeCreateServicePayload(createServiceForm, generatedCreateSlug.value);
-
-    createServiceForm
+    createForm
         .transform(() => payload)
         .post(route('branches.services.store', props.branch.id), {
             preserveScroll: true,
-            forceFormData: true,
             onSuccess: () => {
-                toast.add({
-                    severity: 'success',
-                    summary: 'Úspech',
-                    detail: 'Služba bola vytvorená.',
-                    life: 3000,
-                });
-
-                closeCreateServiceDialog();
+                toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola vytvorená.', life: 3000 });
+                closeCreateDialog();
             },
             onError: () => {
-                toast.add({
-                    severity: 'error',
-                    summary: 'Chyba',
-                    detail: 'Nepodarilo sa vytvoriť službu.',
-                    life: 3000,
-                });
+                toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa vytvoriť službu.', life: 3000 });
             },
         });
 };
 
-const updateFullService = () => {
-    if (!editingBranchService.value) {
-        return;
-    }
+const updateService = () => {
+    if (!editingService.value) return;
 
-    const payload = makeUpdateServicePayload(editServiceForm);
+    const payload = {
+        name: editForm.name,
+        short_description: editForm.short_description,
+        description: editForm.description,
+        icon: editForm.icon,
+        duration_sessions: editForm.duration_sessions,
+        duration_minutes: editForm.duration_minutes,
+        is_available: editForm.is_available,
+        sort_order: editForm.sort_order,
+        insurance_amount: editForm.insurance_amount,
+        insurance_note: editForm.insurance_note,
+        self_pay_amount: editForm.self_pay_amount,
+        self_pay_note: editForm.self_pay_note,
+    };
 
-    editServiceForm
+    editForm
         .transform(() => payload)
-        .post(route('branches.services.update', [props.branch.id, editingBranchService.value.id]), {
+        .put(route('branches.services.update', [props.branch.id, editingService.value.id]), {
             preserveScroll: true,
-            forceFormData: true,
             onSuccess: () => {
-                toast.add({
-                    severity: 'success',
-                    summary: 'Úspech',
-                    detail: 'Služba bola upravená.',
-                    life: 3000,
-                });
-
-                closeEditServiceDialog();
+                toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola upravená.', life: 3000 });
+                closeEditDialog();
             },
             onError: () => {
-                toast.add({
-                    severity: 'error',
-                    summary: 'Chyba',
-                    detail: 'Nepodarilo sa upraviť službu.',
-                    life: 3000,
-                });
+                toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa upraviť službu.', life: 3000 });
             },
         });
 };
 
-const removeBranchService = (branchService) => {
+const removeService = (service) => {
     openDialog({
         title: 'Odstrániť službu',
-        message: `Odstrániť službu ${branchServiceTitle(branchService)} z tejto pobočky?`,
+        message: `Odstrániť službu „${serviceTitle(service)}" z tejto pobočky?`,
         confirmLabel: 'Zmazať',
         onConfirm: () => {
-            router.delete(route('branches.services.destroy', [props.branch.id, branchService.id]), {
+            router.delete(route('branches.services.destroy', [props.branch.id, service.id]), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    toast.add({
-                        severity: 'success',
-                        summary: 'Úspech',
-                        detail: 'Služba bola odstránená z pobočky.',
-                        life: 3000,
-                    });
+                    toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola odstránená.', life: 3000 });
                 },
                 onError: () => {
-                    toast.add({
-                        severity: 'error',
-                        summary: 'Chyba',
-                        detail: 'Nepodarilo sa odstrániť službu.',
-                        life: 3000,
-                    });
+                    toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa odstrániť službu.', life: 3000 });
                 },
             });
         },
@@ -433,7 +238,7 @@ const removeBranchService = (branchService) => {
                 </h1>
 
                 <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Spravujte služby tejto pobočky. Vytvorenie aj úprava služby prebieha v samostatnom okne.
+                    Spravujte služby tejto pobočky.
                 </p>
             </div>
 
@@ -451,7 +256,7 @@ const removeBranchService = (branchService) => {
                 <Button
                     label="Pridať službu"
                     icon="pi pi-plus"
-                    @click="openCreateServiceDialog"
+                    @click="openCreateDialog"
                 />
             </div>
         </div>
@@ -461,25 +266,25 @@ const removeBranchService = (branchService) => {
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-slate-900">
-                            Existujúce služby v pobočke
+                            Služby pobočky
                         </h2>
 
                         <p class="mt-1 text-sm text-slate-600">
-                            Služby, ktoré sú už priradené k tejto pobočke.
+                            Všetky služby priradené k tejto pobočke.
                         </p>
                     </div>
 
                     <Tag
-                        :value="`${branch.branch_services?.length ?? 0} služieb`"
+                        :value="`${branch.services?.length ?? 0} služieb`"
                         severity="secondary"
                     />
                 </div>
             </div>
 
             <DataTable
-                :value="branch.branch_services ?? []"
+                :value="branch.services ?? []"
                 tableStyle="min-width: 64rem"
-                emptyMessage="Táto pobočka zatiaľ nemá priradené služby."
+                emptyMessage="Táto pobočka zatiaľ nemá žiadne služby."
             >
                 <Column header="Služba">
                     <template #body="{ data }">
@@ -490,11 +295,7 @@ const removeBranchService = (branchService) => {
 
                             <div>
                                 <p class="text-sm font-semibold text-slate-900">
-                                    {{ branchServiceTitle(data) }}
-                                </p>
-
-                                <p class="text-xs text-slate-500">
-                                    Pôvodný názov: {{ serviceDisplayName(data.service) }}
+                                    {{ serviceTitle(data) }}
                                 </p>
 
                                 <p class="text-xs text-slate-500">
@@ -516,13 +317,8 @@ const removeBranchService = (branchService) => {
                 <Column header="Ceny">
                     <template #body="{ data }">
                         <div class="space-y-1 text-sm text-slate-700">
-                            <p>
-                                Poisťovňa: {{ formatPrice(getServicePrice(data, 'insurance')) }}
-                            </p>
-
-                            <p>
-                                Samoplatca: {{ formatPrice(getServicePrice(data, 'self_pay')) }}
-                            </p>
+                            <p>Poisťovňa: {{ formatPrice(data.insurance_amount) }}</p>
+                            <p>Samoplatca: {{ formatPrice(data.self_pay_amount) }}</p>
                         </div>
                     </template>
                 </Column>
@@ -530,8 +326,8 @@ const removeBranchService = (branchService) => {
                 <Column header="Dostupnosť">
                     <template #body="{ data }">
                         <Tag
-                            :value="data.is_available ? 'Dostupná' : 'Nedostupná'"
-                            :severity="data.is_available ? 'success' : 'secondary'"
+                            :value="data.is_active ? 'Aktívna' : 'Neaktívna'"
+                            :severity="data.is_active ? 'success' : 'secondary'"
                         />
                     </template>
                 </Column>
@@ -545,7 +341,7 @@ const removeBranchService = (branchService) => {
                                 severity="secondary"
                                 outlined
                                 icon="pi pi-pencil"
-                                @click="openEditServiceDialog(data)"
+                                @click="openEditDialog(data)"
                             />
 
                             <Button
@@ -554,7 +350,7 @@ const removeBranchService = (branchService) => {
                                 severity="danger"
                                 outlined
                                 icon="pi pi-trash"
-                                @click="removeBranchService(data)"
+                                @click="removeService(data)"
                             />
                         </div>
                     </template>
@@ -563,47 +359,47 @@ const removeBranchService = (branchService) => {
         </section>
 
         <Dialog
-            v-model:visible="createServiceDialogVisible"
+            v-model:visible="createDialogVisible"
             modal
             header="Pridať službu"
             class="w-[95vw] max-w-6xl"
             :draggable="false"
-            :dismissable-mask="!createServiceForm.processing"
-            @hide="resetServiceForm(createServiceForm)"
+            :dismissable-mask="!createForm.processing"
+            @hide="resetForm(createForm)"
         >
             <BranchServiceForm
-                :form="createServiceForm"
+                :form="createForm"
                 mode="create"
                 :categories="categoryOptions"
                 :new-category-value="newCategoryValue"
                 title="Vytvoriť novú službu"
                 description="Kategória a názov služby sú povinné. Ostatné údaje môžete doplniť podľa potreby."
                 submit-label="Vytvoriť službu"
-                :loading="createServiceForm.processing"
-                @submit="createFullService"
+                :loading="createForm.processing"
+                @submit="createService"
             />
         </Dialog>
 
         <Dialog
-            v-model:visible="editServiceDialogVisible"
+            v-model:visible="editDialogVisible"
             modal
             header="Upraviť službu"
             class="w-[95vw] max-w-6xl"
             :draggable="false"
-            :dismissable-mask="!editServiceForm.processing"
-            @hide="closeEditServiceDialog"
+            :dismissable-mask="!editForm.processing"
+            @hide="closeEditDialog"
         >
             <BranchServiceForm
-                v-if="editingBranchService"
-                :form="editServiceForm"
+                v-if="editingService"
+                :form="editForm"
                 mode="edit"
                 :categories="categoryOptions"
                 :new-category-value="newCategoryValue"
                 title="Upraviť službu"
-                :description="branchServiceTitle(editingBranchService)"
+                :description="serviceTitle(editingService)"
                 submit-label="Uložiť zmeny"
-                :loading="editServiceForm.processing"
-                @submit="updateFullService"
+                :loading="editForm.processing"
+                @submit="updateService"
             />
         </Dialog>
 

@@ -11,6 +11,7 @@ class Service extends Model
 {
     protected $fillable = [
         'company_id',
+        'branch_id',
         'category_id',
         'name',
         'slug',
@@ -18,7 +19,12 @@ class Service extends Model
         'description',
         'icon',
         'featured_image_path',
+        'duration_sessions',
         'duration_minutes',
+        'insurance_amount',
+        'insurance_note',
+        'self_pay_amount',
+        'self_pay_note',
         'is_active',
         'sort_order',
     ];
@@ -27,7 +33,10 @@ class Service extends Model
     {
         return [
             'is_active' => 'boolean',
+            'duration_sessions' => 'integer',
             'duration_minutes' => 'integer',
+            'insurance_amount' => 'decimal:2',
+            'self_pay_amount' => 'decimal:2',
             'sort_order' => 'integer',
         ];
     }
@@ -37,21 +46,14 @@ class Service extends Model
         return $this->belongsTo(Company::class);
     }
 
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
-    }
-
-    public function branchServices(): HasMany
-    {
-        return $this->hasMany(BranchService::class);
-    }
-
-    public function branches(): BelongsToMany
-    {
-        return $this->belongsToMany(Branch::class, 'branch_services')
-            ->withPivot(['custom_title', 'custom_description', 'is_available', 'sort_order'])
-            ->withTimestamps();
     }
     public function information(): HasMany
     {

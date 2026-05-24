@@ -1,7 +1,6 @@
 <script setup>
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import FileUpload from 'primevue/fileupload';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
@@ -71,15 +70,45 @@ const iconOptions = [
     { label: 'Nastavenia', value: 'pi pi-cog' },
 ];
 
-const categoryOptions = computed(() => {
-    return [
-        ...props.categories,
-        {
-            id: props.newCategoryValue,
-            name: 'Pridať novú kategóriu',
-        },
-    ];
+const isCreatingNewCategory = computed(() => props.form.category_id === props.newCategoryValue);
+
+const selectedCategoryName = computed(() => {
+    if (isCreatingNewCategory.value) {
+        return props.form.new_category_name || 'Nová kategória';
+    }
+    const cat = props.categories.find(c => c.id === props.form.category_id);
+    return cat ? cat.name : 'Bez kategórie';
 });
+
+const durationPreview = computed(() => {
+    const sessions = props.form.duration_sessions;
+    const minutes = props.form.duration_minutes;
+    if (!minutes) return '';
+    if (!sessions || sessions === 1) return `${minutes} min`;
+    return `${sessions} × ${minutes} min`;
+});
+
+const slugify = (value) =>
+    (value ?? '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+const generatedSlug = computed(() => slugify(props.form.name));
+
+const canSubmit = computed(() => {
+    if (!isCreateMode.value) return true;
+    const hasCategory = props.form.category_id !== null && props.form.category_id !== undefined;
+    const hasNewCategoryName = props.form.category_id !== props.newCategoryValue || !!(props.form.new_category_name ?? '').trim();
+    const hasName = !!(props.form.name ?? '').trim();
+    return hasCategory && hasNewCategoryName && hasName;
+});
+</script>
+
 <template>
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-6">
@@ -93,6 +122,7 @@ const categoryOptions = computed(() => {
         </div>
 
         <form class="space-y-8" @submit.prevent="emit('submit')">
+            <!-- Preview -->
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                     Náhľad
@@ -101,19 +131,13 @@ const categoryOptions = computed(() => {
                 <div class="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div class="flex items-start gap-3">
                         <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm">
-                            <i
-                                v-if="props.form.service.icon"
-                                :class="props.form.service.icon"
-                            />
-
-                            <span v-else class="text-sm font-semibold">
-                                S
-                            </span>
+                            <i v-if="props.form.icon" :class="props.form.icon" />
+                            <span v-else class="text-sm font-semibold">S</span>
                         </div>
 
                         <div>
                             <h3 class="text-lg font-semibold text-slate-900">
-                                {{ serviceTitlePreview }}
+                                {{ props.form.name || 'Názov služby' }}
                             </h3>
 
                             <p class="mt-1 text-sm text-slate-500">
@@ -121,27 +145,19 @@ const categoryOptions = computed(() => {
                             </p>
 
                             <p class="mt-1 text-sm text-slate-500">
-                                {{ props.form.service.short_description || 'Krátky popis služby sa zobrazí tu.' }}
+                                {{ props.form.short_description || 'Krátky popis služby sa zobrazí tu.' }}
                             </p>
                         </div>
                     </div>
 
                     <div class="flex flex-wrap gap-2">
-                        <Tag
-                            v-if="durationPreview"
-                            :value="durationPreview"
-                            severity="secondary"
-                        />
-
-                        <Tag
-                            v-if="props.form.prices.self_pay_amount"
-                            :value="`${props.form.prices.self_pay_amount} €`"
-                            severity="secondary"
-                        />
+                        <Tag v-if="durationPreview" :value="durationPreview" severity="secondary" />
+                        <Tag v-if="props.form.self_pay_amount" :value="`${props.form.self_pay_amount} €`" severity="secondary" />
                     </div>
                 </div>
             </div>
 
+            <!-- Service details (create only) -->
             <div v-if="isCreateMode" class="grid gap-5 md:grid-cols-2">
                 <div>
                     <label class="mb-1 block text-sm font-medium text-slate-700">
@@ -149,19 +165,16 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <Select
-                        v-model="props.form.service.category_id"
-                        :options="categoryOptions"
+                        v-model="props.form.category_id"
+                        :options="props.categories"
                         optionLabel="name"
                         optionValue="id"
                         placeholder="Vyberte kategóriu"
                         class="w-full"
                     />
 
-                    <p
-                        v-if="props.form.errors['service.category_id']"
-                        class="mt-1 text-sm text-red-600"
-                    >
-                        {{ props.form.errors['service.category_id'] }}
+                    <p v-if="props.form.errors['category_id']" class="mt-1 text-sm text-red-600">
+                        {{ props.form.errors['category_id'] }}
                     </p>
                 </div>
 
@@ -171,16 +184,13 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <InputText
-                        v-model="props.form.service.new_category_name"
+                        v-model="props.form.new_category_name"
                         class="w-full"
                         placeholder="Napr. Diagnostika"
                     />
 
-                    <p
-                        v-if="props.form.errors['service.new_category_name']"
-                        class="mt-1 text-sm text-red-600"
-                    >
-                        {{ props.form.errors['service.new_category_name'] }}
+                    <p v-if="props.form.errors['new_category_name']" class="mt-1 text-sm text-red-600">
+                        {{ props.form.errors['new_category_name'] }}
                     </p>
                 </div>
 
@@ -190,16 +200,13 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <InputText
-                        v-model="props.form.service.name"
+                        v-model="props.form.name"
                         class="w-full"
                         placeholder="Napr. Klinicko-psychologické vyšetrenie"
                     />
 
-                    <p
-                        v-if="props.form.errors['service.name']"
-                        class="mt-1 text-sm text-red-600"
-                    >
-                        {{ props.form.errors['service.name'] }}
+                    <p v-if="props.form.errors['name']" class="mt-1 text-sm text-red-600">
+                        {{ props.form.errors['name'] }}
                     </p>
                 </div>
 
@@ -209,7 +216,7 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <Select
-                        v-model="props.form.service.icon"
+                        v-model="props.form.icon"
                         :options="iconOptions"
                         optionLabel="label"
                         optionValue="value"
@@ -218,17 +225,11 @@ const categoryOptions = computed(() => {
                         class="w-full"
                     >
                         <template #value="{ value }">
-                            <div
-                                v-if="value"
-                                class="flex items-center gap-2"
-                            >
+                            <div v-if="value" class="flex items-center gap-2">
                                 <i :class="value" />
-                                <span>{{ iconOptions.find((item) => item.value === value)?.label ?? value }}</span>
+                                <span>{{ iconOptions.find(item => item.value === value)?.label ?? value }}</span>
                             </div>
-
-                            <span v-else class="text-slate-400">
-                                Vyberte ikonu
-                            </span>
+                            <span v-else class="text-slate-400">Vyberte ikonu</span>
                         </template>
 
                         <template #option="{ option }">
@@ -246,7 +247,7 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <InputNumber
-                        v-model="props.form.service.duration_sessions"
+                        v-model="props.form.duration_sessions"
                         class="w-full"
                         inputClass="w-full"
                         :min="1"
@@ -260,7 +261,7 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <InputNumber
-                        v-model="props.form.service.duration_minutes"
+                        v-model="props.form.duration_minutes"
                         class="w-full"
                         inputClass="w-full"
                         :min="1"
@@ -274,7 +275,7 @@ const categoryOptions = computed(() => {
                     </label>
 
                     <InputText
-                        v-model="props.form.service.short_description"
+                        v-model="props.form.short_description"
                         class="w-full"
                         placeholder="Jedna veta, ktorá stručne vysvetlí službu."
                     />
@@ -282,95 +283,38 @@ const categoryOptions = computed(() => {
 
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Dlhý popis služby
+                        Dlhý popis
                     </label>
 
                     <Textarea
-                        v-model="props.form.service.description"
+                        v-model="props.form.description"
                         class="w-full"
-                        rows="5"
+                        rows="4"
                         placeholder="Detailný popis služby..."
                     />
                 </div>
             </div>
 
+            <!-- Edit mode: show read-only summary -->
             <div v-else class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div class="mb-4">
-                    <h3 class="text-base font-semibold text-slate-900">
-                        Základ služby
-                    </h3>
-
-                    <p class="mt-1 text-sm text-slate-600">
-                        Táto služba je už vytvorená. Tu upravujete len nastavenia pre túto pobočku a ceny.
-                    </p>
+                <div class="mb-5">
+                    <h3 class="text-base font-semibold text-slate-900">Základné informácie</h3>
+                    <p class="mt-1 text-sm text-slate-600">Tu upravujete názov, trvanie, popis a ďalšie nastavenia služby.</p>
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-3">
+                <div class="grid gap-5 md:grid-cols-2">
                     <div>
-                        <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                            Názov služby
-                        </p>
-
-                        <p class="mt-1 text-sm font-medium text-slate-900">
-                            {{ props.form.service.name || '—' }}
-                        </p>
-                    </div>
-
-                    <div>
-                        <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                            Kategória
-                        </p>
-
-                        <p class="mt-1 text-sm font-medium text-slate-900">
-                            {{ selectedCategoryName }}
-                        </p>
-                    </div>
-
-                    <div>
-                        <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                            Trvanie
-                        </p>
-
-                        <p class="mt-1 text-sm font-medium text-slate-900">
-                            {{ durationPreview || '—' }}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="border-t border-slate-200 pt-8">
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ props.form.errors['service.new_category_name'] }}
-                        </p>
-                    </div>
-
-                    <div :class="isCreatingNewCategory ? 'md:col-span-2' : ''">
                         <label class="mb-1 block text-sm font-medium text-slate-700">
                             Názov služby <span class="text-red-500">*</span>
                         </label>
-
-                        <InputText
-                            v-model="props.form.service.name"
-                            class="w-full"
-                            placeholder="Napr. Klinicko-psychologické vyšetrenie"
-                        />
-
-                        <p
-                            v-if="props.form.errors['service.name']"
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ props.form.errors['service.name'] }}
-                        </p>
+                        <InputText v-model="props.form.name" class="w-full" placeholder="Napr. Klinicko-psychologické vyšetrenie" />
+                        <p v-if="props.form.errors['name']" class="mt-1 text-sm text-red-600">{{ props.form.errors['name'] }}</p>
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Ikona
-                        </label>
-
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Ikona</label>
                         <Select
-                            v-model="props.form.service.icon"
+                            v-model="props.form.icon"
                             :options="iconOptions"
                             optionLabel="label"
                             optionValue="value"
@@ -379,63 +323,12 @@ const categoryOptions = computed(() => {
                             class="w-full"
                         >
                             <template #value="{ value }">
-                                <div
-
-                                <div v-else class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                                    <div class="mb-4">
-                                        <h3 class="text-base font-semibold text-slate-900">
-                                            Základ služby
-                                        </h3>
-
-                                        <p class="mt-1 text-sm text-slate-600">
-                                            Táto služba je už vytvorená. Tu upravujete len nastavenia pre túto pobočku a ceny.
-                                        </p>
-                                    </div>
-
-                                    <div class="grid gap-4 md:grid-cols-3">
-                                        <div>
-                                            <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                                                Názov služby
-                                            </p>
-
-                                            <p class="mt-1 text-sm font-medium text-slate-900">
-                                                {{ props.form.service.name || '—' }}
-                                            </p>
-                                        </div>
-
-                                        <div>
-                                            <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                                                Kategória
-                                            </p>
-
-                                            <p class="mt-1 text-sm font-medium text-slate-900">
-                                                {{ selectedCategoryName }}
-                                            </p>
-                                        </div>
-
-                                        <div>
-                                            <p class="text-xs uppercase tracking-[0.16em] text-slate-400">
-                                                Trvanie
-                                            </p>
-
-                                            <p class="mt-1 text-sm font-medium text-slate-900">
-                                                {{ durationPreview || '—' }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                    v-if="value"
-                                    class="flex items-center gap-2"
-                                >
+                                <div v-if="value" class="flex items-center gap-2">
                                     <i :class="value" />
-                                    <span>{{ iconOptions.find((item) => item.value === value)?.label ?? value }}</span>
+                                    <span>{{ iconOptions.find(item => item.value === value)?.label ?? value }}</span>
                                 </div>
-
-                                <span v-else class="text-slate-400">
-                                    Vyberte ikonu
-                                </span>
+                                <span v-else class="text-slate-400">Vyberte ikonu</span>
                             </template>
-
                             <template #option="{ option }">
                                 <div class="flex items-center gap-2">
                                     <i :class="option.value" />
@@ -446,175 +339,70 @@ const categoryOptions = computed(() => {
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Počet stretnutí
-                        </label>
-
-                        <InputNumber
-                            v-model="props.form.service.duration_sessions"
-                            class="w-full"
-                            inputClass="w-full"
-                            :min="1"
-                            placeholder="1"
-                        />
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Počet stretnutí</label>
+                        <InputNumber v-model="props.form.duration_sessions" class="w-full" inputClass="w-full" :min="1" placeholder="1" />
                     </div>
 
                     <div>
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Minút na jedno stretnutie
-                        </label>
-
-                        <InputNumber
-                            v-model="props.form.service.duration_minutes"
-                            class="w-full"
-                            inputClass="w-full"
-                            :min="1"
-                            placeholder="60"
-                        />
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Minút na jedno stretnutie</label>
+                        <InputNumber v-model="props.form.duration_minutes" class="w-full" inputClass="w-full" :min="1" placeholder="60" />
                     </div>
 
                     <div class="md:col-span-2">
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Krátky popis
-                        </label>
-
-                        <InputText
-                            v-model="props.form.service.short_description"
-                            class="w-full"
-                            placeholder="Jedna veta, ktorá stručne vysvetlí službu."
-                        />
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Krátky popis</label>
+                        <InputText v-model="props.form.short_description" class="w-full" placeholder="Jedna veta, ktorá stručne vysvetlí službu." />
                     </div>
 
                     <div class="md:col-span-2">
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Dlhý popis služby
-                        </label>
-
-                        <Textarea
-                            v-model="props.form.service.description"
-                            class="w-full"
-                            rows="5"
-                            placeholder="Detailný popis služby..."
-                        />
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Dlhý popis</label>
+                        <Textarea v-model="props.form.description" class="w-full" rows="4" placeholder="Detailný popis služby..." />
                     </div>
                 </div>
             </div>
 
+            <!-- Availability -->
             <div class="border-t border-slate-200 pt-8">
                 <div class="mb-5">
-                    <h3 class="text-base font-semibold text-slate-900">
-                        Zobrazenie na pobočke
-                    </h3>
-
-                    <p class="mt-1 text-sm text-slate-600">
-                        Tieto polia iba upravujú, ako sa služba zobrazuje na tejto pobočke.
-                    </p>
+                    <h3 class="text-base font-semibold text-slate-900">Dostupnosť a poradie</h3>
                 </div>
 
                 <div class="grid gap-5 md:grid-cols-2">
-                    <div>
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Vlastný názov služby na pobočke
-                        </label>
-
-                        <InputText
-                            v-model="props.form.branch_service.custom_title"
-                            class="w-full"
-                            placeholder="Napr. Psychologické poradenstvo"
-                        />
-
-                        <p
-                            v-if="props.form.errors['branch_service.custom_title']"
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ props.form.errors['branch_service.custom_title'] }}
-                        </p>
-                    </div>
-
-                    <div>
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Poradie na pobočke
-                        </label>
-
-                        <InputNumber
-                            v-model="props.form.branch_service.sort_order"
-                            class="w-full"
-                            inputClass="w-full"
-                            :min="0"
-                            placeholder="0"
-                        />
-
-                        <p
-                            v-if="props.form.errors['branch_service.sort_order']"
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ props.form.errors['branch_service.sort_order'] }}
-                        </p>
-                    </div>
-
-                    <div class="md:col-span-2">
-                        <label class="mb-1 block text-sm font-medium text-slate-700">
-                            Vlastný popis služby na pobočke
-                        </label>
-
-                        <Textarea
-                            v-model="props.form.branch_service.custom_description"
-                            class="w-full"
-                            rows="3"
-                            placeholder="Doplňujúci text špecifický pre túto pobočku"
-                        />
-
-                        <p
-                            v-if="props.form.errors['branch_service.custom_description']"
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ props.form.errors['branch_service.custom_description'] }}
-                        </p>
-                    </div>
-
                     <div class="md:col-span-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <Checkbox
-                            v-model="props.form.branch_service.is_available"
+                            v-model="props.form.is_available"
                             binary
-                            inputId="branch_service_is_available"
+                            inputId="service_is_available"
                         />
 
-                        <label
-                            for="branch_service_is_available"
-                            class="text-sm font-medium text-slate-700"
-                        >
-                            Služba je na tejto pobočke dostupná
+                        <label for="service_is_available" class="text-sm font-medium text-slate-700">
+                            Služba je aktívna a dostupná
                         </label>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-slate-700">Poradie</label>
+                        <InputNumber v-model="props.form.sort_order" class="w-full" inputClass="w-full" :min="0" placeholder="0" />
                     </div>
                 </div>
             </div>
 
+            <!-- Prices -->
             <div class="border-t border-slate-200 pt-8">
                 <div class="mb-5">
-                    <h3 class="text-base font-semibold text-slate-900">
-                        Ceny
-                    </h3>
-
-                    <p class="mt-1 text-sm text-slate-600">
-                        Zadajte cenu cez poisťovňu alebo cenu pre samoplatcu.
-                    </p>
+                    <h3 class="text-base font-semibold text-slate-900">Ceny</h3>
+                    <p class="mt-1 text-sm text-slate-600">Zadajte cenu cez poisťovňu alebo cenu pre samoplatcu.</p>
                 </div>
 
                 <div class="grid gap-5 md:grid-cols-2">
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <h4 class="text-sm font-semibold text-slate-900">
-                            Poisťovňa
-                        </h4>
+                        <h4 class="text-sm font-semibold text-slate-900">Poisťovňa</h4>
 
                         <div class="mt-4 space-y-4">
                             <div>
-                                <label class="mb-1 block text-sm font-medium text-slate-700">
-                                    Cena
-                                </label>
-
+                                <label class="mb-1 block text-sm font-medium text-slate-700">Cena</label>
                                 <div class="flex overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
                                     <InputNumber
-                                        v-model="props.form.prices.insurance_amount"
+                                        v-model="props.form.insurance_amount"
                                         class="min-w-0 flex-1"
                                         inputClass="w-full border-0 shadow-none"
                                         mode="decimal"
@@ -622,35 +410,23 @@ const categoryOptions = computed(() => {
                                         :maxFractionDigits="2"
                                         placeholder="0.00"
                                     />
-
-                                    <div class="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">
-                                        €
-                                    </div>
+                                    <div class="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">€</div>
                                 </div>
                             </div>
 
-                            <InputText
-                                v-model="props.form.prices.insurance_note"
-                                class="w-full"
-                                placeholder="Poznámka k cene"
-                            />
+                            <InputText v-model="props.form.insurance_note" class="w-full" placeholder="Poznámka k cene" />
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <h4 class="text-sm font-semibold text-slate-900">
-                            Samoplatca
-                        </h4>
+                        <h4 class="text-sm font-semibold text-slate-900">Samoplatca</h4>
 
                         <div class="mt-4 space-y-4">
                             <div>
-                                <label class="mb-1 block text-sm font-medium text-slate-700">
-                                    Cena
-                                </label>
-
+                                <label class="mb-1 block text-sm font-medium text-slate-700">Cena</label>
                                 <div class="flex overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
                                     <InputNumber
-                                        v-model="props.form.prices.self_pay_amount"
+                                        v-model="props.form.self_pay_amount"
                                         class="min-w-0 flex-1"
                                         inputClass="w-full border-0 shadow-none"
                                         mode="decimal"
@@ -658,44 +434,30 @@ const categoryOptions = computed(() => {
                                         :maxFractionDigits="2"
                                         placeholder="0.00"
                                     />
-
-                                    <div class="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">
-                                        €
-                                    </div>
+                                    <div class="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">€</div>
                                 </div>
                             </div>
 
-                            <InputText
-                                v-model="props.form.prices.self_pay_note"
-                                class="w-full"
-                                placeholder="Poznámka k cene"
-                            />
+                            <InputText v-model="props.form.self_pay_note" class="w-full" placeholder="Poznámka k cene" />
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- Submit -->
             <div class="flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <p class="text-sm text-slate-500">
-                    Slug a technické poradie sa vyriešia automaticky.
+                <p v-if="isCreateMode" class="text-xs text-slate-400">
+                    Slug: {{ generatedSlug || '—' }}
                 </p>
+                <span v-else />
 
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <p
-                        v-if="props.form.service.slug || generatedSlug"
-                        class="text-xs text-slate-400"
-                    >
-                        {{ generatedSlug || props.form.service.slug }}
-                    </p>
-
-                    <Button
-                        type="submit"
-                        :label="submitLabel"
-                        icon="pi pi-save"
-                        :loading="loading || props.form.processing"
-                        :disabled="!canSubmit"
-                    />
-                </div>
+                <Button
+                    type="submit"
+                    :label="submitLabel"
+                    icon="pi pi-save"
+                    :loading="loading || props.form.processing"
+                    :disabled="!canSubmit"
+                />
             </div>
         </form>
     </section>
