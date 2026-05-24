@@ -12,8 +12,31 @@ export default {
 
     theme: {
         extend: {
+            colors: {
+                accent: 'var(--color-accent)',
+                soft: 'var(--color-soft)',
+                white: 'var(--color-white)',
+                dark: 'var(--color-dark)',
+            },
+
             fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
+                normal: ['var(--font-normal)'],
+                heading: ['var(--font-heading)'],
+            },
+
+            fontSize: {
+                normal: [
+                    'var(--text-normal-size)',
+                    {
+                        lineHeight: 'var(--text-normal-line-height)',
+                    },
+                ],
+                heading: [
+                    'var(--text-heading-size)',
+                    {
+                        lineHeight: 'var(--text-heading-line-height)',
+                    },
+                ],
             },
         },
     },

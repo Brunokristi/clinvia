@@ -9,6 +9,8 @@ import { createApp, h } from 'vue';
 import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
 import ToastService from 'primevue/toastservice';
+import { primevuePt } from './primevue/passthrough';
+
 
 createInertiaApp({
     title: (title) => `${title} - Clinvia`,
@@ -26,7 +28,12 @@ createInertiaApp({
             .use(PrimeVue, {
                 theme: {
                     preset: Aura,
+                    options: {
+                        darkModeSelector: false,
+                    },
                 },
+                ripple: true,
+                pt: primevuePt,
             })
             .use(ToastService)
             .mount(el);
