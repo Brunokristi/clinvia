@@ -1,11 +1,14 @@
 <script setup>
-import Checkbox from '@/Components/Checkbox.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+
+import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Password from 'primevue/password';
+import FormLabel from '@/Components/FormLabel.vue';
+
 
 defineProps({
     canResetPassword: {
@@ -31,69 +34,104 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Log in" />
+        <form class="space-y-5 w-full max-w-md" @submit.prevent="submit">
+            <Message
+                v-if="status"
+                severity="success"
+                :closable="false"
+            >
+                {{ status }}
+            </Message>
 
-        <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
-            {{ status }}
-        </div>
-
-        <form @submit.prevent="submit">
             <div>
-                <InputLabel for="email" value="Email" />
+                <FormLabel for="email">
+                    Email
+                </FormLabel>
 
-                <TextInput
+                <InputText
                     id="email"
-                    type="email"
-                    class="mt-1 block w-full"
                     v-model="form.email"
+                    type="email"
+                    class="w-full"
+                    :invalid="!!form.errors.email"
                     required
                     autofocus
                     autocomplete="username"
                 />
 
-                <InputError class="mt-2" :message="form.errors.email" />
+                <Message
+                    v-if="form.errors.email"
+                    severity="error"
+                    size="small"
+                    variant="simple"
+                    class="mt-2"
+                >
+                    {{ form.errors.email }}
+                </Message>
             </div>
 
-            <div class="mt-4">
-                <InputLabel for="password" value="Password" />
+            <div>
+                <FormLabel for="password">
+                    Heslo
+                </FormLabel>
 
-                <TextInput
+                <Password
                     id="password"
-                    type="password"
-                    class="mt-1 block w-full"
                     v-model="form.password"
+                    class="w-full"
+                    inputClass="w-full"
+                    :feedback="false"
+                    :toggleMask="true"
+                    :invalid="!!form.errors.password"
                     required
                     autocomplete="current-password"
                 />
 
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
-
-            <div class="mt-4 block">
-                <label class="flex items-center">
-                    <Checkbox name="remember" v-model:checked="form.remember" />
-                    <span class="ms-2 text-sm text-gray-600"
-                        >Remember me</span
-                    >
-                </label>
-            </div>
-
-            <div class="mt-4 flex items-center justify-end">
-                <Link
-                    v-if="canResetPassword"
-                    :href="route('password.request')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                <Message
+                    v-if="form.errors.password"
+                    severity="error"
+                    size="small"
+                    variant="simple"
+                    class="mt-2"
                 >
-                    Forgot your password?
-                </Link>
+                    {{ form.errors.password }}
+                </Message>
+            </div>
 
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
+            <div class="flex items-center">
+                <Checkbox
+                    v-model="form.remember"
+                    inputId="remember"
+                    name="remember"
+                    binary
+                />
+
+                <FormLabel for="remember" class="ml-2">
+                    Zapamätať si prihlásenie
+                </FormLabel>
+            </div>
+
+            <div class="flex flex-col items-center justify-center gap-4">
+                <Button
+                    type="submit"
+                    label="Prihlásiť sa"
+                    :loading="form.processing"
                     :disabled="form.processing"
-                >
-                    Log in
-                </PrimaryButton>
+                />
+
+                <div class="w-full flex items-center justify-center gap-1">
+                    <p class="text-sm text-accent">
+                        Zabudli ste heslo?
+                    </p>
+
+                    <Link
+                        v-if="canResetPassword"
+                        :href="route('password.request')"
+                        class="text-sm text-accent underline transition hover:text-accent/80"
+                    >
+                        Resetovať
+                    </Link>
+                </div>
             </div>
         </form>
     </GuestLayout>

@@ -34,6 +34,10 @@ createInertiaApp({
                 },
                 ripple: true,
                 pt: primevuePt,
+                ptOptions: {
+                    mergeSections: true,
+                    mergeProps: true,
+                },
             })
             .use(ToastService)
             .mount(el);

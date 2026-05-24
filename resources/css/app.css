@@ -9,14 +9,14 @@
         --font-heading: "Google Sans Flex", sans-serif;
 
         --color-accent: #C17979;
-        --color-soft: #F4D1D1;
+        --color-soft: #FFE5E5;
         --color-white: #ffffff;
         --color-dark: #A75A5A;
 
-        --text-normal-size: 20px;
+        --text-normal-size: 14px;
         --text-normal-line-height: 1.4;
 
-        --text-heading-size: 32px;
+        --text-heading-size: 24px;
         --text-heading-line-height: 1.2;
     }
 

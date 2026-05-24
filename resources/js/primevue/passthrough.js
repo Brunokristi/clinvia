@@ -2,14 +2,13 @@ export const primevuePt = {
     button: {
         root: {
             class: [
-                'inline-flex items-center justify-center gap-2',
-                'rounded-xl px-5 py-3',
-                'font-normal text-base',
-                'bg-accent text-white',
-                'border border-accent',
+                '!rounded-md !px-2 !w-full',
+                '!text-normal',
+                '!bg-accent !text-white',
+                '!border !border-accent',
                 'transition-all duration-200',
-                'hover:bg-dark hover:border-dark',
-                'focus:outline-none focus:ring-2 focus:ring-soft focus:ring-offset-2',
+                'hover:!bg-dark !hover:border-dark',
+                'focus:!outline-none ',
                 'disabled:pointer-events-none disabled:opacity-50',
             ],
         },
@@ -77,6 +76,58 @@ export const primevuePt = {
                     'bg-white px-5 py-4',
                 ],
             },
+        },
+    },
+
+    inputtext: {
+        root: {
+            class: [
+                '!w-full !rounded-md',
+                '!bg-soft px-4 py-2 !border-soft shadow-0',
+                '!text-normal !text-accent',
+                'hover:!border-accent',
+                'focus:!border-accent focus:!bg-white',
+            ],
+        },
+    },
+    password: {
+        maskicon: {
+            class: '!text-accent',
+        },
+        unmaskicon: {
+            class: '!text-accent',
+        },
+    },
+    checkbox: {
+        root: {
+            class: 'inline-flex items-center',
+        },
+
+        input: {
+            class: 'peer',
+        },
+
+        box: {
+            class: [
+                'h-5 w-5 rounded-md',
+                'border !border-accent',
+                'bg-white',
+                'transition-all duration-200',
+
+                // checked
+                'peer-checked:!border-accent',
+                'peer-checked:!bg-accent',
+
+                // hover / focus
+                'peer-hover:!border-accent',
+                'peer-focus-visible:ring-2',
+                'peer-focus-visible:ring-soft',
+                'peer-focus-visible:ring-offset-2',
+            ],
+        },
+
+        icon: {
+            class: 'text-white text-xs',
         },
     },
 };

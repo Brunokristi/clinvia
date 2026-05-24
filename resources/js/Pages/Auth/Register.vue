@@ -1,10 +1,12 @@
 <script setup>
+import FormLabel from '@/Components/FormLabel.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Password from 'primevue/password';
 
 const form = useForm({
     first_name: '',
@@ -23,106 +25,178 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Register" />
+        <Head title="Registrácia" />
 
-        <form @submit.prevent="submit">
+        <form class="w-full max-w-2xl space-y-5" @submit.prevent="submit">
+            <div class="space-y-2 text-center">
+                <h1 class="text-2xl font-semibold text-accent">
+                    Vytvoriť účet
+                </h1>
+
+                <p class="text-sm leading-6 text-gray-600">
+                    Vyplňte údaje nižšie a vytvorte si nový účet.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                    <FormLabel for="first_name">
+                        Meno
+                    </FormLabel>
+
+                    <InputText
+                        id="first_name"
+                        v-model="form.first_name"
+                        type="text"
+                        class="w-full"
+                        :invalid="!!form.errors.first_name"
+                        required
+                        autofocus
+                        autocomplete="given-name"
+                    />
+
+                    <Message
+                        v-if="form.errors.first_name"
+                        severity="error"
+                        size="small"
+                        variant="simple"
+                        class="mt-2"
+                    >
+                        {{ form.errors.first_name }}
+                    </Message>
+                </div>
+
+                <div>
+                    <FormLabel for="last_name">
+                        Priezvisko
+                    </FormLabel>
+
+                    <InputText
+                        id="last_name"
+                        v-model="form.last_name"
+                        type="text"
+                        class="w-full"
+                        :invalid="!!form.errors.last_name"
+                        required
+                        autocomplete="family-name"
+                    />
+
+                    <Message
+                        v-if="form.errors.last_name"
+                        severity="error"
+                        size="small"
+                        variant="simple"
+                        class="mt-2"
+                    >
+                        {{ form.errors.last_name }}
+                    </Message>
+                </div>
+            </div>
+
             <div>
-                <InputLabel for="first_name" value="First name" />
+                <FormLabel for="email">
+                    Email
+                </FormLabel>
 
-                <TextInput
-                    id="first_name"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.first_name"
-                    required
-                    autofocus
-                    autocomplete="given-name"
-                />
-
-                <InputError class="mt-2" :message="form.errors.first_name" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel for="last_name" value="Last name" />
-
-                <TextInput
-                    id="last_name"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.last_name"
-                    required
-                    autocomplete="family-name"
-                />
-
-                <InputError class="mt-2" :message="form.errors.last_name" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel for="email" value="Email" />
-
-                <TextInput
+                <InputText
                     id="email"
-                    type="email"
-                    class="mt-1 block w-full"
                     v-model="form.email"
+                    type="email"
+                    class="w-full"
+                    :invalid="!!form.errors.email"
                     required
                     autocomplete="username"
                 />
 
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel for="password" value="Password" />
-
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="new-password"
-                />
-
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel
-                    for="password_confirmation"
-                    value="Confirm Password"
-                />
-
-                <TextInput
-                    id="password_confirmation"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password_confirmation"
-                    required
-                    autocomplete="new-password"
-                />
-
-                <InputError
+                <Message
+                    v-if="form.errors.email"
+                    severity="error"
+                    size="small"
+                    variant="simple"
                     class="mt-2"
-                    :message="form.errors.password_confirmation"
-                />
+                >
+                    {{ form.errors.email }}
+                </Message>
             </div>
 
-            <div class="mt-4 flex items-center justify-end">
-                <Link
-                    :href="route('login')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Already registered?
-                </Link>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                    <FormLabel for="password">
+                        Heslo
+                    </FormLabel>
 
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
+                    <Password
+                        id="password"
+                        v-model="form.password"
+                        class="w-full"
+                        inputClass="w-full"
+                        :feedback="false"
+                        :toggleMask="true"
+                        :invalid="!!form.errors.password"
+                        required
+                        autocomplete="new-password"
+                    />
+
+                    <Message
+                        v-if="form.errors.password"
+                        severity="error"
+                        size="small"
+                        variant="simple"
+                        class="mt-2"
+                    >
+                        {{ form.errors.password }}
+                    </Message>
+                </div>
+
+                <div>
+                    <FormLabel for="password_confirmation">
+                        Potvrdenie hesla
+                    </FormLabel>
+
+                    <Password
+                        id="password_confirmation"
+                        v-model="form.password_confirmation"
+                        class="w-full"
+                        inputClass="w-full"
+                        :feedback="false"
+                        :toggleMask="true"
+                        :invalid="!!form.errors.password_confirmation"
+                        required
+                        autocomplete="new-password"
+                    />
+
+                    <Message
+                        v-if="form.errors.password_confirmation"
+                        severity="error"
+                        size="small"
+                        variant="simple"
+                        class="mt-2"
+                    >
+                        {{ form.errors.password_confirmation }}
+                    </Message>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center justify-center gap-4 pt-2">
+                <Button
+                    type="submit"
+                    label="Registrovať sa"
+                    :loading="form.processing"
                     :disabled="form.processing"
-                >
-                    Register
-                </PrimaryButton>
+                />
+
+                <div class="flex w-full items-center justify-center gap-1">
+                    <p class="text-sm text-accent">
+                        Už máte účet?
+                    </p>
+
+                    <Link
+                        :href="route('login')"
+                        class="text-sm text-accent underline transition hover:text-accent/80"
+                    >
+                        Prihlásiť sa
+                    </Link>
+                </div>
             </div>
         </form>
     </GuestLayout>
