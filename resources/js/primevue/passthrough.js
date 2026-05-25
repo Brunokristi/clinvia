@@ -47,6 +47,14 @@ export const primevuePt = {
         icon: {
             class: '!text-sm',
         },
+
+        pcCloseButton: {
+            class: [
+                '!absolute !top-2 !left-2',
+                '!text-accent',
+                'hover:!text-dark',
+            ],
+        },
     },
 
     breadcrumb: {
@@ -412,7 +420,6 @@ export const primevuePt = {
         },
     },
 
-
     password: {
         maskicon: {
             class: '!text-accent',
@@ -460,6 +467,308 @@ export const primevuePt = {
 
         icon: {
             class: 'text-white text-xs',
+        },
+    },
+
+    stepper: {
+        root: {
+            class: [
+                'w-full',
+            ],
+        },
+    },
+
+    steplist: {
+        root: {
+            class: [
+                '!bg-white',
+            ],
+        },
+    },
+
+    step: {
+        root: ({ context }) => ({
+            class: [
+                'group',
+                'flex flex-1 items-center gap-3 !p-0',
+                'transition-all duration-200',
+                context.active ? 'is-active-step' : '',
+                context.highlighted ? 'is-highlighted-step' : '',
+                context.disabled ? 'pointer-events-none opacity-50' : '',
+            ],
+        }),
+
+        header: ({ context }) => ({
+            class: [
+                'flex w-full items-center gap-3',
+                '!rounded-md',
+                '!px-4 !py-3',
+                'transition-all duration-200',
+                'hover:!bg-soft/60',
+                context.active ? '!bg-accent !text-white' : '!bg-soft/40 !text-accent',
+            ],
+        }),
+
+        number: ({ context }) => ({
+            class: [
+                'flex h-8 w-8 shrink-0 items-center justify-center !border-0 !shadow-none',
+                '!rounded-full',
+                '!text-sm !font-semibold',
+                'transition-all duration-200',
+                context.active
+                    ? '!bg-white !text-accent'
+                    : '!bg-accent !text-white',
+            ],
+        }),
+
+        title: ({ context }) => ({
+            class: [
+                '!font-heading !text-sm !font-semibold',
+                context.active ? '!text-white' : '!text-dark',
+            ],
+        }),
+
+        separator: {
+            class: [
+                '!mx-3',
+                '!h-px',
+                '!bg-soft',
+            ],
+        },
+    },
+
+    steppanels: {
+        root: {
+            class: [
+                '!bg-transparent',
+                '!p-0',
+            ],
+        },
+    },
+
+    steppanel: {
+        root: {
+            class: [
+                '!bg-transparent',
+                '!p-0',
+            ],
+        },
+
+        content: {
+            class: [
+                '!bg-transparent',
+                '!p-0',
+            ],
+        },
+    },
+
+    select: {
+        root: {
+            class: [
+                '!w-full',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-soft',
+                '!shadow-none',
+                'transition-all duration-200',
+                'hover:!border-accent',
+                'focus-within:!border-accent',
+                'focus-within:!bg-white',
+                'focus-within:!ring-0',
+            ],
+        },
+
+        label: {
+            class: [
+                '!px-4 !py-2',
+                '!text-normal',
+                '!text-accent',
+                '!shadow-none',
+                'placeholder:!text-accent/50',
+            ],
+        },
+
+        dropdown: {
+            class: [
+                '!w-10',
+                '!text-accent',
+                '!bg-transparent',
+                '!rounded-r-md',
+            ],
+        },
+
+        dropdownIcon: {
+            class: [
+                '!text-sm',
+                '!text-accent',
+            ],
+        },
+
+        overlay: {
+            class: [
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-white',
+                '!shadow-lg',
+                '!overflow-hidden',
+            ],
+        },
+
+        listContainer: {
+            class: [
+                '!bg-white',
+            ],
+        },
+
+        list: {
+            class: [
+                '!p-1',
+                '!space-y-1',
+                '!bg-white',
+            ],
+        },
+
+        option: {
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-normal',
+                '!text-accent',
+                'transition-all duration-150',
+                'hover:!bg-soft',
+                'data-[p-selected=true]:!bg-accent',
+                'data-[p-selected=true]:!text-white',
+                'data-[p-focused=true]:!bg-soft',
+                'data-[p-focused=true]:!text-accent',
+            ],
+        },
+
+        optionLabel: {
+            class: [
+                '!font-medium',
+            ],
+        },
+
+        emptyMessage: {
+            class: [
+                '!px-3 !py-2',
+                '!text-sm',
+                '!text-accent/70',
+            ],
+        },
+    },
+
+    autocomplete: {
+        root: {
+            class: [
+                '!w-full',
+            ],
+        },
+
+        pcInputText: {
+            root: {
+                class: [
+                    '!w-full !rounded-md',
+                    '!bg-soft px-4 py-2 !border-soft shadow-0',
+                    '!text-normal !text-accent',
+                    'hover:!border-accent',
+                    'focus:!border-accent focus:!bg-white',
+                ],
+            },
+        },
+
+        overlay: {
+            class: [
+                '!mt-1',
+                '!overflow-hidden',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-white',
+                '!shadow-lg',
+            ],
+        },
+
+        listContainer: {
+            class: [
+                '!bg-white',
+            ],
+        },
+
+        list: {
+            class: [
+                '!space-y-1',
+                '!bg-white',
+                '!p-1',
+            ],
+        },
+
+        option: {
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-accent',
+                'transition-all duration-150',
+                'hover:!bg-soft',
+                'hover:!text-accent',
+                'data-[p-focused=true]:!bg-soft',
+                'data-[p-focused=true]:!text-accent',
+                'data-[p-selected=true]:!bg-accent',
+                'data-[p-selected=true]:!text-white',
+            ],
+        },
+
+        emptyMessage: {
+            class: [
+                '!px-3 !py-2',
+                '!text-sm',
+                '!text-accent/70',
+            ],
+        },
+    },
+
+    dialog: {
+        root: {
+            class: [
+                '!w-[500px] !max-w-lg',
+            ],
+            mask: {
+                class: [
+                    '!bg-accent/50',
+                ],
+            },
+        },
+    },
+
+    toast: {
+        messageContent: {
+            class: [
+                '!bg-white',
+                '!shadow-lg',
+                '!rounded-md',
+                '!px-4 !py-3',
+                '!text-normal !text-accent',
+            ],
+        },
+
+        summary: {
+            class: [
+                '!text-normal',
+                '!text-dark !font-semibold',
+            ],
+        },
+
+        detail: {
+            class: [
+                '!text-normal',
+                '!text-accent',
+            ],
+        },
+
+        closeButton: {
+            class: [
+                '!text-accent',
+                'hover:!text-dark',
+            ],
         },
     },
 };

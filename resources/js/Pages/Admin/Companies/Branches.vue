@@ -19,7 +19,7 @@ const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog
 const deleteBranch = (branch) => {
     openDialog({
         title: 'Odstrániť pobočku',
-        message: `Naozaj chceš odstrániť pobočku ${branch.name}?`,
+        message: `Naozaj odstrániť pobočku ${branch.name}?`,
         confirmLabel: 'Odstrániť',
         onConfirm: () => {
             router.delete(route('branches.destroy', branch.id), {
@@ -32,16 +32,6 @@ const deleteBranch = (branch) => {
 
 <template>
     <AdminLayout>
-        <div class="mb-6 max-w-3xl">
-            <h1 class="mb-2 text-2xl font-semibold">
-                Pobočky firmy
-            </h1>
-
-            <p class="text-sm text-slate-500">
-                Tu vidíš iba pobočky tejto firmy. Detail pobočky otvára samostatné stránky pre základné údaje, zamestnancov a služby.
-            </p>
-        </div>
-
         <section class="rounded-lg border bg-white p-5">
             <div class="mb-6 flex items-center justify-between gap-3">
                 <div>

@@ -17,7 +17,7 @@ const deleteUser = (user) => {
 
     openDialog({
         title: 'Odstrániť používateľa',
-        message: `Naozaj chceš odstrániť používateľa ${userName}?`,
+        message: `Naozaj odstrániť používateľa ${userName}?`,
         confirmLabel: 'Zmazať',
         onConfirm: () => {
             router.delete(route('users.destroy', user.id));

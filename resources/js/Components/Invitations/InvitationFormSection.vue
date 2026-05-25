@@ -2,6 +2,9 @@
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 
+import FormField from '@/Components/Forms/FormField.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
+
 defineProps({
     form: {
         type: Object,
@@ -39,36 +42,36 @@ defineProps({
 </script>
 
 <template>
-    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-5">
-            <h2 class="text-lg font-semibold text-slate-900">
-                {{ title }}
-            </h2>
-
-            <p v-if="description" class="mt-1 text-sm leading-6 text-slate-600">
-                {{ description }}
-            </p>
-        </div>
-
-        <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">
-                {{ inputLabel }}
-            </label>
-
+    <FormSection
+        :title="title"
+        :description="description"
+        columns="grid-cols-1"
+    >
+        <FormField
+            :label="inputLabel"
+            for="invite_email"
+            :error="form.errors.invite_email"
+        >
             <InputText
+                id="invite_email"
                 v-model="form.invite_email"
                 class="w-full"
                 :placeholder="placeholder"
                 autocomplete="email"
+                :invalid="!!form.errors.invite_email"
             />
+        </FormField>
 
-            <p v-if="form.errors.invite_email" class="mt-1 text-sm text-red-600">
-                {{ form.errors.invite_email }}
-            </p>
+        <div
+            v-if="showButton"
+            class="flex justify-end"
+        >
+            <Button
+                type="submit"
+                :label="submitLabel"
+                :loading="loading"
+                :disabled="loading"
+            />
         </div>
-
-        <div v-if="showButton" class="mt-5 flex justify-end">
-            <Button type="submit" :label="submitLabel" :loading="loading" />
-        </div>
-    </section>
+    </FormSection>
 </template>

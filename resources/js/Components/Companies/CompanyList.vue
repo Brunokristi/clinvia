@@ -82,7 +82,7 @@ const openDeleteDialog = (company) => {
 
     openDialog({
         title: 'Odstrániť firmu',
-        message: `Naozaj chceš odstrániť firmu ${companyName(company)}?`,
+        message: `Naozaj odstrániť firmu ${companyName(company)}?`,
         confirmLabel: 'Odstrániť',
         onConfirm: deleteCompany,
     });

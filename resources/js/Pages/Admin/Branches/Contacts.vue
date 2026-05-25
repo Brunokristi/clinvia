@@ -338,7 +338,7 @@ const addContact = () => {
 const deleteContact = (contact) => {
     openDialog({
         title: 'Odstrániť kontakt',
-        message: `Naozaj chceš odstrániť kontakt ${contact.value}?`,
+        message: `Naozaj odstrániť kontakt ${contact.value}?`,
         confirmLabel: 'Zmazať',
         onConfirm: () => {
             router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {

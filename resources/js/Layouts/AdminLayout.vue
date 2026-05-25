@@ -13,98 +13,78 @@ const lastFlashSuccess = ref('');
 const company = computed(() => page.props.company ?? page.props.branch?.company ?? null);
 const branch = computed(() => page.props.branch ?? null);
 
+const breadcrumbItem = (label, url = null) => ({
+    label,
+    ...(url ? { url } : {}),
+});
+
 const breadcrumbs = computed(() => {
     const items = [];
 
-    if (route().current('dashboard') || route().current('companies.index')) {
-        items.push({
-            label: 'Hlavné',
-        });
+    if (route().current('dashboard') || route().current('companies.index') || route().current('companies.onboard')) {
+        items.push(breadcrumbItem('Hlavné', route('dashboard')));
 
         if (route().current('dashboard')) {
-            items.push({
-                label: 'Dashboard',
-            });
+            items.push(breadcrumbItem('Dashboard'));
         }
 
         if (route().current('companies.index')) {
-            items.push({
-                label: 'Firmy',
-            });
+            items.push(breadcrumbItem('Firmy'));
+        }
+
+        if (route().current('companies.onboard')) {
+            items.push(breadcrumbItem('Dashboard', route('dashboard')));
+            items.push(breadcrumbItem('Onboarding'));
         }
 
         return items;
     }
 
     if (company.value) {
-        items.push({
-            label: company.value.legal_name,
-        });
+        items.push(breadcrumbItem(company.value.legal_name));
 
         if (route().current('companies.edit')) {
-            items.push({
-                label: 'Základné informácie',
-            });
+            items.push(breadcrumbItem('Základné informácie'));
         }
 
         if (route().current('companies.branches')) {
-            items.push({
-                label: 'Pobočky',
-            });
+            items.push(breadcrumbItem('Pobočky'));
         }
 
         if (route().current('companies.api-clients')) {
-            items.push({
-                label: 'API kľúče',
-            });
+            items.push(breadcrumbItem('API kľúče'));
         }
 
         if (route().current('companies.users.page')) {
-            items.push({
-                label: 'Používatelia',
-            });
+            items.push(breadcrumbItem('Používatelia'));
         }
     }
 
     if (branch.value) {
-        items.push({
-            label: branch.value.name,
-        });
+        items.push(breadcrumbItem(branch.value.name));
 
         if (route().current('branches.edit')) {
-            items.push({
-                label: 'Info',
-            });
+            items.push(breadcrumbItem('Info'));
         }
 
         if (route().current('branches.contacts.page')) {
-            items.push({
-                label: 'Kontakty',
-            });
+            items.push(breadcrumbItem('Kontakty'));
         }
 
         if (route().current('branches.opening-hours.page')) {
-            items.push({
-                label: 'Otváracie hodiny',
-            });
+            items.push(breadcrumbItem('Otváracie hodiny'));
         }
 
         if (route().current('branches.employees.page')) {
-            items.push({
-                label: 'Zamestnanci',
-            });
+            items.push(breadcrumbItem('Zamestnanci'));
         }
 
         if (route().current('branches.services.page')) {
-            items.push({
-                label: 'Služby',
-            });
+            items.push(breadcrumbItem('Služby'));
         }
 
         if (route().current('branches.users.page')) {
-            items.push({
-                label: 'Používatelia',
-            });
+            items.push(breadcrumbItem('Používatelia'));
         }
     }
 
@@ -159,6 +139,11 @@ watch(
                 />
             </header>
             <div class="p-8">
+                <div class="pb-4">
+                    <h1 class="text-heading font-semibold text-dark">
+                        {{ pageTitle }}
+                    </h1>
+                </div>
                 <slot />
             </div>
         </main>

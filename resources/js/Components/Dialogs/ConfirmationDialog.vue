@@ -1,5 +1,5 @@
 <script setup>
-import Modal from '@/Components/Modal.vue';
+import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 
 defineProps({
@@ -27,29 +27,21 @@ defineProps({
         type: String,
         default: 'danger',
     },
-    icon: {
-        type: String,
-        default: 'pi pi-exclamation-triangle',
-    },
 });
 
 const emit = defineEmits(['confirm', 'cancel']);
 </script>
 
 <template>
-    <Modal :show="show" maxWidth="md" @close="emit('cancel')">
-        <div class="p-6 sm:p-8">
+    <Dialog modal :visible="show" :closable="false" class="w-auto max-w-md" @hide="emit('cancel')  ">
+        <div class="p-2">
             <div class="flex items-start gap-4">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-                    <i :class="icon" class="text-lg" />
-                </div>
-
                 <div class="min-w-0 flex-1">
-                    <h3 class="text-lg font-semibold text-slate-900">
+                    <h3 class="text-heading text-dark">
                         {{ title }}
                     </h3>
 
-                    <p v-if="message" class="mt-2 text-sm leading-6 text-slate-600">
+                    <p v-if="message" class="mt-2 text-normal text-accent">
                         {{ message }}
                     </p>
 
@@ -72,5 +64,5 @@ const emit = defineEmits(['confirm', 'cancel']);
                 />
             </div>
         </div>
-    </Modal>
+    </Dialog>
 </template>
