@@ -2,23 +2,50 @@ import { itemIcon } from "@primeuix/themes/aura/tabmenu";
 
 export const primevuePt = {
     button: {
-        root: {
+        root: ({ props }) => ({
             class: [
-                '!rounded-md !px-2 !w-full',
-                '!text-normal',
-                '!bg-accent !text-white',
-                '!border !border-accent',
+                '!rounded-md !px-4 !py-2',
+                '!text-normal !font-medium',
+                '!border',
                 'transition-all duration-200',
-                'hover:!bg-dark hover:!border-dark',
-                'focus:!outline-none',
+                'focus:!outline-none focus:!ring-2 focus:!ring-soft',
                 'disabled:pointer-events-none disabled:opacity-50',
+
+                props.outlined
+                    ? [
+                        '!bg-transparent',
+                        '!text-accent',
+                        '!border-accent',
+                        'hover:!bg-accent',
+                        'hover:!text-white',
+                        'hover:!border-accent',
+                    ]
+                    : [
+                        '!bg-accent',
+                        '!text-white',
+                        '!border-accent',
+                        'hover:!bg-dark',
+                        'hover:!border-dark',
+                    ],
+
+                props.text
+                    ? [
+                        '!bg-transparent',
+                        '!border-transparent',
+                        '!text-accent',
+                        'hover:!bg-soft',
+                        'hover:!text-accent',
+                    ]
+                    : null,
             ],
-        },
+        }),
+
         label: {
-            class: 'font-medium',
+            class: '!font-medium',
         },
+
         icon: {
-            class: 'text-sm',
+            class: '!text-sm',
         },
     },
 
@@ -175,59 +202,193 @@ export const primevuePt = {
     datatable: {
         root: {
             class: [
-                'w-full overflow-hidden',
-                'rounded-2xl border border-soft',
-                'bg-white shadow-sm',
+                'w-full overflow-hidden !rounded-md',
+                'bg-white',
             ],
         },
 
         header: {
             class: [
-                'border-b border-soft',
-                'bg-soft/40 px-5 py-4',
-                'font-heading text-dark',
+                '!border-0',
+                '!border-b !border-soft',
+                '!bg-white',
+                '!px-0 !py-4',
+                '!text-dark',
+            ],
+        },
+
+        tableContainer: {
+            class: [
+                '!bg-white',
             ],
         },
 
         table: {
-            class: 'w-full text-sm',
+            class: [
+                'w-full',
+                '!text-normal',
+                '!bg-white',
+            ],
+        },
+
+        thead: {
+            class: [
+                '!bg-white',
+            ],
         },
 
         headerRow: {
-            class: 'border-b border-soft bg-soft/30',
+            class: [
+                '!border-b !border-soft !rounded-md',
+                '!bg-white',
+            ],
         },
 
         column: {
             headerCell: {
                 class: [
-                    'px-5 py-4 text-left',
-                    'font-heading text-sm uppercase tracking-wide',
-                    'text-dark',
+                    '!border-0',
+                    '!border-b !border-soft',
+                    '!bg-accent',
+                    '!px-5 !py-3',
+                    '!text-left',
+                    '!text-white !text-normal',
                 ],
             },
+
+            columnHeaderContent: {
+                class: [
+                    'flex items-center gap-2',
+                    '!text-white !text-normal',
+                ],
+            },
+
+            headerTitle: {
+                class: [
+                    '!text-white !text-normal',
+                ],
+            },
+
+            sortIcon: {
+                class: [
+                    '!text-white',
+                ],
+            },
+
             bodyCell: {
                 class: [
-                    'px-5 py-4',
-                    'font-normal text-sm text-gray-700',
+                    '!border-0',
+                    '!border-b !border-accent',
+                    '!px-5 !py-4',
+                    '!font-normal !text-normal',
+                    '!text-accent',
+                    '!bg-transparent',
                 ],
             },
+        },
+
+        tbody: {
+            class: [
+                '!bg-white',
+            ],
         },
 
         bodyRow: {
             class: [
-                'border-b border-soft/60',
+                '!bg-white',
                 'transition-colors duration-150',
-                'hover:bg-soft/30',
+                'hover:!bg-soft/30',
             ],
         },
 
-        paginator: {
-            root: {
-                class: [
-                    'border-t border-soft',
-                    'bg-white px-5 py-4',
-                ],
-            },
+        emptyMessageCell: {
+            class: [
+                '!px-5 !py-8',
+                '!text-center',
+                '!text-accent/70',
+                '!bg-white',
+            ],
+        },
+    },
+
+    paginator: {
+        root: {
+            class: [
+                '!border-0 !rounded-none',
+                '!bg-accent',
+                '!px-0 !py-0',
+                '!text-white',
+
+            ],
+        },
+
+        content: {
+            class: [
+                'flex items-center justify-center gap-3',
+                '!bg-white',
+            ],
+        },
+
+        first: {
+            class: [
+                '!rounded-md',
+                '!bg-soft !text-accent',
+                '!border !border-soft',
+                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                'disabled:!opacity-40',
+            ],
+        },
+
+        prev: {
+            class: [
+                '!rounded-md',
+                '!bg-soft !text-accent',
+                '!border !border-soft',
+                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                'disabled:!opacity-40',
+            ],
+        },
+
+        next: {
+            class: [
+                '!rounded-md',
+                '!bg-soft !text-accent',
+                '!border !border-soft',
+                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                'disabled:!opacity-40',
+            ],
+        },
+
+        last: {
+            class: [
+                '!rounded-md',
+                '!bg-soft !text-accent',
+                '!border !border-soft',
+                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                'disabled:!opacity-40',
+            ],
+        },
+
+        page: {
+            class: [
+                '!rounded-md',
+                '!bg-soft !text-accent',
+                '!border !border-soft',
+                'hover:!bg-accent hover:!text-white hover:!border-accent',
+            ],
+        },
+
+        current: {
+            class: [
+                '!text-normal',
+                '!text-dark',
+            ],
+        },
+
+        pages: {
+            class: [
+                'flex items-center gap-2',
+            ],
         },
     },
 
@@ -242,6 +403,15 @@ export const primevuePt = {
             ],
         },
     },
+
+    inputIcon: {
+        root: {
+            class: [
+                '!text-accent',
+            ],
+        },
+    },
+
 
     password: {
         maskicon: {
