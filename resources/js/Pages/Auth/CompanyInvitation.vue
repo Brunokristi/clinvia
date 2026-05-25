@@ -1,10 +1,13 @@
 <script setup>
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import { Head } from '@inertiajs/vue3';
 import InvitationAcceptanceForm from '@/Components/Invitations/InvitationAcceptanceForm.vue';
+import { Head } from '@inertiajs/vue3';
 
 defineProps({
-    invitation: Object,
+    invitation: {
+        type: Object,
+        required: true,
+    },
 });
 </script>
 
@@ -12,14 +15,15 @@ defineProps({
     <GuestLayout>
         <Head title="Dokončiť registráciu" />
 
-        <div class="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p class="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">Pozvánka do firmy</p>
-            <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                {{ invitation.mode === 'existing_user' ? 'Prihlásiť sa a prijať pozvánku' : 'Dokončiť registráciu' }}
-            </h1>
-            <p class="mt-2 text-sm text-slate-600">
-                Firma: <strong>{{ invitation.company_name }}</strong>
-            </p>
+        <div class="w-full max-w-md space-y-6">
+            <div class="space-y-3 text-center">
+                <p class="text-normal">
+                    Pridajte sa k spravovaniu firmy 
+                </p>
+                <h1 class="text-heading text-accent">  
+                    {{ invitation.company_name }}
+                </h1>
+            </div>
 
             <InvitationAcceptanceForm
                 :invitation="invitation"

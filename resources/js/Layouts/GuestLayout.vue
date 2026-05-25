@@ -10,9 +10,6 @@ import { Link } from '@inertiajs/vue3';
             <div class="max-w-md px-10 text-center">
                 <Link href="/" class="flex flex-col justify-center">
                     <ApplicationLogo class="h-80" />
-                    <h1 class="font-heading text-white mt-20 text-4xl">
-                        Clinvia
-                    </h1>
                 </Link>
             </div>
         </div>

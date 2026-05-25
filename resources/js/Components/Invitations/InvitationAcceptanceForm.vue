@@ -1,10 +1,12 @@
 <script setup>
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
+import FormLabel from '@/Components/FormLabel.vue';
 import { useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
+
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Password from 'primevue/password';
 
 const props = defineProps({
     invitation: {
@@ -35,41 +37,150 @@ const submit = () => {
 </script>
 
 <template>
-    <form class="mt-6 space-y-4" @submit.prevent="submit">
+    <form class="space-y-5" @submit.prevent="submit">
         <div v-if="!isExistingUserInvite">
-            <InputLabel for="first_name" value="First name" />
-            <TextInput id="first_name" v-model="form.first_name" class="mt-1 block w-full" required autofocus autocomplete="given-name" />
-            <InputError class="mt-2" :message="form.errors.first_name" />
+            <FormLabel for="first_name">
+                Meno
+            </FormLabel>
+
+            <InputText
+                id="first_name"
+                v-model="form.first_name"
+                type="text"
+                class="w-full"
+                :invalid="!!form.errors.first_name"
+                required
+                autofocus
+                autocomplete="given-name"
+            />
+
+            <Message
+                v-if="form.errors.first_name"
+                severity="error"
+                size="small"
+                variant="simple"
+                class="mt-2"
+            >
+                {{ form.errors.first_name }}
+            </Message>
         </div>
 
         <div v-if="!isExistingUserInvite">
-            <InputLabel for="last_name" value="Last name" />
-            <TextInput id="last_name" v-model="form.last_name" class="mt-1 block w-full" required autocomplete="family-name" />
-            <InputError class="mt-2" :message="form.errors.last_name" />
+            <FormLabel for="last_name">
+                Priezvisko
+            </FormLabel>
+
+            <InputText
+                id="last_name"
+                v-model="form.last_name"
+                type="text"
+                class="w-full"
+                :invalid="!!form.errors.last_name"
+                required
+                autocomplete="family-name"
+            />
+
+            <Message
+                v-if="form.errors.last_name"
+                severity="error"
+                size="small"
+                variant="simple"
+                class="mt-2"
+            >
+                {{ form.errors.last_name }}
+            </Message>
         </div>
 
         <div>
-            <InputLabel for="email" value="Email" />
-            <TextInput id="email" v-model="form.email" class="mt-1 block w-full" required readonly autocomplete="username" />
-            <InputError class="mt-2" :message="form.errors.email" />
+            <FormLabel for="email">
+                Email
+            </FormLabel>
+
+            <InputText
+                id="email"
+                v-model="form.email"
+                type="email"
+                class="w-full"
+                :invalid="!!form.errors.email"
+                required
+                readonly
+                autocomplete="username"
+            />
+
+            <Message
+                v-if="form.errors.email"
+                severity="error"
+                size="small"
+                variant="simple"
+                class="mt-2"
+            >
+                {{ form.errors.email }}
+            </Message>
         </div>
 
         <div>
-            <InputLabel :for="'password'" :value="isExistingUserInvite ? 'Heslo' : 'Password'" />
-            <TextInput id="password" v-model="form.password" class="mt-1 block w-full" type="password" required :autocomplete="isExistingUserInvite ? 'current-password' : 'new-password'" />
-            <InputError class="mt-2" :message="form.errors.password" />
+            <FormLabel for="password">
+                {{ isExistingUserInvite ? 'Heslo' : 'Heslo' }}
+            </FormLabel>
+
+            <Password
+                id="password"
+                v-model="form.password"
+                class="w-full"
+                input-class="w-full"
+                :feedback="!isExistingUserInvite"
+                :toggle-mask="true"
+                :invalid="!!form.errors.password"
+                required
+                :autocomplete="isExistingUserInvite ? 'current-password' : 'new-password'"
+            />
+
+            <Message
+                v-if="form.errors.password"
+                severity="error"
+                size="small"
+                variant="simple"
+                class="mt-2"
+            >
+                {{ form.errors.password }}
+            </Message>
         </div>
 
         <div v-if="!isExistingUserInvite">
-            <InputLabel for="password_confirmation" value="Confirm Password" />
-            <TextInput id="password_confirmation" v-model="form.password_confirmation" class="mt-1 block w-full" type="password" required autocomplete="new-password" />
-            <InputError class="mt-2" :message="form.errors.password_confirmation" />
+            <FormLabel for="password_confirmation">
+                Potvrdenie hesla
+            </FormLabel>
+
+            <Password
+                id="password_confirmation"
+                v-model="form.password_confirmation"
+                class="w-full"
+                input-class="w-full"
+                :feedback="false"
+                :toggle-mask="true"
+                :invalid="!!form.errors.password_confirmation"
+                required
+                autocomplete="new-password"
+            />
+
+            <Message
+                v-if="form.errors.password_confirmation"
+                severity="error"
+                size="small"
+                variant="simple"
+                class="mt-2"
+            >
+                {{ form.errors.password_confirmation }}
+            </Message>
         </div>
 
         <div class="pt-2">
-            <PrimaryButton class="w-full justify-center" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-                {{ isExistingUserInvite ? 'Prihlásiť sa a prijať pozvánku' : 'Dokončiť registráciu' }}
-            </PrimaryButton>
+            <Button
+                type="submit"
+                :label="isExistingUserInvite ? 'Prihlásiť sa a prijať pozvánku' : 'Dokončiť registráciu'"
+                :loading="form.processing"
+                :disabled="form.processing"
+            />
         </div>
     </form>
 </template>

@@ -13,7 +13,7 @@
         --color-white: #ffffff;
         --color-dark: #A75A5A;
 
-        --text-normal-size: 14px;
+        --text-normal-size: 16px;
         --text-normal-line-height: 1.4;
 
         --text-heading-size: 24px;
@@ -24,4 +24,8 @@
         font-family: var(--font-normal);
         color: var(--color-dark);
     }
+}
+
+.p-inputtext::placeholder {
+    color: color-mix(in srgb, var(--color-accent) 50%, transparent) !important;
 }

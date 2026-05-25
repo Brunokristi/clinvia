@@ -8,6 +8,10 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    prefix: {
+        type: String,
+        default: '',
+    },
     title: {
         type: String,
         default: 'Adresa',
@@ -20,8 +24,10 @@ const props = defineProps({
 
 const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+const fieldKey = (name) => `${props.prefix}${name}`;
+
 const addressSuggestions = ref([]);
-const selectedAddress = ref(props.form.address_line_1 || '');
+const selectedAddress = ref(props.form[fieldKey('address_line_1')] || '');
 const isLoadingAddressSuggestions = ref(false);
 const addressSuggestionError = ref('');
 
@@ -127,31 +133,31 @@ const applySelectedPlace = (place) => {
     const addressLine1 = [route, streetNumber].filter(Boolean).join(' ').trim();
 
     if (addressLine1) {
-        props.form.address_line_1 = addressLine1;
+        props.form[fieldKey('address_line_1')] = addressLine1;
     } else if (place?.formattedAddress) {
-        props.form.address_line_1 = place.formattedAddress;
+        props.form[fieldKey('address_line_1')] = place.formattedAddress;
     } else if (place?.displayName) {
-        props.form.address_line_1 = place.displayName;
+        props.form[fieldKey('address_line_1')] = place.displayName;
     }
 
-    if (subpremise && !String(props.form.address_line_2 || '').trim()) {
-        props.form.address_line_2 = subpremise;
+    if (subpremise && !String(props.form[fieldKey('address_line_2')] || '').trim()) {
+        props.form[fieldKey('address_line_2')] = subpremise;
     }
 
     if (city) {
-        props.form.city = city;
+        props.form[fieldKey('city')] = city;
     }
 
     if (postalCode) {
-        props.form.postal_code = postalCode;
+        props.form[fieldKey('postal_code')] = postalCode;
     }
 
     if (region) {
-        props.form.region = region;
+        props.form[fieldKey('region')] = region;
     }
 
     if (country) {
-        props.form.country = country;
+        props.form[fieldKey('country')] = country;
     }
 };
 
@@ -246,7 +252,7 @@ onMounted(async () => {
 });
 
 watch(
-    () => props.form.address_line_1,
+    () => props.form[fieldKey('address_line_1')],
     (value) => {
         const nextValue = value || '';
 
@@ -257,8 +263,8 @@ watch(
 );
 
 watch(selectedAddress, (value) => {
-    if (typeof value === 'string' && props.form.address_line_1 !== value) {
-        props.form.address_line_1 = value;
+    if (typeof value === 'string' && props.form[fieldKey('address_line_1')] !== value) {
+        props.form[fieldKey('address_line_1')] = value;
     }
 });
 
@@ -338,10 +344,10 @@ onBeforeUnmount(() => {
                 </p>
 
                 <p
-                    v-if="form.errors.address_line_1"
+                    v-if="form.errors[fieldKey('address_line_1')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.address_line_1 }}
+                    {{ form.errors[fieldKey('address_line_1')] }}
                 </p>
             </div>
 
@@ -351,17 +357,17 @@ onBeforeUnmount(() => {
                 </label>
 
                 <InputText
-                    v-model="form.address_line_2"
+                    v-model="form[fieldKey('address_line_2')]"
                     class="w-full"
                     placeholder="Apartment, floor, suite, etc."
                     autocomplete="address-line2"
                 />
 
                 <p
-                    v-if="form.errors.address_line_2"
+                    v-if="form.errors[fieldKey('address_line_2')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.address_line_2 }}
+                    {{ form.errors[fieldKey('address_line_2')] }}
                 </p>
             </div>
 
@@ -371,17 +377,17 @@ onBeforeUnmount(() => {
                 </label>
 
                 <InputText
-                    v-model="form.city"
+                    v-model="form[fieldKey('city')]"
                     class="w-full"
                     placeholder="Handlová"
                     autocomplete="address-level2"
                 />
 
                 <p
-                    v-if="form.errors.city"
+                    v-if="form.errors[fieldKey('city')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.city }}
+                    {{ form.errors[fieldKey('city')] }}
                 </p>
             </div>
 
@@ -391,17 +397,17 @@ onBeforeUnmount(() => {
                 </label>
 
                 <InputText
-                    v-model="form.postal_code"
+                    v-model="form[fieldKey('postal_code')]"
                     class="w-full"
                     placeholder="972 51"
                     autocomplete="postal-code"
                 />
 
                 <p
-                    v-if="form.errors.postal_code"
+                    v-if="form.errors[fieldKey('postal_code')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.postal_code }}
+                    {{ form.errors[fieldKey('postal_code')] }}
                 </p>
             </div>
 
@@ -411,17 +417,17 @@ onBeforeUnmount(() => {
                 </label>
 
                 <InputText
-                    v-model="form.region"
+                    v-model="form[fieldKey('region')]"
                     class="w-full"
                     placeholder="Trenčiansky kraj"
                     autocomplete="address-level1"
                 />
 
                 <p
-                    v-if="form.errors.region"
+                    v-if="form.errors[fieldKey('region')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.region }}
+                    {{ form.errors[fieldKey('region')] }}
                 </p>
             </div>
 
@@ -431,17 +437,17 @@ onBeforeUnmount(() => {
                 </label>
 
                 <InputText
-                    v-model="form.country"
+                    v-model="form[fieldKey('country')]"
                     class="w-full"
                     placeholder="Slovensko"
                     autocomplete="country-name"
                 />
 
                 <p
-                    v-if="form.errors.country"
+                    v-if="form.errors[fieldKey('country')]"
                     class="mt-1 text-sm text-red-600"
                 >
-                    {{ form.errors.country }}
+                    {{ form.errors[fieldKey('country')] }}
                 </p>
             </div>
         </div>

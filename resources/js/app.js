@@ -10,6 +10,8 @@ import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
 import ToastService from 'primevue/toastservice';
 import { primevuePt } from './primevue/passthrough';
+import { sk } from './primevue/locales/sk';
+
 
 
 createInertiaApp({
@@ -34,6 +36,7 @@ createInertiaApp({
                 },
                 ripple: true,
                 pt: primevuePt,
+                locale: sk,
                 ptOptions: {
                     mergeSections: true,
                     mergeProps: true,

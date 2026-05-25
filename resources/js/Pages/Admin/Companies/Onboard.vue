@@ -37,18 +37,17 @@ const steps = [
 const isStepOne = computed(() => currentStep.value === 1);
 const isStepTwo = computed(() => currentStep.value === 2);
 
-const companyRequiredFields = computed(() => ({
-    company_legal_name: form.company_legal_name,
-    company_id_number: form.company_id_number,
-    company_tax_id: form.company_tax_id,
-    company_address_line_1: form.company_address_line_1,
-    company_city: form.company_city,
-    company_postal_code: form.company_postal_code,
-    company_country: form.company_country,
-}));
+const isCompanyStepValid = computed(() => {
+    return !!form.company_legal_name?.trim() &&
+           !!String(form.company_id_number ?? '').trim() &&
+           !!String(form.company_tax_id ?? '').trim() &&
+           !!form.company_address_line_1?.trim() &&
+           !!form.company_city?.trim() &&
+           !!form.company_postal_code?.trim() &&
+           !!form.company_country?.trim();
+});
 
-const isCompanyStepValid = computed(() => Object.values(companyRequiredFields.value).every((value) => String(value).trim() !== ''));
-const isAdminStepValid = computed(() => String(form.invite_email).trim() !== '');
+const isAdminStepValid = computed(() => !!form.invite_email?.trim());
 
 const showCompanyRequiredError = (field) => triedToContinue.value && !String(form[field]).trim();
 

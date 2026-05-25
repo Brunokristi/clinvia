@@ -1,3 +1,5 @@
+import { itemIcon } from "@primeuix/themes/aura/tabmenu";
+
 export const primevuePt = {
     button: {
         root: {
@@ -7,8 +9,8 @@ export const primevuePt = {
                 '!bg-accent !text-white',
                 '!border !border-accent',
                 'transition-all duration-200',
-                'hover:!bg-dark !hover:border-dark',
-                'focus:!outline-none ',
+                'hover:!bg-dark hover:!border-dark',
+                'focus:!outline-none',
                 'disabled:pointer-events-none disabled:opacity-50',
             ],
         },
@@ -17,6 +19,156 @@ export const primevuePt = {
         },
         icon: {
             class: 'text-sm',
+        },
+    },
+
+    breadcrumb: {
+        root: {
+            class: [
+                '!border-0 !bg-transparent',
+                '!p-0',
+            ],
+        },
+
+        list: {
+            class: [
+                'flex flex-wrap items-center gap-2',
+                '!text-normal',
+            ],
+        },
+
+        item: {
+            class: [
+                'flex items-center',
+            ],
+        },
+
+        itemLink: {
+            class: [
+                '!rounded-md !px-2 !py-1',
+                '!text-normal !font-medium',
+                '!text-accent',
+                'transition-all duration-200',
+                'hover:!bg-soft hover:!text-accent',
+            ],
+        },
+
+        itemIcon: {
+            class: [
+                '!text-accent',
+            ],
+        },
+
+        itemLabel: {
+            class: [
+                '!text-normal',
+                '!text-accent',
+            ],
+        },
+
+        separator: {
+            class: [
+                '!mx-1',
+                '!text-accent',
+            ],
+        },
+    },
+
+    panelmenu: {
+        root: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
+
+        panel: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
+
+        header: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
+
+        headerContent: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
+
+        headerLink: {
+            class: [
+                '!rounded-md',
+                '!bg-dark',
+                '!text-normal !font-medium !text-white',
+                'transition-all duration-200',
+                'focus:!outline-none focus:!ring-2 focus:!ring-soft',
+            ],
+        },
+
+        headerIcon: {
+            class: [
+                '!text-sm',
+                '!text-current',
+            ],
+        },
+
+        submenuIcon: {
+            class: [
+                '!text-sm',
+                '!text-current',
+            ],
+        },
+
+        content: {
+            class: [
+                '!border-0 !bg-transparent',
+                '!pt-1 !pb-3',
+            ],
+        },
+
+        submenu: {
+            class: [
+                'space-y-1',
+            ],
+        },
+
+        item: {
+            class: [
+                '!bg-transparent',
+            ],
+        },
+
+        itemContent: {
+            class: [
+                '!bg-transparent',
+            ],
+        },
+
+        itemLink: {
+            class: [
+                '!rounded-md !px-4 !py-2',
+                '!text-normal !font-normal !text-white',
+                'transition-all duration-200',
+                'hover:!bg-dark hover:!text-white',
+                'focus:!outline-none focus:!ring-2 focus:!ring-soft',
+            ],
+        },
+
+        itemIcon: {
+            class: [
+                '!text-sm',
+                '!text-current',
+            ],
+        },
+
+        itemLabel: {
+            class: [
+                'truncate',
+            ],
         },
     },
 
@@ -90,6 +242,7 @@ export const primevuePt = {
             ],
         },
     },
+
     password: {
         maskicon: {
             class: '!text-accent',
@@ -97,7 +250,18 @@ export const primevuePt = {
         unmaskicon: {
             class: '!text-accent',
         },
+        meterText: {
+            class: '!text-normal !text-accent',
+        },
+        overlay: {
+            class: [
+                'rounded-md border border-soft',
+                'bg-white shadow-lg',
+                'p-4',
+            ],
+        },
     },
+
     checkbox: {
         root: {
             class: 'inline-flex items-center',
@@ -110,15 +274,13 @@ export const primevuePt = {
         box: {
             class: [
                 'h-5 w-5 rounded-md',
-                'border !border-accent',
-                'bg-white',
+                'focus:!border focus:!border-accent',
+                '!bg-soft !border-soft',
                 'transition-all duration-200',
 
-                // checked
                 'peer-checked:!border-accent',
                 'peer-checked:!bg-accent',
 
-                // hover / focus
                 'peer-hover:!border-accent',
                 'peer-focus-visible:ring-2',
                 'peer-focus-visible:ring-soft',

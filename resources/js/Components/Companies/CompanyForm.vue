@@ -217,6 +217,7 @@ const requiredMark = computed(() => {
 
         <AddressFormSection
             :form="form"
+            prefix="company_"
             title="Adresa firmy"
             description="Registrovaná alebo fakturačná adresa firmy."
             :show-region="true"
