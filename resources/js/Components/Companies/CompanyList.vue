@@ -2,14 +2,8 @@
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import TableCard from '@/Components/Tables/TableCard.vue';
-import { Link, router } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import Button from 'primevue/button';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
-import InputText from 'primevue/inputtext';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
-import { FilterMatchMode } from '@primevue/core/api';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -55,27 +49,6 @@ const rows = computed(() => {
         : props.companies?.data ?? [];
 });
 
-const paginationLinks = computed(() => {
-    return Array.isArray(props.companies?.links)
-        ? props.companies.links
-        : [];
-});
-
-const filters = ref({
-    global: {
-        value: null,
-        matchMode: FilterMatchMode.CONTAINS,
-    },
-    legal_name: {
-        value: null,
-        matchMode: FilterMatchMode.CONTAINS,
-    },
-    company_number: {
-        value: null,
-        matchMode: FilterMatchMode.CONTAINS,
-    },
-});
-
 const selectedCompanyToDelete = ref(null);
 
 const tableRows = computed(() => {
@@ -85,6 +58,20 @@ const tableRows = computed(() => {
         company_number: String(company.id_number || company.company_id_number || ''),
     }));
 });
+
+const columns = [
+    {
+        field: 'legal_name',
+        header: 'Názov firmy',
+        sortable: true,
+    },
+    {
+        field: 'company_number',
+        header: 'IČO',
+        sortable: true,
+        emptyValue: '—',
+    },
+];
 
 const companyName = (company) => {
     return company.legal_name || company.name || 'Bez názvu';
@@ -118,161 +105,48 @@ const deleteCompany = () => {
     });
 };
 
-const clearFilters = () => {
-    filters.value = {
-        global: {
-            value: null,
-            matchMode: FilterMatchMode.CONTAINS,
-        },
-        legal_name: {
-            value: null,
-            matchMode: FilterMatchMode.CONTAINS,
-        },
-        company_number: {
-            value: null,
-            matchMode: FilterMatchMode.CONTAINS,
-        },
-    };
-};
-
-const linkClass = (link) => {
-    return [
-        'inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-3 text-sm font-medium transition',
-        link.active
-            ? 'border-slate-900 bg-slate-900 text-white'
-            : link.url
-                ? 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                : 'cursor-not-allowed border-slate-200 text-slate-300',
-    ].join(' ');
-};
 </script>
 
 <template>
     <section>
         <TableCard
-            v-if="rows.length > 0"
             :title="title"
             :description="description"
+            :rows="tableRows"
+            :columns="columns"
+            :search-fields="['legal_name', 'company_number']"
+            empty-message="Zatiaľ tu nie sú žiadne firmy."
+            show-row-actions
         >
             <template #actions>
-                <IconField>
-                    <InputIcon class="pi pi-search" />
-                    <InputText
-                        v-model="filters.global.value"
-                        class="w-full md:max-w-md"
-                        placeholder="Hľadať"
-                    />
-                </IconField>
-
-                <Link
+                <a
                     v-if="showCreateButton"
                     :href="route(createHref)"
                 >
                     <Button
                         :label="createLabel"
                     />
-                </Link>
+                </a>
             </template>
 
-            <DataTable
-                v-if="rows.length > 0"
-                v-model:filters="filters"
-                :value="tableRows"
-                :globalFilterFields="[
-                    'legal_name',
-                    'company_number'
-                ]"
-                paginator
-                :rows="20"
-                :rowsPerPageOptions="[10, 25, 50, 100]"
-                removableSort
-                stripedRows
-                rowHover
-                tableStyle="min-width: 40rem"
-                emptyMessage="Nenašli sa žiadne firmy."
-            >
-                <Column
-                    field="legal_name"
-                    header="Názov firmy"
-                    sortable
-                />
+            <template #row-actions="{ row }">
+                <div class="flex gap-2">
+                    <Button
+                        @click="router.visit(route('companies.edit', { company: row.id }))"
+                        label="Detail"
+                    />
 
-                <Column
-                    field="company_number"
-                    header="IČO"
-                    sortable
-                >
-                    <template #body="{ data }">
-                        <span>{{ data.company_number || '—' }}</span>
-                    </template>
-                </Column>
-
-                <Column
-                    v-if="showActions"
-                    header="Akcie"
-                    style="width: 180px"
-                >
-                    <template #body="{ data }">
-                        <div class="flex gap-2">
-                            <Button
-                                @click="route('companies.edit', { company: data.id })"
-                                label="Zobraziť"
-                            />
-
-                            <Button
-                                type="button"
-                                label="Zmazať"
-                                severity="danger"
-                                outlined
-                                @click="openDeleteDialog(data)"
-                            />
-                        </div>
-                    </template>
-                </Column>
-
-                <template #paginatorcontainer="{ first, last, page, pageCount, prevPageCallback, nextPageCallback, totalRecords }">
-                    <div class="flex items-center justify-between gap-4 bg-transparentw w-full py-1">
-                        <Button icon="pi pi-chevron-left" class="!text-xs" text @click="prevPageCallback" :disabled="page === 0" />
-                        <div class="text-color text-normal font-semibold w-full min-w-[500px] text-center">
-                            <span class="hidden sm:block">Showing {{ first }} to {{ last }} of {{ totalRecords }}</span>
-                            <span class="block sm:hidden">Page {{ page + 1 }} of {{ pageCount }}</span>
-                        </div>
-                        <Button icon="pi pi-chevron-right" class="!text-xs" text @click="nextPageCallback" :disabled="page === pageCount - 1" />
-                    </div>
-                </template>
-            </DataTable>
+                    <Button
+                        v-if="showActions"
+                        type="button"
+                        label="Zmazať"
+                        severity="danger"
+                        outlined
+                        @click="openDeleteDialog(row)"
+                    />
+                </div>
+            </template>
         </TableCard>
-
-        <div
-            v-else
-            class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500"
-        >
-            {{ emptyMessage }}
-        </div>
-
-        <div
-            v-if="paginationLinks.length > 3"
-            class="mt-6 flex flex-wrap gap-2"
-        >
-            <template
-                v-for="link in paginationLinks"
-                :key="link.label"
-            >
-                <Link
-                    v-if="link.url"
-                    :href="link.url"
-                    :class="linkClass(link)"
-                    preserve-scroll
-                    v-html="link.label"
-                />
-
-                <span
-                    v-else
-                    :class="linkClass(link)"
-                    v-html="link.label"
-                />
-            </template>
-        </div>
 
         <ConfirmationDialog
             :show="dialog.visible"
