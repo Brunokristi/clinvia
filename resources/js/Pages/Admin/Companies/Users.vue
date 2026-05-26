@@ -1,14 +1,20 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
-import EntityUsersPanel from '@/Components/UserManagement/EntityUsersPanel.vue';
 import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
+import TableCard from '@/Components/Tables/TableCard.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
+import Avatar from 'primevue/avatar';
+import Button from 'primevue/button';
+
 const props = defineProps({
-    company: Object,
+    company: {
+        type: Object,
+        required: true,
+    },
 });
 
 const inviteForm = useForm({
@@ -16,52 +22,106 @@ const inviteForm = useForm({
 });
 
 const page = usePage();
+
 const currentUserRole = computed(() => page.props.auth?.user?.global_role ?? null);
+
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
-const displayName = (user) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '—';
+const displayName = (user) => {
+    return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || '—';
+};
 
-const initials = (user) => displayName(user)
-    .split(' ')
-    .map((part) => part.charAt(0))
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+const initials = (user) => {
+    return displayName(user)
+        .split(' ')
+        .map((part) => part.charAt(0))
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+};
 
-const users = computed(() => (props.company.users ?? []).map((user) => ({
-    id: user.id,
-    name: displayName(user),
-    initials: initials(user),
-    email: user.email,
-    sourceLabel: 'Firma',
-    sourceSeverity: 'info',
-    roleLabel: user.pivot?.role === 'company_admin' ? 'Admin' : (user.pivot?.role ?? '—'),
-    roleSeverity: user.pivot?.role === 'company_admin' ? 'success' : 'secondary',
-    statusLabel: user.pivot?.is_active ? 'Aktívny' : 'Neaktívny',
-    statusSeverity: user.pivot?.is_active ? 'success' : 'secondary',
-    canDelete: currentUserRole.value === 'super_admin' || user.pivot?.role !== 'company_admin',
-})));
+const users = computed(() => {
+    return (props.company.users ?? []).map((user) => {
+        const role = user.pivot?.role === 'company_admin'
+            ? 'Admin'
+            : (user.pivot?.role ?? '—');
 
-const invitations = computed(() => (props.company.company_invitations ?? []).map((invitation) => {
-    const isExpired = invitation.expires_at ? new Date(invitation.expires_at).getTime() < Date.now() : false;
+        const status = user.pivot?.is_active ? 'Aktívny' : 'Neaktívny';
 
-    return {
-        id: invitation.id,
-        email: invitation.email,
-        invitedByLabel: invitation.invited_by ? displayName(invitation.invited_by) : '—',
-        expiresAt: invitation.expires_at,
-        statusLabel: isExpired ? 'Vypršala' : 'Čaká na prijatie',
-        statusSeverity: isExpired ? 'danger' : 'warning',
-        canResend: isExpired,
-        canDelete: true,
-    };
-}));
+        return {
+            type: 'user',
+            id: user.id,
+            name: displayName(user),
+            initials: initials(user),
+            email: user.email,
+            invitedByLabel: null,
+            source: 'Firma',
+            role,
+            status,
+            canResend: false,
+            canDelete: currentUserRole.value === 'super_admin' || user.pivot?.role !== 'company_admin',
+        };
+    });
+});
+
+const invitations = computed(() => {
+    return (props.company.company_invitations ?? []).map((invitation) => {
+        const isExpired = invitation.expires_at
+            ? new Date(invitation.expires_at).getTime() < Date.now()
+            : false;
+
+        const status = isExpired ? 'Vypršala' : 'Čaká na prijatie';
+
+        return {
+            type: 'invitation',
+            id: invitation.id,
+            name: invitation.email,
+            initials: null,
+            email: invitation.email,
+            invitedByLabel: invitation.invited_by ? displayName(invitation.invited_by) : '—',
+            expiresAt: invitation.expires_at,
+            source: 'Pozvánka',
+            role: '—',
+            status,
+            canResend: isExpired,
+            canDelete: true,
+        };
+    });
+});
+
+const combinedRows = computed(() => {
+    return [...users.value, ...invitations.value];
+});
+
+const columns = [
+    {
+        field: 'name',
+        header: 'Používateľ',
+        sortable: true,
+    },
+    {
+        field: 'source',
+        header: 'Level',
+        sortable: true,
+    },
+    {
+        field: 'role',
+        header: 'Rola',
+        sortable: true,
+    },
+    {
+        field: 'status',
+        header: 'Stav',
+        sortable: true,
+    },
+];
 
 const inviteCompanyAdmin = () => {
     inviteForm.post(route('companies.users.store', props.company.id), {
         preserveScroll: true,
         onSuccess: () => {
             inviteForm.reset('invite_email');
+            router.reload();
         },
     });
 };
@@ -101,56 +161,107 @@ const deleteInvitation = (invitation) => {
 
 <template>
     <AdminLayout>
-        <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="max-w-3xl">
-                <p class="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                    Firma
-                </p>
+        <div class="space-y-6">
+            <form @submit.prevent="inviteCompanyAdmin">
+                <InvitationFormSection
+                    :form="inviteForm"
+                    title="Pozvať používateľa do firmy"
+                    description="Pozvi ľubovoľného používateľa, aby sa stal adminom tejto firmy. Bude mať plný prístup ku všetkým pobočkám a nastaveniam firmy."
+                    input-label="Email používateľa"
+                    submit-label="Poslať pozvánku"
+                    :loading="inviteForm.processing"
+                />
+            </form>
 
-                <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                    Používatelia firmy
-                </h1>
+            <TableCard
+                title="Používatelia a pozvánky"
+                description="Aktívni používatelia a čakajúce pozvánky pre túto firmu."
+                :rows="combinedRows"
+                :columns="columns"
+                empty-message="Táto firma zatiaľ nemá žiadne položky."
+                show-row-actions
+            >
+                <template #cell-name="{ row }">
+                    <div v-if="row.type === 'user'" class="flex items-center gap-3">
+                        <Avatar :label="row.initials" shape="circle" />
 
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Spravuj používateľov priradených k firme a pozvánky, ktoré ešte neboli prijaté.
-                </p>
-            </div>
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-dark">
+                                {{ row.name }}
+                            </p>
 
-            <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                    Aktívna firma
-                </p>
+                            <p class="truncate text-sm text-accent/70">
+                                {{ row.email }}
+                            </p>
+                        </div>
+                    </div>
 
-                <p class="mt-1 text-sm font-semibold text-slate-900">
-                    {{ company.legal_name }}
-                </p>
-            </div>
+                    <div v-else class="min-w-0">
+                        <p class="truncate text-sm font-semibold text-dark">
+                            {{ row.email }}
+                        </p>
+
+                        <p class="truncate text-sm text-accent/70">
+                            Pozval: {{ row.invitedByLabel }}
+                        </p>
+                    </div>
+                </template>
+
+                <template #cell-source="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.source }}
+                    </span>
+                </template>
+
+                <template #cell-role="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.role }}
+                    </span>
+                </template>
+
+                <template #cell-status="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.status }}
+                    </span>
+                </template>
+
+                <template #row-actions="{ row }">
+                    <div class="flex items-center gap-2">
+                        <Button
+                            v-if="row.type === 'user' && row.canDelete"
+                            type="button"
+                            label="Odstrániť"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="deleteUser(row)"
+                        />
+
+                        <div v-if="row.type === 'invitation'" class="flex items-center gap-2">
+                            <Button
+                                v-if="row.canResend"
+                                type="button"
+                                label="Znovu poslať"
+                                icon="pi pi-send"
+                                size="small"
+                                outlined
+                                @click="resendInvitation(row)"
+                            />
+
+                            <Button
+                                v-if="row.canDelete"
+                                type="button"
+                                label="Odstrániť"
+                                size="small"
+                                severity="danger"
+                                outlined
+                                @click="deleteInvitation(row)"
+                            />
+                        </div>
+                    </div>
+                </template>
+            </TableCard>
         </div>
-
-        <EntityUsersPanel
-            title="Používatelia a pozvánky"
-            description="Každý pozvaný používateľ získa prístup po prijatí pozvánky. Vypršané pozvánky vieš odoslať znova."
-            :users="users"
-            :invitations="invitations"
-            users-empty-message="Táto firma zatiaľ nemá žiadnych používateľov."
-            invitations-empty-message="Táto firma zatiaľ nemá žiadne pozvánky."
-            @delete-user="deleteUser"
-            @resend-invitation="resendInvitation"
-            @delete-invitation="deleteInvitation"
-        >
-            <template #invite-form>
-                <form class="mt-5" @submit.prevent="inviteCompanyAdmin">
-                    <InvitationFormSection
-                        :form="inviteForm"
-                        title="Pozvať používateľa do firmy"
-                        description="Pozvánka ide na email a po prijatí sa používateľ priradí k firme ako admin."
-                        input-label="Email používateľa"
-                        submit-label="Poslať pozvánku"
-                        :loading="inviteForm.processing"
-                    />
-                </form>
-            </template>
-        </EntityUsersPanel>
 
         <ConfirmationDialog
             :show="dialog.visible"

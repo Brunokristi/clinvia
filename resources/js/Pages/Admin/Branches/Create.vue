@@ -33,14 +33,7 @@ const toast = useToast();
 const submit = () => {
     form.post(route('branches.store'), {
         preserveScroll: true,
-        onSuccess: () => {
-            toast.add({
-                severity: 'success',
-                summary: 'Úspech',
-                detail: 'Pobočka bola úspešne vytvorená.',
-                life: 3000,
-            });
-        },
+        // success handled via server flash message (rendered by layout)
         onError: () => {
             toast.add({
                 severity: 'error',
@@ -55,10 +48,6 @@ const submit = () => {
 
 <template>
     <AdminLayout>
-        <h1 class="mb-6 text-2xl font-semibold">
-            Pridať pobočku
-        </h1>
-
         <form class="space-y-6" @submit.prevent="submit">
             <BranchForm
                 :form="form"

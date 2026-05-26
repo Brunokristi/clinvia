@@ -219,7 +219,7 @@ const resolveCellValue = (row, column) => {
 
             <div
                 v-else
-                class="p-8 text-center text-sm text-slate-500"
+                class="p-8 text-center text-normal text-accent"
             >
                 {{ emptyMessage }}
             </div>

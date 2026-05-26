@@ -41,7 +41,7 @@ const breadcrumbs = computed(() => {
     }
 
     if (company.value) {
-        items.push(breadcrumbItem(company.value.legal_name));
+        items.push(breadcrumbItem(company.value.legal_name, route('companies.edit', company.value)));
 
         if (route().current('companies.edit')) {
             items.push(breadcrumbItem('Základné informácie'));
@@ -49,6 +49,11 @@ const breadcrumbs = computed(() => {
 
         if (route().current('companies.branches')) {
             items.push(breadcrumbItem('Pobočky'));
+        }
+
+        if (route().current('branches.create')) {
+            items.push(breadcrumbItem('Pobočky', route('companies.branches', company.value)));
+            items.push(breadcrumbItem('Nová pobočka'));
         }
 
         if (route().current('companies.api-clients')) {
@@ -61,7 +66,7 @@ const breadcrumbs = computed(() => {
     }
 
     if (branch.value) {
-        items.push(breadcrumbItem(branch.value.name));
+        items.push(breadcrumbItem(branch.value.name, route('branches.edit', branch.value)));
 
         if (route().current('branches.edit')) {
             items.push(breadcrumbItem('Info'));

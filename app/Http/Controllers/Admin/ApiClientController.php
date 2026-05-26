@@ -56,6 +56,7 @@ class ApiClientController extends Controller
                 'company_id' => $data['company_id'],
                 'name' => $data['name'],
                 'key_hash' => Hash::make($plainToken),
+                'plain_text_token' => $plainToken,
                 'rate_limit_per_minute' => $data['rate_limit_per_minute'],
                 'is_active' => $data['is_active'],
             ]);
@@ -69,7 +70,7 @@ class ApiClientController extends Controller
         });
 
         return redirect()
-            ->route('api-clients.index')
+            ->back()
             ->with('success', 'API klient bol vytvorený.')
             ->with('api_token', $plainToken);
     }
@@ -118,7 +119,7 @@ class ApiClientController extends Controller
         });
 
         return redirect()
-            ->route('api-clients.index')
+            ->route('companies.api-clients', $apiClient->company_id)
             ->with('success', 'API klient bol upravený.');
     }
 
@@ -127,7 +128,7 @@ class ApiClientController extends Controller
         $apiClient->delete();
 
         return redirect()
-            ->route('api-clients.index')
+            ->route('companies.api-clients', $apiClient->company_id)
             ->with('success', 'API klient bol odstránený.');
     }
 
@@ -137,11 +138,12 @@ class ApiClientController extends Controller
 
         $apiClient->update([
             'key_hash' => Hash::make($plainToken),
+            'plain_text_token' => $plainToken,
             'last_used_at' => null,
         ]);
 
         return redirect()
-            ->route('api-clients.index')
+            ->route('companies.api-clients', $apiClient->company_id)
             ->with('success', 'API token bol pregenerovaný.')
             ->with('api_token', $plainToken);
     }

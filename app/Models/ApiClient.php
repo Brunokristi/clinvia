@@ -12,6 +12,7 @@ class ApiClient extends Model
         'company_id',
         'name',
         'key_hash',
+        'plain_text_token',
         'is_active',
         'rate_limit_per_minute',
         'last_used_at',

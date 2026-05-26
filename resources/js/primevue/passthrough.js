@@ -7,36 +7,34 @@ export const primevuePt = {
                 '!rounded-md !px-4 !py-2',
                 '!text-normal !font-medium',
                 '!border',
-                'transition-all duration-200',
-                'focus:!outline-none focus:!ring-2 focus:!ring-soft',
+                'focus:!outline-none',
                 'disabled:pointer-events-none disabled:opacity-50',
-
-                props.outlined
-                    ? [
-                        '!bg-transparent',
-                        '!text-accent',
-                        '!border-accent',
-                        'hover:!bg-accent',
-                        'hover:!text-white',
-                        'hover:!border-accent',
-                    ]
-                    : [
-                        '!bg-accent',
-                        '!text-white',
-                        '!border-accent',
-                        'hover:!bg-dark',
-                        'hover:!border-dark',
-                    ],
 
                 props.text
                     ? [
                         '!bg-transparent',
-                        '!border-transparent',
                         '!text-accent',
-                        'hover:!bg-soft',
-                        'hover:!text-accent',
+                        '!border-transparent',
+                        'hover:!bg-transparent',
+                        'hover:!text-dark',
+                        'hover:!border-transparent',
                     ]
-                    : null,
+                    : props.outlined
+                        ? [
+                            '!bg-transparent',
+                            '!text-accent',
+                            '!border-accent',
+                            'hover:!bg-accent',
+                            'hover:!text-white',
+                            'hover:!border-accent',
+                        ]
+                        : [
+                            '!bg-accent',
+                            '!text-white',
+                            '!border-accent',
+                            'hover:!bg-dark',
+                            'hover:!border-dark',
+                        ],
             ],
         }),
 
@@ -46,14 +44,6 @@ export const primevuePt = {
 
         icon: {
             class: '!text-sm',
-        },
-
-        pcCloseButton: {
-            class: [
-                '!absolute !top-2 !left-2',
-                '!text-accent',
-                'hover:!text-dark',
-            ],
         },
     },
 
@@ -737,6 +727,22 @@ export const primevuePt = {
                 ],
             },
         },
+
+        pcCloseButton: {
+            root: {
+                class: [
+                    '!w-9 !h-9',
+                    '!bg-transparent !border-0',
+                    'focus:!outline-none',
+                    'hove:!bg-transparent',
+                ],
+            },
+            icon: {
+                class: [
+                    '!text-accent',
+                ],
+            },
+        },
     },
 
     toast: {
@@ -768,6 +774,27 @@ export const primevuePt = {
             class: [
                 '!text-accent',
                 'hover:!text-dark',
+            ],
+        },
+    },
+
+    textarea: {
+        root: {
+            class: [
+                '!w-full !rounded-md',
+                '!bg-soft px-4 py-2 !border-soft shadow-0',
+                '!text-normal !text-accent',
+                'hover:!border-accent',
+                'focus:!border-accent focus:!bg-white',
+            ],
+        },
+    },
+
+    avatar: {
+        root: {
+            class: [
+                '!rounded-full',
+                '!bg-accent !text-white !text-normal !font-semibold',
             ],
         },
     },

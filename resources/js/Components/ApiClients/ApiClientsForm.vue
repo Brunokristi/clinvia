@@ -1,4 +1,7 @@
 <script setup>
+import FormPage from '@/Components/Forms/FormPage.vue';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
 import { useForm } from '@inertiajs/vue3';
 
 import Button from 'primevue/button';
@@ -29,7 +32,7 @@ const emit = defineEmits(['created']);
 const form = useForm({
     company_id: props.fixedCompanyId,
     name: '',
-    rate_limit_per_minute: 1000000,
+    rate_limit_per_minute: 10000,
     is_active: true,
     domains: [
         {
@@ -54,7 +57,7 @@ const resetForm = () => {
     form.reset();
 
     form.company_id = props.fixedCompanyId;
-    form.rate_limit_per_minute = 1000000;
+    form.rate_limit_per_minute = 10000;
     form.is_active = true;
     form.domains = [
         {
@@ -66,7 +69,7 @@ const resetForm = () => {
 
 const submit = () => {
     form.company_id = props.fixedCompanyId ?? form.company_id;
-    form.rate_limit_per_minute = 1000000;
+    form.rate_limit_per_minute = 10000;
     form.is_active = true;
 
     form.domains = form.domains.map((domain) => ({
@@ -85,123 +88,92 @@ const submit = () => {
 </script>
 
 <template>
-    <form class="space-y-6" @submit.prevent="submit">
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 class="text-base font-semibold text-slate-900">
-                Základné údaje
-            </h3>
-
-            <p class="mt-1 text-sm leading-6 text-slate-600">
-                API kľúč bude aktívny automaticky a limit bude nastavený na vysokú hodnotu.
-            </p>
-        </div>
-
-        <div class="grid gap-5 md:grid-cols-2">
-            <div v-if="showCompanySelect">
-                <label class="mb-1 block text-sm font-medium text-slate-700">
-                    Firma <span class="text-red-500">*</span>
-                </label>
-
-                <Select
-                    v-model="form.company_id"
-                    :options="companies"
-                    optionLabel="legal_name"
-                    optionValue="id"
-                    placeholder="Vyber firmu"
-                    filter
-                    class="w-full"
-                />
-
-                <p
-                    v-if="form.errors.company_id"
-                    class="mt-1 text-sm text-red-600"
+    <form @submit.prevent="submit">
+        <FormPage
+            :submit-label="submitLabel"
+            :loading="form.processing"
+        >
+            <FormSection
+                title="Základné údaje"
+                description="API kľúč bude aktívny automaticky a limit bude nastavený na vysokú hodnotu."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    v-if="showCompanySelect"
+                    label="Firma"
+                    required
+                    :error="form.errors.company_id"
                 >
-                    {{ form.errors.company_id }}
-                </p>
-            </div>
-
-            <div :class="showCompanySelect ? '' : 'md:col-span-2'">
-                <label class="mb-1 block text-sm font-medium text-slate-700">
-                    Názov API kľúča <span class="text-red-500">*</span>
-                </label>
-
-                <InputText
-                    v-model="form.name"
-                    class="w-full"
-                    placeholder="Napr. Web frontend"
-                />
-
-                <p
-                    v-if="form.errors.name"
-                    class="mt-1 text-sm text-red-600"
-                >
-                    {{ form.errors.name }}
-                </p>
-            </div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-200 bg-white p-5">
-            <div class="mb-4 flex items-start justify-between gap-4">
-                <div>
-                    <h3 class="text-base font-semibold text-slate-900">
-                        Povolené domény
-                    </h3>
-
-                    <p class="mt-1 text-sm text-slate-600">
-                        Pridajte domény, z ktorých môže frontend používať tento API kľúč.
-                    </p>
-                </div>
-
-                <Button
-                    type="button"
-                    label="Pridať doménu"
-                    icon="pi pi-plus"
-                    size="small"
-                    outlined
-                    @click="addDomain"
-                />
-            </div>
-
-            <div class="space-y-3">
-                <div
-                    v-for="(domain, index) in form.domains"
-                    :key="index"
-                    class="grid gap-3 md:grid-cols-[1fr_auto]"
-                >
-                    <div>
-                        <InputText
-                            v-model="domain.domain"
-                            class="w-full"
-                            placeholder="https://www.mojweb.sk"
-                        />
-
-                        <p
-                            v-if="form.errors[`domains.${index}.domain`]"
-                            class="mt-1 text-sm text-red-600"
-                        >
-                            {{ form.errors[`domains.${index}.domain`] }}
-                        </p>
-                    </div>
-
-                    <Button
-                        v-if="form.domains.length > 1"
-                        type="button"
-                        icon="pi pi-trash"
-                        severity="danger"
-                        outlined
-                        @click="removeDomain(index)"
+                    <Select
+                        v-model="form.company_id"
+                        :options="companies"
+                        option-label="legal_name"
+                        option-value="id"
+                        placeholder="Vyber firmu"
+                        filter
+                        class="w-full"
                     />
-                </div>
-            </div>
-        </div>
+                </FormField>
 
-        <div class="flex justify-end gap-3 border-t border-slate-200 pt-5">
-            <Button
-                type="submit"
-                :label="submitLabel"
-                icon="pi pi-key"
-                :loading="form.processing"
-            />
-        </div>
+                <FormField
+                    label="Názov API kľúča"
+                    required
+                    :error="form.errors.name"
+                    :span="showCompanySelect ? '' : 'md:col-span-2'"
+                >
+                    <InputText
+                        v-model="form.name"
+                        class="w-full"
+                        placeholder="Napr. Web frontend"
+                        value="Web frontend"
+                    />
+                </FormField>
+            </FormSection>
+
+            <FormSection
+                title="Povolené domény"
+                description="Pridajte domény, z ktorých môže frontend používať tento API kľúč."
+                columns="grid-cols-1"
+            >
+                <div class="space-y-4">
+                    <div
+                        v-for="(domain, index) in form.domains"
+                        :key="index"
+                        class="grid gap-3 md:grid-cols-[1fr_auto]"
+                    >
+                        <FormField
+                            :label="`Doména ${index + 1}`"
+                            :error="form.errors[`domains.${index}.domain`]"
+                        >
+                            <InputText
+                                v-model="domain.domain"
+                                class="w-full"
+                                placeholder="https://www.mojweb.sk"
+                            />
+                        </FormField>
+
+                        <div class="flex items-end">
+                            <Button
+                                v-if="form.domains.length > 1"
+                                type="button"
+                                label="Odstrániť"
+                                severity="danger"
+                                outlined
+                                aria-label="Odstrániť doménu"
+                                @click="removeDomain(index)"
+                            />
+                        </div>
+                    </div>
+                    <div class="flex justify-start">
+                        <Button
+                            type="button"
+                            label="Pridať doménu"
+                            size="small"
+                            @click="addDomain"
+                        />
+                    </div>
+                </div>
+            </FormSection>
+        </FormPage>
     </form>
 </template>

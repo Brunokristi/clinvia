@@ -20,7 +20,7 @@ defineProps({
 </script>
 
 <template>
-    <section class="border-soft bg-white py-10 shadow-sm">
+    <section class="border-soft bg-white py-10">
         <div class="mb-6 flex flex-col gap-2">
             <h2 class="text-normal font-semibold text-dark">
                 {{ title }}

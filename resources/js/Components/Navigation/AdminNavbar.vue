@@ -16,6 +16,11 @@ const branch = computed(() => page.props.branch ?? null);
 const company = computed(() => page.props.company ?? branch.value?.company ?? null);
 
 const companies = computed(() => {
+    // Don't show the full companies list in the sidebar when creating a branch
+    if (route().current('branches.create')) {
+        return company.value ? [company.value] : [];
+    }
+
     if (Array.isArray(page.props.companies) && page.props.companies.length) {
         return page.props.companies;
     }

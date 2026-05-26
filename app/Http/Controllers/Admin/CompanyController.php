@@ -178,7 +178,7 @@ class CompanyController extends Controller
         return Inertia::render('Admin/Companies/Branches', [
             'company' => $company,
             'branches' => $company->branches()
-                ->select(['id', 'company_id', 'name', 'slug', 'city', 'is_active', 'created_at'])
+                ->select(['id', 'company_id', 'name', 'slug', 'address_line_1', 'city', 'is_active', 'created_at'])
                 ->orderBy('name')
                 ->get(),
         ]);
@@ -194,7 +194,7 @@ class CompanyController extends Controller
         return Inertia::render('Admin/Companies/ApiClients', [
             'company' => $company,
             'apiClients' => $company->apiClients()
-                ->select(['id', 'company_id', 'name', 'is_active', 'rate_limit_per_minute', 'last_used_at', 'created_at'])
+                ->select(['id', 'company_id', 'name', 'key_hash', 'plain_text_token', 'is_active', 'rate_limit_per_minute', 'last_used_at', 'created_at'])
                 ->with('domains:id,api_client_id,domain,is_active')
                 ->orderBy('name')
                 ->get(),
