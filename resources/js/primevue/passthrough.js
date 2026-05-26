@@ -798,4 +798,49 @@ export const primevuePt = {
             ],
         },
     },
+
+    datepicker: {
+        root: {
+            class: [
+                '!w-full',
+            ],
+        },
+
+        pcInputText: {
+            root: {
+                class: [
+                    '!w-full !rounded-md',
+                    '!bg-soft px-4 py-2 !border-soft shadow-0',
+                    '!text-normal !text-accent',
+                    'hover:!border-accent',
+                    'focus:!border-accent focus:!bg-white',
+                ],
+            },
+        },
+
+        dropdown: {
+            class: [
+                '!text-accent',
+                '!bg-soft',
+                '!border-soft',
+                'hover:!bg-accent',
+                'hover:!text-white',
+            ],
+        },
+
+        inputIcon: {
+            class: [
+                '!text-accent',
+            ],
+        },
+
+        panel: {
+            class: [
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-white',
+                '!shadow-lg',
+            ],
+        },
+    },
 };
