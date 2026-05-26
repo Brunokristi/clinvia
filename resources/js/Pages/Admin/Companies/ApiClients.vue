@@ -166,7 +166,7 @@ const deleteApiClient = (apiClient) => {
         <div class="space-y-6">
             <TableCard
                 title="Existujúce API kľúče"
-                description="Kľúče sú aktívne automaticky. Hodnota API kľúča je uložená tak, aby sa dala zobraziť a skopírovať v tabuľke."
+                description="Na získanie všetkých informácií o fime prostredníctvom API použijte tento klúč."
                 :rows="rows"
                 :columns="columns"
                 empty-message="Zatiaľ nie sú vytvorené žiadne API kľúče."

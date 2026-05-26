@@ -62,10 +62,6 @@ const submit = () => {
 
 <template>
     <AdminLayout>
-        <h1 class="mb-6 text-2xl font-semibold">
-            Upraviť pobočku
-        </h1>
-
         <form class="space-y-6" @submit.prevent="submit">
             <BranchForm
                 :form="form"

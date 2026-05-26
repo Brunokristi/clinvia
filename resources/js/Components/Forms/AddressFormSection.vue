@@ -390,13 +390,6 @@ onBeforeUnmount(() => {
             >
                 {{ addressSuggestionError }}
             </Message>
-
-            <p
-                v-else-if="mapsAutocompleteEnabled"
-                class="mt-2 text-xs text-accent/70"
-            >
-                Začnite písať a vyberte adresu zo zoznamu.
-            </p>
         </FormField>
 
         <FormField

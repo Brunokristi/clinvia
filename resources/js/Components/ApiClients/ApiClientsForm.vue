@@ -95,7 +95,6 @@ const submit = () => {
         >
             <FormSection
                 title="Základné údaje"
-                description="API kľúč bude aktívny automaticky a limit bude nastavený na vysokú hodnotu."
                 columns="md:grid-cols-2"
             >
                 <FormField

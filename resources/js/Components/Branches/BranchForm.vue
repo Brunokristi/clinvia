@@ -60,7 +60,7 @@ const branchTypes = [
     >
         <FormSection
             title="Základné údaje"
-            description="Zadajte základné informácie o pobočke, jej typ a krátky popis."
+            description="Základné údaje o pobočke."
             columns="md:grid-cols-2"
         >
             <FormField
