@@ -1,14 +1,20 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
-import EntityUsersPanel from '@/Components/UserManagement/EntityUsersPanel.vue';
 import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
+import TableCard from '@/Components/Tables/TableCard.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
+import Avatar from 'primevue/avatar';
+import Button from 'primevue/button';
+
 const props = defineProps({
-    branch: Object,
+    branch: {
+        type: Object,
+        required: true,
+    },
     availableUsers: {
         type: Array,
         default: () => [],
@@ -20,63 +26,88 @@ const inviteForm = useForm({
 });
 
 const page = usePage();
-const currentUserRole = computed(() => page.props.auth?.user?.global_role ?? null);
-const currentUserEmail = computed(() => page.props.auth?.user?.email?.toLowerCase() ?? '');
-const availableUsersByEmail = computed(() => {
-    return new Map((props.availableUsers ?? []).map((user) => [user.email.toLowerCase(), user]));
+
+const currentUserRole = computed(() => {
+    return page.props.auth?.user?.global_role ?? null;
 });
+
+const currentUserEmail = computed(() => {
+    return page.props.auth?.user?.email?.toLowerCase() ?? '';
+});
+
+const availableUsersByEmail = computed(() => {
+    return new Map((props.availableUsers ?? []).map((user) => [
+        user.email.toLowerCase(),
+        user,
+    ]));
+});
+
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
-const userDisplayName = (user) => {
-    return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.name || '—';
+const displayName = (user) => {
+    return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.name || user.email || '—';
 };
 
-const userInitials = (user) => userDisplayName(user)
-    .split(' ')
-    .map((part) => part.charAt(0))
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+const initials = (user) => {
+    return displayName(user)
+        .split(' ')
+        .map((part) => part.charAt(0))
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+};
 
 const branchAdmins = computed(() => {
     return (props.branch.users ?? [])
         .filter((user) => user.pivot?.role === 'branch_admin')
-        .map((user) => ({
-            userId: user.id,
-            id: user.id,
-            name: userDisplayName(user),
-            initials: userInitials(user),
-            email: user.email,
-            sourceLabel: 'Pobočka',
-            sourceSeverity: 'success',
-            roleLabel: 'Admin',
-            roleSeverity: 'success',
-            statusLabel: user.pivot?.is_active ? 'Aktívny' : 'Neaktívny',
-            statusSeverity: user.pivot?.is_active ? 'success' : 'secondary',
-            canDelete: ['super_admin', 'admin'].includes(currentUserRole.value),
-        }));
+        .map((user) => {
+            const status = user.pivot?.is_active ? 'Aktívny' : 'Neaktívny';
+
+            return {
+                type: 'user',
+                sourceType: 'branch',
+                id: user.id,
+                userId: user.id,
+                name: displayName(user),
+                initials: initials(user),
+                email: user.email,
+                invitedByLabel: null,
+                expiresAt: null,
+                source: 'Pobočka',
+                role: 'Branch admin',
+                status,
+                canResend: false,
+                canDelete: ['super_admin', 'admin'].includes(currentUserRole.value),
+            };
+        });
 });
 
 const companyAdmins = computed(() => {
     return (props.branch.company?.users ?? [])
         .filter((user) => user.global_role === 'admin')
-        .map((user) => ({
-            userId: user.id,
-            id: `company-${user.id}`,
-            name: userDisplayName(user),
-            initials: userInitials(user),
-            email: user.email,
-            sourceLabel: 'Firma',
-            sourceSeverity: 'info',
-            roleLabel: 'Admin',
-            roleSeverity: 'info',
-            statusLabel: user.is_active ? 'Aktívny' : 'Neaktívny',
-            statusSeverity: user.is_active ? 'success' : 'secondary',
-            canDelete: false,
-        }));
+        .map((user) => {
+            const status = user.is_active ? 'Aktívny' : 'Neaktívny';
+
+            return {
+                type: 'user',
+                sourceType: 'company',
+                id: `company-${user.id}`,
+                userId: user.id,
+                name: displayName(user),
+                initials: initials(user),
+                email: user.email,
+                invitedByLabel: null,
+                expiresAt: null,
+                source: 'Firma',
+                role: 'Company admin',
+                status,
+                canResend: false,
+                canDelete: false,
+            };
+        });
 });
 
-const adminUsers = computed(() => {
+const users = computed(() => {
     const seen = new Set();
 
     return [...companyAdmins.value, ...branchAdmins.value].filter((user) => {
@@ -87,33 +118,77 @@ const adminUsers = computed(() => {
         }
 
         seen.add(dedupeKey);
+
         return true;
     });
 });
 
-const branchInvitations = computed(() => (props.branch.branch_invitations ?? []).map((invitation) => {
-    const isExpired = invitation.expires_at ? new Date(invitation.expires_at).getTime() < Date.now() : false;
+const invitations = computed(() => {
+    return (props.branch.branch_invitations ?? []).map((invitation) => {
+        const isExpired = invitation.expires_at
+            ? new Date(invitation.expires_at).getTime() < Date.now()
+            : false;
 
-    return {
-        id: invitation.id,
-        email: invitation.email,
-        invitedByLabel: invitation.invited_by ? userDisplayName(invitation.invited_by) : '—',
-        expiresAt: invitation.expires_at,
-        statusLabel: isExpired ? 'Vypršala' : 'Čaká na prijatie',
-        statusSeverity: isExpired ? 'danger' : 'warning',
-        canResend: isExpired,
-        canDelete: true,
-    };
-}));
+        const status = isExpired ? 'Vypršala' : 'Čaká na prijatie';
+
+        return {
+            type: 'invitation',
+            sourceType: 'branch_invitation',
+            id: invitation.id,
+            userId: null,
+            name: invitation.email,
+            initials: null,
+            email: invitation.email,
+            invitedByLabel: invitation.invited_by ? displayName(invitation.invited_by) : '—',
+            expiresAt: invitation.expires_at,
+            source: 'Pozvánka',
+            role: 'Branch admin',
+            status,
+            canResend: isExpired,
+            canDelete: true,
+        };
+    });
+});
+
+const combinedRows = computed(() => {
+    return [...users.value, ...invitations.value];
+});
+
+const columns = [
+    {
+        field: 'name',
+        header: 'Používateľ',
+        sortable: true,
+    },
+    {
+        field: 'source',
+        header: 'Level',
+        sortable: true,
+    },
+    {
+        field: 'role',
+        header: 'Rola',
+        sortable: true,
+    },
+    {
+        field: 'status',
+        header: 'Stav',
+        sortable: true,
+    },
+];
 
 const inviteBranchAdmin = () => {
-    if (inviteForm.invite_email?.toLowerCase() === currentUserEmail.value) {
+    const email = inviteForm.invite_email?.toLowerCase() ?? '';
+
+    inviteForm.clearErrors();
+
+    if (email === currentUserEmail.value) {
         inviteForm.setError('invite_email', 'Nemôžeš pozvať samého seba ako branch admina.');
 
         return;
     }
 
-    const matchedUser = availableUsersByEmail.value.get(inviteForm.invite_email?.toLowerCase() ?? '');
+    const matchedUser = availableUsersByEmail.value.get(email);
 
     if (matchedUser && ['super_admin', 'admin'].includes(matchedUser.global_role)) {
         inviteForm.setError('invite_email', 'Admina nemožno pozvať ako branch admina. Pošli mu pozvánku do firmy.');
@@ -125,17 +200,20 @@ const inviteBranchAdmin = () => {
         preserveScroll: true,
         onSuccess: () => {
             inviteForm.reset('invite_email');
+            router.reload();
         },
     });
 };
 
-const detachBranchUser = (user) => {
+const deleteUser = (user) => {
     openDialog({
         title: 'Odobrať používateľa',
-        message: `Odstrániť používateľa ${userDisplayName(user)} z tejto pobočky?`,
+        message: `Odobrať používateľa ${user.name} z pobočky?`,
         confirmLabel: 'Odobrať',
+        confirmSeverity: 'danger',
+        icon: 'pi pi-trash',
         onConfirm: () => {
-            router.delete(route('branches.users.destroy', [props.branch.id, user.id]), {
+            router.delete(route('branches.users.destroy', [props.branch.id, user.userId ?? user.id]), {
                 preserveScroll: true,
             });
         },
@@ -153,6 +231,8 @@ const deleteInvitation = (invitation) => {
         title: 'Odstrániť pozvánku',
         message: `Odstrániť pozvánku pre ${invitation.email}?`,
         confirmLabel: 'Odstrániť',
+        confirmSeverity: 'danger',
+        icon: 'pi pi-trash',
         onConfirm: () => {
             router.delete(route('branches.invitations.destroy', [props.branch.id, invitation.id]), {
                 preserveScroll: true,
@@ -164,56 +244,119 @@ const deleteInvitation = (invitation) => {
 
 <template>
     <AdminLayout>
-        <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="max-w-3xl">
-                <p class="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                    Pobočka
-                </p>
+        <div class="space-y-6">
+            <form @submit.prevent="inviteBranchAdmin">
+                <InvitationFormSection
+                    :form="inviteForm"
+                    title="Pozvať používateľa do pobočky"
+                    description="Pozvite používateľa, aby vedel spravovať túto pobočlku."
+                    input-label="Email používateľa"
+                    submit-label="Poslať pozvánku"
+                    :loading="inviteForm.processing"
+                />
+            </form>
 
-                <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                    Pozvánky do pobočky
-                </h1>
+            <TableCard
+                title="Používatelia a pozvánky"
+                description="Používatelia s prístupom do pobočky a čakajúce pozvánky."
+                :rows="combinedRows"
+                :columns="columns"
+                empty-message="Táto pobočka zatiaľ nemá žiadnych používateľov ani pozvánky."
+                show-row-actions
+            >
+                <template #cell-name="{ row }">
+                    <div
+                        v-if="row.type === 'user'"
+                        class="flex items-center gap-3"
+                    >
+                        <Avatar
+                            :label="row.initials"
+                            shape="circle"
+                        />
 
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Pošlite pozvánku na email. Ak už používateľ existuje, priradí sa ako branch admin. Ak nie, vytvorí si účet po prijatí pozvánky.
-                </p>
-            </div>
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-dark">
+                                {{ row.name }}
+                            </p>
 
-            <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                    Aktívna pobočka
-                </p>
+                            <p class="truncate text-sm text-accent/70">
+                                {{ row.email }}
+                            </p>
+                        </div>
+                    </div>
 
-                <p class="mt-1 text-sm font-semibold text-slate-900">
-                    {{ branch.name }}
-                </p>
-            </div>
+                    <div
+                        v-else
+                        class="min-w-0"
+                    >
+                        <p class="truncate text-sm font-semibold text-dark">
+                            {{ row.email }}
+                        </p>
+
+                        <p class="truncate text-sm text-accent/70">
+                            Pozval: {{ row.invitedByLabel }}
+                        </p>
+                    </div>
+                </template>
+
+                <template #cell-source="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.source }}
+                    </span>
+                </template>
+
+                <template #cell-role="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.role }}
+                    </span>
+                </template>
+
+                <template #cell-status="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.status }}
+                    </span>
+                </template>
+
+                <template #row-actions="{ row }">
+                    <div class="flex items-center gap-2">
+                        <Button
+                            v-if="row.type === 'user' && row.canDelete"
+                            type="button"
+                            label="Odstrániť"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="deleteUser(row)"
+                        />
+
+                        <div
+                            v-if="row.type === 'invitation'"
+                            class="flex items-center gap-2"
+                        >
+                            <Button
+                                v-if="row.canResend"
+                                type="button"
+                                label="Znovu poslať"
+                                icon="pi pi-send"
+                                size="small"
+                                outlined
+                                @click="resendInvitation(row)"
+                            />
+
+                            <Button
+                                v-if="row.canDelete"
+                                type="button"
+                                label="Odstrániť"
+                                size="small"
+                                severity="danger"
+                                outlined
+                                @click="deleteInvitation(row)"
+                            />
+                        </div>
+                    </div>
+                </template>
+            </TableCard>
         </div>
-
-        <EntityUsersPanel
-            title="Admini pobočky a spoločnosti"
-            description="Tu vidíš branch adminov aj company adminov, ktorí majú prístup cez spoločnosť, a pozvánky do pobočky."
-            :users="adminUsers"
-            :invitations="branchInvitations"
-            users-empty-message="Táto pobočka zatiaľ nemá žiadnych adminov."
-            invitations-empty-message="Táto pobočka zatiaľ nemá žiadne pozvánky."
-            @delete-user="detachBranchUser"
-            @resend-invitation="resendInvitation"
-            @delete-invitation="deleteInvitation"
-        >
-            <template #invite-form>
-                <form class="mt-5" @submit.prevent="inviteBranchAdmin">
-                    <InvitationFormSection
-                        :form="inviteForm"
-                        title="Pozvať branch admina"
-                        description="Pozvánka ide na email a po prijatí sa používateľ priradí s rolou branch_admin."
-                        input-label="Email branch admina"
-                        submit-label="Poslať pozvánku"
-                        :loading="inviteForm.processing"
-                    />
-                </form>
-            </template>
-        </EntityUsersPanel>
 
         <ConfirmationDialog
             :show="dialog.visible"

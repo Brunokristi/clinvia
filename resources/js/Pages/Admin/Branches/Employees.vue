@@ -1,6 +1,7 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import EmployeeForm from '@/Components/Branches/EmployeeForm.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm } from '@inertiajs/vue3';
@@ -8,11 +9,13 @@ import { ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
 
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
 
 const props = defineProps({
-    branch: Object,
+    branch: {
+        type: Object,
+        required: true,
+    },
 });
 
 const createEmployeeDialogVisible = ref(false);
@@ -90,6 +93,7 @@ const employeeCardBackground = (employee) => {
 const resetCreateEmployeeForm = () => {
     createEmployeeForm.reset();
     createEmployeeForm.clearErrors();
+
     createEmployeeForm.create_new = true;
     createEmployeeForm.sort_order = 0;
 };
@@ -120,6 +124,7 @@ const fillEditEmployeeForm = (employee) => {
     editEmployeeForm.phone = employee.phone ?? '';
     editEmployeeForm.photo = null;
     editEmployeeForm.sort_order = employee.sort_order ?? 0;
+
     editEmployeeForm.clearErrors();
 };
 
@@ -142,14 +147,7 @@ const addEmployee = () => {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: () => {
-            toast.add({
-                severity: 'success',
-                summary: 'Úspech',
-                detail: 'Zamestnanec bol pridaný k pobočke.',
-                life: 3000,
-            });
-
-            closeCreateEmployeeDialog();
+                closeCreateEmployeeDialog();
         },
         onError: () => {
             toast.add({
@@ -167,31 +165,27 @@ const saveEmployee = () => {
         return;
     }
 
-    editEmployeeForm.post(route('branches.employees.update', [props.branch.id, editingEmployee.value.id]), {
-        preserveScroll: true,
-        forceFormData: true,
-        data: {
+    editEmployeeForm
+        .transform((data) => ({
+            ...data,
             _method: 'put',
-        },
-        onSuccess: () => {
-            toast.add({
-                severity: 'success',
-                summary: 'Úspech',
-                detail: 'Zamestnanec bol upravený.',
-                life: 3000,
-            });
-
-            closeEditEmployeeDialog();
-        },
-        onError: () => {
-            toast.add({
-                severity: 'error',
-                summary: 'Chyba',
-                detail: 'Nepodarilo sa upraviť zamestnanca.',
-                life: 3000,
-            });
-        },
-    });
+        }))
+        .post(route('branches.employees.update', [props.branch.id, editingEmployee.value.id]), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => {
+                
+                closeEditEmployeeDialog();
+            },
+            onError: () => {
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: 'Nepodarilo sa upraviť zamestnanca.',
+                    life: 3000,
+                });
+            },
+        });
 };
 
 const removeEmployee = (employee) => {
@@ -199,16 +193,13 @@ const removeEmployee = (employee) => {
         title: 'Odstrániť zamestnanca',
         message: `Odstrániť zamestnanca ${employeeDisplayName(employee)} z tejto pobočky?`,
         confirmLabel: 'Zmazať',
+        confirmSeverity: 'danger',
+        icon: 'pi pi-trash',
         onConfirm: () => {
             router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    toast.add({
-                        severity: 'success',
-                        summary: 'Úspech',
-                        detail: 'Zamestnanec bol odstránený z pobočky.',
-                        life: 3000,
-                    });
+                    // success flash handled by layout
                 },
                 onError: () => {
                     toast.add({
@@ -226,61 +217,15 @@ const removeEmployee = (employee) => {
 
 <template>
     <AdminLayout>
-        <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="max-w-3xl">
-                <p class="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                    Pobočka
-                </p>
-
-                <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                    Zamestnanci pobočky
-                </h1>
-
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Spravujte zamestnancov tejto pobočky. Nového zamestnanca môžete pridať cez jednoduché okno.
-                </p>
-            </div>
-
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                        Aktívna pobočka
-                    </p>
-
-                    <p class="mt-1 text-sm font-semibold text-slate-900">
-                        {{ branch.name }}
-                    </p>
-                </div>
-
-                <Button
-                    label="Pridať zamestnanca"
-                    icon="pi pi-plus"
-                    @click="openCreateEmployeeDialog"
-                />
-            </div>
+        <div class="mb-6 flex items-center justify-between">
+            <Button
+                label="Pridať zamestnanca"
+                @click="openCreateEmployeeDialog"
+            />
         </div>
 
-        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="border-b border-slate-200 p-6">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-900">
-                            Existujúci zamestnanci
-                        </h2>
-
-                        <p class="mt-1 text-sm text-slate-600">
-                            Zamestnanci aktuálne priradení k tejto pobočke.
-                        </p>
-                    </div>
-
-                    <Tag
-                        :value="`${branch.employees?.length ?? 0} zamestnancov`"
-                        severity="secondary"
-                    />
-                </div>
-            </div>
-
-            <div class="p-6">
+        <section>
+            <div>
                 <div
                     v-if="branch.employees?.length"
                     class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3"
@@ -288,78 +233,34 @@ const removeEmployee = (employee) => {
                     <article
                         v-for="employee in branch.employees"
                         :key="employee.id"
-                        class="group relative min-h-[22rem] overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                        class="group relative min-h-[22rem] overflow-hidden rounded-md bg-dark transition"
                     >
                         <div
                             v-if="employeePhotoUrl(employee)"
-                            class="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-105"
+                            class="absolute inset-0 bg-cover bg-center transition duration-500"
                             :style="employeeCardBackground(employee)"
                         />
 
                         <div
                             v-else
-                            class="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-900 to-slate-950"
+                            class="absolute inset-0 bg-gradient-to-br from-dark to-accent"
                         />
 
-                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent" />
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-dark/20 to-transparent" />
 
                         <div class="relative flex h-full min-h-[22rem] flex-col justify-between p-5">
-                            <div class="flex justify-end">
-                                <Tag
-                                    :value="employee.is_active ? 'Aktívny' : 'Neaktívny'"
-                                    :severity="employee.is_active ? 'success' : 'secondary'"
-                                />
-                            </div>
-
                             <div>
-                                <div
-                                    v-if="!employeePhotoUrl(employee)"
-                                    class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 text-xl font-semibold text-white ring-1 ring-white/20"
-                                >
-                                    {{ employeeInitials(employee) }}
-                                </div>
-
-                                <p class="text-xl font-semibold text-white">
+                            </div>
+                            <div>
+                                <p class="text-heading text-white">
                                     {{ employeeDisplayName(employee) }}
                                 </p>
 
-                                <p class="mt-1 text-sm font-medium text-white/80">
-                                    {{ employee.position || 'Pozícia nie je zadaná' }}
-                                </p>
-
-                                <p
-                                    v-if="employee.bio"
-                                    class="mt-4 line-clamp-3 text-sm leading-6 text-white/75"
-                                >
-                                    {{ employee.bio }}
-                                </p>
-
-                                <div class="mt-5 space-y-2">
-                                    <p
-                                        v-if="employee.email"
-                                        class="flex items-center gap-2 text-sm text-white/80"
-                                    >
-                                        <i class="pi pi-envelope text-xs" />
-                                        <span class="truncate">{{ employee.email }}</span>
-                                    </p>
-
-                                    <p
-                                        v-if="employee.phone"
-                                        class="flex items-center gap-2 text-sm text-white/80"
-                                    >
-                                        <i class="pi pi-phone text-xs" />
-                                        <span class="truncate">{{ employee.phone }}</span>
-                                    </p>
-                                </div>
-
-                                <div class="mt-5 flex justify-end gap-2">
+                                <div class="mt-5 flex justify-start gap-2">
                                     <Button
                                         label="Upraviť"
                                         size="small"
                                         severity="secondary"
-                                        outlined
-                                        icon="pi pi-pencil"
-                                        class="border-white/30 bg-white/10 text-white hover:bg-white/20"
                                         @click="openEditEmployeeDialog(employee)"
                                     />
 
@@ -368,8 +269,6 @@ const removeEmployee = (employee) => {
                                         size="small"
                                         severity="danger"
                                         outlined
-                                        icon="pi pi-trash"
-                                        class="border-white/30 bg-white/10 text-white hover:bg-white/20"
                                         @click="removeEmployee(employee)"
                                     />
                                 </div>
@@ -380,58 +279,40 @@ const removeEmployee = (employee) => {
 
                 <div
                     v-else
-                    class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"
+                    class="text-center"
                 >
-                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
-                        <i class="pi pi-users text-xl" />
-                    </div>
-
-                    <h3 class="mt-4 text-sm font-semibold text-slate-900">
-                        Žiadni zamestnanci
-                    </h3>
-
-                    <p class="mt-1 text-sm text-slate-500">
+                    <p class="mt-1 text-sm text-accent">
                         Táto pobočka zatiaľ nemá priradených zamestnancov.
                     </p>
 
-                    <Button
-                        label="Pridať prvého zamestnanca"
-                        icon="pi pi-plus"
-                        class="mt-5"
-                        @click="openCreateEmployeeDialog"
-                    />
                 </div>
             </div>
         </section>
 
-        <Dialog
+        <FormDialog
             v-model:visible="createEmployeeDialogVisible"
-            modal
-            header="Pridať zamestnanca"
-            class="w-[95vw] max-w-5xl"
-            :draggable="false"
+            title="Pridať zamestnanca"
+            description="Vyplňte základné údaje zamestnanca. Meno, priezvisko a pozícia sú povinné."
+            width="max-w-5xl"
             :dismissable-mask="!createEmployeeForm.processing"
-            @hide="resetCreateEmployeeForm"
+            @close="closeCreateEmployeeDialog"
         >
             <form @submit.prevent="addEmployee">
                 <EmployeeForm
                     :form="createEmployeeForm"
-                    heading="Nový zamestnanec"
-                    description="Vyplňte základné údaje zamestnanca. Meno, priezvisko a pozícia sú povinné."
                     submit-label="Pridať zamestnanca"
                     :loading="createEmployeeForm.processing"
                 />
             </form>
-        </Dialog>
+        </FormDialog>
 
-        <Dialog
+        <FormDialog
             v-model:visible="editEmployeeDialogVisible"
-            modal
-            header="Upraviť zamestnanca"
-            class="w-[95vw] max-w-5xl"
-            :draggable="false"
+            title="Upraviť zamestnanca"
+            :description="editingEmployee ? employeeDisplayName(editingEmployee) : ''"
+            width="max-w-5xl"
             :dismissable-mask="!editEmployeeForm.processing"
-            @hide="closeEditEmployeeDialog"
+            @close="closeEditEmployeeDialog"
         >
             <form
                 v-if="editingEmployee"
@@ -439,14 +320,12 @@ const removeEmployee = (employee) => {
             >
                 <EmployeeForm
                     :form="editEmployeeForm"
-                    heading="Upraviť profil zamestnanca"
-                    :description="employeeDisplayName(editingEmployee)"
                     submit-label="Uložiť zmeny"
                     :loading="editEmployeeForm.processing"
                     :photo-preview-url="employeePhotoUrl(editingEmployee)"
                 />
             </form>
-        </Dialog>
+        </FormDialog>
 
         <ConfirmationDialog
             :show="dialog.visible"

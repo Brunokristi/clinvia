@@ -4,12 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\ServiceFile;
+use App\Models\ServiceInformation;
 use App\Models\Service;
+use App\Models\ServiceStep;
 use App\Models\Category;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class BranchServiceController extends Controller
@@ -37,6 +41,27 @@ class BranchServiceController extends Controller
             'insurance_note' => ['nullable', 'string'],
             'self_pay_amount' => ['nullable', 'numeric', 'min:0'],
             'self_pay_note' => ['nullable', 'string'],
+
+            'information' => ['nullable', 'array'],
+            'information.*.existing_id' => ['nullable', 'integer'],
+            'information.*.text' => ['required_with:information', 'string'],
+            'information.*.sort_order' => ['nullable', 'integer'],
+            'information.*.is_active' => ['required_with:information', 'boolean'],
+
+            'steps' => ['nullable', 'array'],
+            'steps.*.existing_id' => ['nullable', 'integer'],
+            'steps.*.number' => ['nullable', 'integer'],
+            'steps.*.title' => ['nullable', 'string', 'max:255'],
+            'steps.*.text' => ['nullable', 'string'],
+            'steps.*.sort_order' => ['nullable', 'integer'],
+            'steps.*.is_active' => ['required_with:steps', 'boolean'],
+
+            'files' => ['nullable', 'array'],
+            'files.*.existing_id' => ['nullable', 'integer'],
+            'files.*.label' => ['nullable', 'string', 'max:255'],
+            'files.*.file' => ['nullable', 'file', 'max:10240'],
+            'files.*.sort_order' => ['nullable', 'integer'],
+            'files.*.is_active' => ['required_with:files', 'boolean'],
         ]);
 
         // ensure we have a category name when creating a new category without selecting existing
@@ -78,7 +103,7 @@ class BranchServiceController extends Controller
                 $counter++;
             }
 
-            Service::create([
+            $service = Service::create([
                 'company_id' => $branch->company_id,
                 'branch_id' => $branch->id,
                 'category_id' => $categoryId,
@@ -96,6 +121,8 @@ class BranchServiceController extends Controller
                 'is_active' => $data['is_available'] ?? true,
                 'sort_order' => $data['sort_order'] ?? 0,
             ]);
+
+            $this->syncServiceExtras($service, $data, request());
         });
 
         return back()->with('success', 'Služba bola vytvorená pre pobočku.');
@@ -120,6 +147,27 @@ class BranchServiceController extends Controller
             'insurance_note' => ['nullable', 'string'],
             'self_pay_amount' => ['nullable', 'numeric', 'min:0'],
             'self_pay_note' => ['nullable', 'string'],
+
+            'information' => ['nullable', 'array'],
+            'information.*.existing_id' => ['nullable', 'integer'],
+            'information.*.text' => ['required_with:information', 'string'],
+            'information.*.sort_order' => ['nullable', 'integer'],
+            'information.*.is_active' => ['required_with:information', 'boolean'],
+
+            'steps' => ['nullable', 'array'],
+            'steps.*.existing_id' => ['nullable', 'integer'],
+            'steps.*.number' => ['nullable', 'integer'],
+            'steps.*.title' => ['nullable', 'string', 'max:255'],
+            'steps.*.text' => ['nullable', 'string'],
+            'steps.*.sort_order' => ['nullable', 'integer'],
+            'steps.*.is_active' => ['required_with:steps', 'boolean'],
+
+            'files' => ['nullable', 'array'],
+            'files.*.existing_id' => ['nullable', 'integer'],
+            'files.*.label' => ['nullable', 'string', 'max:255'],
+            'files.*.file' => ['nullable', 'file', 'max:10240'],
+            'files.*.sort_order' => ['nullable', 'integer'],
+            'files.*.is_active' => ['required_with:files', 'boolean'],
         ]);
 
         $branchService->update([
@@ -137,6 +185,8 @@ class BranchServiceController extends Controller
             'self_pay_note' => $data['self_pay_note'] ?? null,
         ]);
 
+        $this->syncServiceExtras($branchService, $data, $request);
+
         return back()->with('success', 'Služba pobočky bola upravená.');
     }
 
@@ -148,5 +198,157 @@ class BranchServiceController extends Controller
         $branchService->delete();
 
         return back()->with('success', 'Služba bola odstránená z pobočky.');
+    }
+
+    private function syncServiceExtras(Service $service, array $data, Request $request): void
+    {
+        $this->syncInformation($service, $data['information'] ?? []);
+        $this->syncSteps($service, $data['steps'] ?? []);
+        $this->syncFiles($service, $data['files'] ?? [], $request);
+    }
+
+    private function syncInformation(Service $service, array $items): void
+    {
+        $existingIds = [];
+
+        foreach ($items as $index => $item) {
+            if (empty(trim((string) ($item['text'] ?? '')))) {
+                continue;
+            }
+
+            $payload = [
+                'text' => $item['text'],
+                'sort_order' => $item['sort_order'] ?? $index,
+                'is_active' => $item['is_active'] ?? true,
+            ];
+
+            if (! empty($item['existing_id'])) {
+                $information = $service->information()->whereKey($item['existing_id'])->first();
+
+                if ($information) {
+                    $information->update($payload);
+                    $existingIds[] = $information->id;
+                    continue;
+                }
+            }
+
+            $information = $service->information()->create($payload);
+            $existingIds[] = $information->id;
+        }
+
+        $service->information()->whereNotIn('id', $existingIds ?: [0])->delete();
+    }
+
+    private function syncSteps(Service $service, array $items): void
+    {
+        $existingIds = [];
+
+        foreach ($items as $index => $item) {
+            if (empty(trim((string) ($item['title'] ?? ''))) && empty(trim((string) ($item['text'] ?? '')))) {
+                continue;
+            }
+
+            $payload = [
+                'number' => $item['number'] ?? null,
+                'title' => $item['title'] ?: null,
+                'text' => $item['text'] ?: null,
+                'sort_order' => $item['sort_order'] ?? $index,
+                'is_active' => $item['is_active'] ?? true,
+            ];
+
+            if (! empty($item['existing_id'])) {
+                $step = $service->steps()->whereKey($item['existing_id'])->first();
+
+                if ($step) {
+                    $step->update($payload);
+                    $existingIds[] = $step->id;
+                    continue;
+                }
+            }
+
+            $step = $service->steps()->create($payload);
+            $existingIds[] = $step->id;
+        }
+
+        $service->steps()->whereNotIn('id', $existingIds ?: [0])->delete();
+    }
+
+    private function syncFiles(Service $service, array $items, Request $request): void
+    {
+        $existingIds = [];
+        $uploadedFiles = $request->file('files', []);
+
+        foreach ($items as $index => $item) {
+            $uploadedFile = $uploadedFiles[$index]['file'] ?? null;
+            $existingId = $item['existing_id'] ?? null;
+
+            if (! $uploadedFile && empty($existingId)) {
+                continue;
+            }
+
+            if (! empty($existingId)) {
+                $fileRecord = $service->files()->whereKey($existingId)->first();
+
+                if (! $fileRecord) {
+                    continue;
+                }
+
+                if ($uploadedFile) {
+                    if ($fileRecord->file_path && Storage::disk('public')->exists($fileRecord->file_path)) {
+                        Storage::disk('public')->delete($fileRecord->file_path);
+                    }
+
+                    $path = $uploadedFile->store('service-files', 'public');
+
+                    $fileRecord->update([
+                        'label' => $item['label'] ?? null,
+                        'file_path' => $path,
+                        'original_name' => $uploadedFile->getClientOriginalName(),
+                        'mime_type' => $uploadedFile->getClientMimeType(),
+                        'size' => $uploadedFile->getSize(),
+                        'sort_order' => $item['sort_order'] ?? $index,
+                        'is_active' => $item['is_active'] ?? true,
+                    ]);
+                } else {
+                    $fileRecord->update([
+                        'label' => $item['label'] ?? null,
+                        'sort_order' => $item['sort_order'] ?? $index,
+                        'is_active' => $item['is_active'] ?? true,
+                    ]);
+                }
+
+                $existingIds[] = $fileRecord->id;
+                continue;
+            }
+
+            if (! $uploadedFile) {
+                continue;
+            }
+
+            $path = $uploadedFile->store('service-files', 'public');
+
+            $fileRecord = $service->files()->create([
+                'label' => $item['label'] ?? null,
+                'file_path' => $path,
+                'original_name' => $uploadedFile->getClientOriginalName(),
+                'mime_type' => $uploadedFile->getClientMimeType(),
+                'size' => $uploadedFile->getSize(),
+                'sort_order' => $item['sort_order'] ?? $index,
+                'is_active' => $item['is_active'] ?? true,
+            ]);
+
+            $existingIds[] = $fileRecord->id;
+        }
+
+        $service->files()
+            ->whereNotIn('id', $existingIds ?: [0])
+            ->get()
+            ->each(function (ServiceFile $file) {
+                if ($file->file_path && Storage::disk('public')->exists($file->file_path)) {
+                    Storage::disk('public')->delete($file->file_path);
+                }
+
+                $file->delete();
+            });
     }
 }

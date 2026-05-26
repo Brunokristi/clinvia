@@ -1,20 +1,21 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import BranchServiceForm from '@/Components/Branches/BranchServiceForm.vue';
+import TableCard from '@/Components/Tables/TableCard.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
 
 import Button from 'primevue/button';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
-import Dialog from 'primevue/dialog';
-import Tag from 'primevue/tag';
 
 const props = defineProps({
-    branch: Object,
+    branch: {
+        type: Object,
+        required: true,
+    },
     categories: {
         type: Array,
         default: () => [],
@@ -47,6 +48,27 @@ const makeEmptyServiceData = () => ({
     insurance_note: '',
     self_pay_amount: null,
     self_pay_note: '',
+    information: [],
+    steps: [],
+    files: [],
+});
+
+const makeEmptyInformationItem = () => ({
+    existing_id: null,
+    text: '',
+});
+
+const makeEmptyStepItem = () => ({
+    existing_id: null,
+    number: null,
+    title: '',
+    text: '',
+});
+
+const makeEmptyFileItem = () => ({
+    existing_id: null,
+    label: '',
+    file: null,
 });
 
 const createForm = useForm(makeEmptyServiceData());
@@ -73,14 +95,27 @@ const slugify = (value) => {
         .replace(/^-+|-+$/g, '');
 };
 
-const generatedCreateSlug = computed(() => slugify(createForm.name));
+const generatedCreateSlug = computed(() => {
+    return slugify(createForm.name);
+});
 
-const serviceTitle = (service) => service.name || '—';
-const serviceCategoryName = (service) => service.category?.name || 'Bez kategórie';
-const serviceIcon = (service) => service.icon || 'pi pi-briefcase';
+const serviceTitle = (service) => {
+    return service.name || '—';
+};
+
+const serviceCategoryName = (service) => {
+    return service.category?.name || 'Bez kategórie';
+};
+
+const serviceIcon = (service) => {
+    return service.icon || 'pi pi-briefcase';
+};
 
 const formatPrice = (amount) => {
-    if (amount === null || amount === undefined) return '—';
+    if (amount === null || amount === undefined) {
+        return '—';
+    }
+
     return `${amount} EUR`;
 };
 
@@ -88,29 +123,124 @@ const serviceDuration = (service) => {
     const sessions = service.duration_sessions;
     const minutes = service.duration_minutes;
 
-    if (!minutes) return '—';
-    if (!sessions || sessions === 1) return `${minutes} min`;
-    return `${sessions} × ${minutes} min`;
+    if (!minutes) {
+        return '—';
+    }
+
+    return `${sessions || 1} × ${minutes} min`;
 };
+
+const fillInformationItems = (items = []) => {
+    return items.map((item, index) => ({
+        existing_id: item.id ?? null,
+        text: item.text ?? '',
+    }));
+};
+
+const fillStepItems = (items = []) => {
+    return items.map((item, index) => ({
+        existing_id: item.id ?? null,
+        number: item.number ?? null,
+        title: item.title ?? '',
+        text: item.text ?? '',
+    }));
+};
+
+const fillFileItems = (items = []) => {
+    return items.map((item, index) => ({
+        existing_id: item.id ?? null,
+        label: item.label ?? '',
+        file: null,
+        existing_name: item.original_name ?? item.label ?? 'Súbor',
+    }));
+};
+
+const services = computed(() => {
+    return (props.branch.services ?? []).map((service) => ({
+        ...service,
+        title_label: serviceTitle(service),
+        category_label: serviceCategoryName(service),
+        duration_label: serviceDuration(service),
+        insurance_price_label: formatPrice(service.insurance_amount),
+        self_pay_price_label: formatPrice(service.self_pay_amount),
+        availability_label: service.is_active ? 'Aktívna' : 'Neaktívna',
+    }));
+});
+
+const columns = [
+    {
+        field: 'title_label',
+        header: 'Služba',
+        sortable: true,
+    },
+    {
+        field: 'duration_label',
+        header: 'Trvanie',
+        sortable: true,
+    },
+    {
+        field: 'insurance_price_label',
+        header: 'Poisťovňa',
+        sortable: true,
+    },
+    {
+        field: 'self_pay_price_label',
+        header: 'Samoplatca',
+        sortable: true,
+    },
+];
 
 const resetForm = (form) => {
     const empty = makeEmptyServiceData();
+
     form.clearErrors();
+
     Object.assign(form, empty);
+};
+
+const addInformation = (form) => {
+    form.information.push(makeEmptyInformationItem());
+};
+
+const removeInformation = (form, index) => {
+    form.information.splice(index, 1);
+};
+
+const addStep = (form) => {
+    form.steps.push(makeEmptyStepItem());
+};
+
+const removeStep = (form, index) => {
+    form.steps.splice(index, 1);
+};
+
+const addFile = (form) => {
+    form.files.push(makeEmptyFileItem());
+};
+
+const removeFile = (form, index) => {
+    form.files.splice(index, 1);
+};
+
+const onFileChange = (form, index, event) => {
+    form.files[index].file = event.target.files?.[0] ?? null;
 };
 
 const openCreateDialog = () => {
     resetForm(createForm);
+
     createDialogVisible.value = true;
 };
 
 const closeCreateDialog = () => {
     createDialogVisible.value = false;
+
     resetForm(createForm);
 };
 
 const fillEditForm = (service) => {
     editForm.clearErrors();
+
     editForm.category_id = service.category_id ?? service.category?.id ?? null;
     editForm.new_category_name = '';
     editForm.name = service.name ?? '';
@@ -126,17 +256,23 @@ const fillEditForm = (service) => {
     editForm.insurance_note = service.insurance_note ?? '';
     editForm.self_pay_amount = service.self_pay_amount ?? null;
     editForm.self_pay_note = service.self_pay_note ?? '';
+    editForm.information = fillInformationItems(service.information ?? []);
+    editForm.steps = fillStepItems(service.steps ?? []);
+    editForm.files = fillFileItems(service.files ?? []);
 };
 
 const openEditDialog = (service) => {
     editingService.value = service;
+
     fillEditForm(service);
+
     editDialogVisible.value = true;
 };
 
 const closeEditDialog = () => {
     editDialogVisible.value = false;
     editingService.value = null;
+
     resetForm(editForm);
 };
 
@@ -157,24 +293,41 @@ const createService = () => {
         insurance_note: createForm.insurance_note,
         self_pay_amount: createForm.self_pay_amount,
         self_pay_note: createForm.self_pay_note,
+        information: createForm.information,
+        steps: createForm.steps,
+        files: createForm.files,
     };
 
     createForm
         .transform(() => payload)
         .post(route('branches.services.store', props.branch.id), {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
-                toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola vytvorená.', life: 3000 });
+                toast.add({
+                    severity: 'success',
+                    summary: 'Úspech',
+                    detail: 'Služba bola vytvorená.',
+                    life: 3000,
+                });
+
                 closeCreateDialog();
             },
             onError: () => {
-                toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa vytvoriť službu.', life: 3000 });
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: 'Nepodarilo sa vytvoriť službu.',
+                    life: 3000,
+                });
             },
         });
 };
 
 const updateService = () => {
-    if (!editingService.value) return;
+    if (!editingService.value) {
+        return;
+    }
 
     const payload = {
         name: editForm.name,
@@ -189,18 +342,33 @@ const updateService = () => {
         insurance_note: editForm.insurance_note,
         self_pay_amount: editForm.self_pay_amount,
         self_pay_note: editForm.self_pay_note,
+        information: editForm.information,
+        steps: editForm.steps,
+        files: editForm.files,
     };
 
     editForm
         .transform(() => payload)
         .put(route('branches.services.update', [props.branch.id, editingService.value.id]), {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
-                toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola upravená.', life: 3000 });
+                toast.add({
+                    severity: 'success',
+                    summary: 'Úspech',
+                    detail: 'Služba bola upravená.',
+                    life: 3000,
+                });
+
                 closeEditDialog();
             },
             onError: () => {
-                toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa upraviť službu.', life: 3000 });
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: 'Nepodarilo sa upraviť službu.',
+                    life: 3000,
+                });
             },
         });
 };
@@ -210,14 +378,26 @@ const removeService = (service) => {
         title: 'Odstrániť službu',
         message: `Odstrániť službu „${serviceTitle(service)}" z tejto pobočky?`,
         confirmLabel: 'Zmazať',
+        confirmSeverity: 'danger',
+        icon: 'pi pi-trash',
         onConfirm: () => {
             router.delete(route('branches.services.destroy', [props.branch.id, service.id]), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    toast.add({ severity: 'success', summary: 'Úspech', detail: 'Služba bola odstránená.', life: 3000 });
+                    toast.add({
+                        severity: 'success',
+                        summary: 'Úspech',
+                        detail: 'Služba bola odstránená.',
+                        life: 3000,
+                    });
                 },
                 onError: () => {
-                    toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa odstrániť službu.', life: 3000 });
+                    toast.add({
+                        severity: 'error',
+                        summary: 'Chyba',
+                        detail: 'Nepodarilo sa odstrániť službu.',
+                        life: 3000,
+                    });
                 },
             });
         },
@@ -227,181 +407,128 @@ const removeService = (service) => {
 
 <template>
     <AdminLayout>
-        <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="max-w-3xl">
-                <p class="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                    Pobočka
-                </p>
-
-                <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-                    Služby pobočky
-                </h1>
-
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Spravujte služby tejto pobočky.
-                </p>
-            </div>
-
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                        Aktívna pobočka
-                    </p>
-
-                    <p class="mt-1 text-sm font-semibold text-slate-900">
-                        {{ branch.name }}
-                    </p>
-                </div>
-
-                <Button
-                    label="Pridať službu"
-                    icon="pi pi-plus"
-                    @click="openCreateDialog"
-                />
-            </div>
-        </div>
-
-        <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="border-b border-slate-200 p-6">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-900">
-                            Služby pobočky
-                        </h2>
-
-                        <p class="mt-1 text-sm text-slate-600">
-                            Všetky služby priradené k tejto pobočke.
-                        </p>
-                    </div>
-
-                    <Tag
-                        :value="`${branch.services?.length ?? 0} služieb`"
-                        severity="secondary"
-                    />
-                </div>
-            </div>
-
-            <DataTable
-                :value="branch.services ?? []"
-                tableStyle="min-width: 64rem"
-                emptyMessage="Táto pobočka zatiaľ nemá žiadne služby."
+        <div class="space-y-6">
+            <TableCard
+                title="Služby pobočky"
+                description="Všetky služby priradené k tejto pobočke."
+                :rows="services"
+                :columns="columns"
+                empty-message="Táto pobočka zatiaľ nemá žiadne služby."
+                show-row-actions
             >
-                <Column header="Služba">
-                    <template #body="{ data }">
-                        <div class="flex items-start gap-3">
-                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                                <i :class="serviceIcon(data)" />
-                            </div>
+                <template #actions>
+                    <Button
+                        label="Pridať službu"
+                        @click="openCreateDialog"
+                    />
+                </template>
 
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">
-                                    {{ serviceTitle(data) }}
-                                </p>
-
-                                <p class="text-xs text-slate-500">
-                                    Kategória: {{ serviceCategoryName(data) }}
-                                </p>
-                            </div>
+                <template #cell-title_label="{ row }">
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
+                            <i :class="serviceIcon(row)" />
                         </div>
-                    </template>
-                </Column>
 
-                <Column header="Trvanie">
-                    <template #body="{ data }">
-                        <span class="text-sm text-slate-700">
-                            {{ serviceDuration(data) }}
-                        </span>
-                    </template>
-                </Column>
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-dark">
+                                {{ row.title_label }}
+                            </p>
 
-                <Column header="Ceny">
-                    <template #body="{ data }">
-                        <div class="space-y-1 text-sm text-slate-700">
-                            <p>Poisťovňa: {{ formatPrice(data.insurance_amount) }}</p>
-                            <p>Samoplatca: {{ formatPrice(data.self_pay_amount) }}</p>
+                            <p class="truncate text-xs text-accent/70">
+                                Kategória: {{ row.category_label }}
+                            </p>
                         </div>
-                    </template>
-                </Column>
+                    </div>
+                </template>
 
-                <Column header="Dostupnosť">
-                    <template #body="{ data }">
-                        <Tag
-                            :value="data.is_active ? 'Aktívna' : 'Neaktívna'"
-                            :severity="data.is_active ? 'success' : 'secondary'"
+                <template #cell-duration_label="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.duration_label }}
+                    </span>
+                </template>
+
+                <template #cell-insurance_price_label="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.insurance_price_label }}
+                    </span>
+                </template>
+
+                <template #cell-self_pay_price_label="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.self_pay_price_label }}
+                    </span>
+                </template>
+
+                <template #cell-availability_label="{ row }">
+                    <span
+                        class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
+                        :class="row.is_active ? 'bg-soft text-accent' : 'bg-soft/70 text-accent/60'"
+                    >
+                        {{ row.availability_label }}
+                    </span>
+                </template>
+
+                <template #row-actions="{ row }">
+                    <div class="flex justify-end gap-2">
+                        <Button
+                            label="Upraviť"
+                            size="small"
+                            severity="secondary"
+                            @click="openEditDialog(row)"
                         />
-                    </template>
-                </Column>
 
-                <Column header="Akcie">
-                    <template #body="{ data }">
-                        <div class="flex justify-end gap-2">
-                            <Button
-                                label="Upraviť"
-                                size="small"
-                                severity="secondary"
-                                outlined
-                                icon="pi pi-pencil"
-                                @click="openEditDialog(data)"
-                            />
+                        <Button
+                            label="Odstrániť"
+                            size="small"
+                            severity="danger"
+                            outlined
+                            @click="removeService(row)"
+                        />
+                    </div>
+                </template>
+            </TableCard>
 
-                            <Button
-                                label="Odstrániť"
-                                size="small"
-                                severity="danger"
-                                outlined
-                                icon="pi pi-trash"
-                                @click="removeService(data)"
-                            />
-                        </div>
-                    </template>
-                </Column>
-            </DataTable>
-        </section>
-
-        <Dialog
-            v-model:visible="createDialogVisible"
-            modal
-            header="Pridať službu"
-            class="w-[95vw] max-w-6xl"
-            :draggable="false"
-            :dismissable-mask="!createForm.processing"
-            @hide="resetForm(createForm)"
-        >
-            <BranchServiceForm
-                :form="createForm"
-                mode="create"
-                :categories="categoryOptions"
-                :new-category-value="newCategoryValue"
-                title="Vytvoriť novú službu"
+            <FormDialog
+                v-model:visible="createDialogVisible"
+                title="Pridať službu"
                 description="Kategória a názov služby sú povinné. Ostatné údaje môžete doplniť podľa potreby."
-                submit-label="Vytvoriť službu"
-                :loading="createForm.processing"
-                @submit="createService"
-            />
-        </Dialog>
+                width="max-w-6xl"
+                :dismissable-mask="!createForm.processing"
+                @close="closeCreateDialog"
+            >
+                <BranchServiceForm
+                    :form="createForm"
+                    mode="create"
+                    :categories="categoryOptions"
+                    :new-category-value="newCategoryValue"
+                    submit-label="Vytvoriť službu"
+                    :loading="createForm.processing"
+                    @submit="createService"
+                />
+            </FormDialog>
 
-        <Dialog
-            v-model:visible="editDialogVisible"
-            modal
-            header="Upraviť službu"
-            class="w-[95vw] max-w-6xl"
-            :draggable="false"
-            :dismissable-mask="!editForm.processing"
-            @hide="closeEditDialog"
-        >
-            <BranchServiceForm
-                v-if="editingService"
-                :form="editForm"
-                mode="edit"
-                :categories="categoryOptions"
-                :new-category-value="newCategoryValue"
+            <FormDialog
+                v-model:visible="editDialogVisible"
                 title="Upraviť službu"
-                :description="serviceTitle(editingService)"
-                submit-label="Uložiť zmeny"
-                :loading="editForm.processing"
-                @submit="updateService"
-            />
-        </Dialog>
+                :description="editingService ? serviceTitle(editingService) : ''"
+                width="max-w-6xl"
+                :dismissable-mask="!editForm.processing"
+                @close="closeEditDialog"
+            >
+                <BranchServiceForm
+                    v-if="editingService"
+                    :form="editForm"
+                    mode="edit"
+                    :categories="categoryOptions"
+                    :new-category-value="newCategoryValue"
+                    title="Upraviť službu"
+                    :description="serviceTitle(editingService)"
+                    submit-label="Uložiť zmeny"
+                    :loading="editForm.processing"
+                    @submit="updateService"
+                />
+            </FormDialog>
+        </div>
 
         <ConfirmationDialog
             :show="dialog.visible"

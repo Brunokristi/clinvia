@@ -786,6 +786,7 @@ export const primevuePt = {
                 '!text-normal !text-accent',
                 'hover:!border-accent',
                 'focus:!border-accent focus:!bg-white',
+                '[&::placeholder]:!text-accent/50',
             ],
         },
     },
@@ -843,4 +844,14 @@ export const primevuePt = {
             ],
         },
     },
+
+    autoComplete: {
+        dropdownIcon: {
+            class: [
+                '!text-accent',
+            ],
+        },
+    },
+
+
 };

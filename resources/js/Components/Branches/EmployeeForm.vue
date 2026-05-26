@@ -1,11 +1,14 @@
 <script setup>
-import Button from 'primevue/button';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
+import PhoneInput from '@/Components/Forms/PhoneInput.vue';
+
+import AutoComplete from 'primevue/autocomplete';
 import FileUpload from 'primevue/fileupload';
-import InputMask from 'primevue/inputmask';
 import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps({
     form: {
@@ -34,104 +37,165 @@ const props = defineProps({
     },
 });
 
-const phoneCountries = [
-    {
-        label: 'Slovakia',
-        value: 'SK',
-        dialCode: '+421',
-        flag: '🇸🇰',
-        mask: '999 999 999',
-        placeholder: '900 123 456',
-    },
-    {
-        label: 'Czech Republic',
-        value: 'CZ',
-        dialCode: '+420',
-        flag: '🇨🇿',
-        mask: '999 999 999',
-        placeholder: '777 123 456',
-    },
-    {
-        label: 'Austria',
-        value: 'AT',
-        dialCode: '+43',
-        flag: '🇦🇹',
-        mask: '999 999 9999',
-        placeholder: '660 123 4567',
-    },
-    {
-        label: 'Hungary',
-        value: 'HU',
-        dialCode: '+36',
-        flag: '🇭🇺',
-        mask: '99 999 9999',
-        placeholder: '30 123 4567',
-    },
-    {
-        label: 'Poland',
-        value: 'PL',
-        dialCode: '+48',
-        flag: '🇵🇱',
-        mask: '999 999 999',
-        placeholder: '500 123 456',
-    },
-];
-
 const selectedPhoneCountryCode = ref('SK');
 const localPhoneNumber = ref('');
 
-const selectedPhoneCountry = computed(() => {
-    return phoneCountries.find((country) => country.value === selectedPhoneCountryCode.value) ?? phoneCountries[0];
-});
+const positionOptions = [
+    {
+        label: 'Lekári',
+        items: [
+            { label: 'Všeobecný lekár pre dospelých', value: 'Všeobecný lekár pre dospelých' },
+            { label: 'Všeobecný lekár pre deti a dorast', value: 'Všeobecný lekár pre deti a dorast' },
+            { label: 'Pediater', value: 'Pediater' },
+            { label: 'Internista', value: 'Internista' },
+            { label: 'Kardiológ', value: 'Kardiológ' },
+            { label: 'Neurológ', value: 'Neurológ' },
+            { label: 'Psychiater', value: 'Psychiater' },
+            { label: 'Detský psychiater', value: 'Detský psychiater' },
+            { label: 'Dermatovenerológ', value: 'Dermatovenerológ' },
+            { label: 'Gynekológ a pôrodník', value: 'Gynekológ a pôrodník' },
+            { label: 'Ortopéd', value: 'Ortopéd' },
+            { label: 'Chirurg', value: 'Chirurg' },
+            { label: 'Traumatológ', value: 'Traumatológ' },
+            { label: 'Urológ', value: 'Urológ' },
+            { label: 'Oftalmológ', value: 'Oftalmológ' },
+            { label: 'Otorinolaryngológ', value: 'Otorinolaryngológ' },
+            { label: 'Gastroenterológ', value: 'Gastroenterológ' },
+            { label: 'Endokrinológ', value: 'Endokrinológ' },
+            { label: 'Diabetológ', value: 'Diabetológ' },
+            { label: 'Reumatológ', value: 'Reumatológ' },
+            { label: 'Pneumológ a ftizeológ', value: 'Pneumológ a ftizeológ' },
+            { label: 'Alergológ a klinický imunológ', value: 'Alergológ a klinický imunológ' },
+            { label: 'Hematológ', value: 'Hematológ' },
+            { label: 'Onkológ', value: 'Onkológ' },
+            { label: 'Rádiológ', value: 'Rádiológ' },
+            { label: 'Anestéziológ a intenzivista', value: 'Anestéziológ a intenzivista' },
+            { label: 'Lekár urgentnej medicíny', value: 'Lekár urgentnej medicíny' },
+            { label: 'Rehabilitačný lekár', value: 'Rehabilitačný lekár' },
+            { label: 'Pracovný lekár', value: 'Pracovný lekár' },
+            { label: 'Zubný lekár', value: 'Zubný lekár' },
+            { label: 'Čeľustný ortopéd', value: 'Čeľustný ortopéd' },
+        ],
+    },
+    {
+        label: 'Psychológia a terapia',
+        items: [
+            { label: 'Klinický psychológ', value: 'Klinický psychológ' },
+            { label: 'Poradenský psychológ', value: 'Poradenský psychológ' },
+            { label: 'Detský psychológ', value: 'Detský psychológ' },
+            { label: 'Psychoterapeut', value: 'Psychoterapeut' },
+            { label: 'Školský psychológ', value: 'Školský psychológ' },
+            { label: 'Logopéd', value: 'Logopéd' },
+            { label: 'Liečebný pedagóg', value: 'Liečebný pedagóg' },
+            { label: 'Špeciálny pedagóg', value: 'Špeciálny pedagóg' },
+        ],
+    },
+    {
+        label: 'Sestry',
+        items: [
+            { label: 'Sestra', value: 'Sestra' },
+            { label: 'Všeobecná sestra', value: 'Všeobecná sestra' },
+            { label: 'Ambulantná sestra', value: 'Ambulantná sestra' },
+            { label: 'Praktická sestra', value: 'Praktická sestra' },
+            { label: 'Detská sestra', value: 'Detská sestra' },
+            { label: 'Psychiatrická sestra', value: 'Psychiatrická sestra' },
+            { label: 'Operačná sestra', value: 'Operačná sestra' },
+            { label: 'Anesteziologická sestra', value: 'Anesteziologická sestra' },
+            { label: 'Sestra intenzívnej starostlivosti', value: 'Sestra intenzívnej starostlivosti' },
+            { label: 'Geriatrická sestra', value: 'Geriatrická sestra' },
+            { label: 'Komunitná sestra', value: 'Komunitná sestra' },
+            { label: 'Pôrodná asistentka', value: 'Pôrodná asistentka' },
+            { label: 'Vedúca sestra', value: 'Vedúca sestra' },
+            { label: 'Staničná sestra', value: 'Staničná sestra' },
+        ],
+    },
+    {
+        label: 'Ostatní zdravotnícki pracovníci',
+        items: [
+            { label: 'Fyzioterapeut', value: 'Fyzioterapeut' },
+            { label: 'Ergoterapeut', value: 'Ergoterapeut' },
+            { label: 'Nutričný terapeut', value: 'Nutričný terapeut' },
+            { label: 'Zdravotnícky záchranár', value: 'Zdravotnícky záchranár' },
+            { label: 'Zdravotnícky laborant', value: 'Zdravotnícky laborant' },
+            { label: 'Rádiologický technik', value: 'Rádiologický technik' },
+            { label: 'Farmaceut', value: 'Farmaceut' },
+            { label: 'Farmaceutický laborant', value: 'Farmaceutický laborant' },
+            { label: 'Dentálna hygienička', value: 'Dentálna hygienička' },
+            { label: 'Zubný asistent', value: 'Zubný asistent' },
+            { label: 'Sanitár', value: 'Sanitár' },
+            { label: 'Recepčná', value: 'Recepčná' },
+            { label: 'Koordinátor ambulancie', value: 'Koordinátor ambulancie' },
+            { label: 'Administratívny pracovník', value: 'Administratívny pracovník' },
+        ],
+    },
+];
+
+const filteredPositionOptions = ref(positionOptions);
+
+const phoneDialCodes = {
+    SK: '+421',
+    CZ: '+420',
+    AT: '+43',
+    HU: '+36',
+    PL: '+48',
+};
+
+const normalizeText = (value) => {
+    return String(value || '').toLowerCase().trim();
+};
+
+const searchPositions = (event) => {
+    const query = normalizeText(event.query);
+
+    if (!query) {
+        filteredPositionOptions.value = positionOptions;
+        return;
+    }
+
+    filteredPositionOptions.value = positionOptions
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => {
+                return normalizeText(item.label).includes(query);
+            }),
+        }))
+        .filter((group) => group.items.length > 0);
+};
+
+const selectPosition = (event) => {
+    props.form.position = event.value?.value ?? event.value?.label ?? event.value ?? '';
+};
 
 const stripDialCode = (phone) => {
     let value = String(phone || '').trim();
 
-    const matchedCountry = phoneCountries.find((country) => value.startsWith(country.dialCode));
+    const matchedCountry = Object.entries(phoneDialCodes).find(([, dialCode]) => {
+        return value.startsWith(dialCode);
+    });
 
     if (matchedCountry) {
-        selectedPhoneCountryCode.value = matchedCountry.value;
-        value = value.replace(matchedCountry.dialCode, '').trim();
+        const [countryCode, dialCode] = matchedCountry;
+
+        selectedPhoneCountryCode.value = countryCode;
+        value = value.replace(dialCode, '').trim();
     }
 
     return value;
 };
 
-const syncLocalPhoneFromForm = () => {
-    localPhoneNumber.value = stripDialCode(props.form.phone);
-};
-
-const syncFormPhoneFromLocal = () => {
-    const cleanLocalPhone = String(localPhoneNumber.value || '').trim();
-
-    props.form.phone = cleanLocalPhone
-        ? `${selectedPhoneCountry.value.dialCode} ${cleanLocalPhone}`
-        : '';
-};
-
 watch(
     () => props.form.phone,
-    () => {
-        const currentFullPhone = localPhoneNumber.value
-            ? `${selectedPhoneCountry.value.dialCode} ${localPhoneNumber.value}`.trim()
-            : '';
-
-        if (props.form.phone !== currentFullPhone) {
-            syncLocalPhoneFromForm();
-        }
+    (value) => {
+        localPhoneNumber.value = stripDialCode(value);
     },
     {
         immediate: true,
     },
 );
 
-watch(localPhoneNumber, () => {
-    syncFormPhoneFromLocal();
-});
-
-watch(selectedPhoneCountryCode, () => {
-    syncFormPhoneFromLocal();
-});
+const updateFullPhoneValue = (value) => {
+    props.form.phone = value;
+};
 
 const handleEmployeePhoto = (event) => {
     props.form.photo = event.files?.[0] ?? null;
@@ -139,258 +203,219 @@ const handleEmployeePhoto = (event) => {
 </script>
 
 <template>
-    <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-6">
-            <h2 class="text-lg font-semibold text-slate-900">
-                {{ heading || submitLabel }}
+    <FormPage
+        :submit-label="submitLabel"
+        :loading="loading"
+    >
+        <div
+            v-if="heading || description"
+            class="space-y-2"
+        >
+            <h2
+                v-if="heading"
+                class="text-lg font-semibold text-dark"
+            >
+                {{ heading }}
             </h2>
 
-            <p v-if="description" class="mt-1 text-sm leading-6 text-slate-600">
+            <p
+                v-if="description"
+                class="text-sm leading-6 text-accent"
+            >
                 {{ description }}
             </p>
         </div>
 
-        <div class="space-y-6">
-            <div>
-                <h3 class="text-base font-semibold text-slate-900">
-                    Osobné údaje
-                </h3>
-
-                <p class="mt-1 text-sm text-slate-600">
-                    Tituly, meno a pracovná pozícia zamestnanca.
-                </p>
-            </div>
-
-            <div class="grid gap-5 md:grid-cols-2">
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Titul pred menom
-                    </label>
-
-                    <InputText
-                        v-model="form.title_before"
-                        class="w-full"
-                        placeholder="Mgr., PhDr., MUDr."
-                    />
-
-                    <p v-if="form.errors.title_before" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.title_before }}
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Titul za menom
-                    </label>
-
-                    <InputText
-                        v-model="form.title_after"
-                        class="w-full"
-                        placeholder="PhD., MBA"
-                    />
-
-                    <p v-if="form.errors.title_after" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.title_after }}
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Meno <span class="text-red-500">*</span>
-                    </label>
-
-                    <InputText
-                        v-model="form.first_name"
-                        class="w-full"
-                        placeholder="Ján"
-                    />
-
-                    <p v-if="form.errors.first_name" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.first_name }}
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Priezvisko <span class="text-red-500">*</span>
-                    </label>
-
-                    <InputText
-                        v-model="form.last_name"
-                        class="w-full"
-                        placeholder="Novák"
-                    />
-
-                    <p v-if="form.errors.last_name" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.last_name }}
-                    </p>
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Pozícia <span class="text-red-500">*</span>
-                    </label>
-
-                    <InputText
-                        v-model="form.position"
-                        class="w-full"
-                        placeholder="Klinický psychológ"
-                    />
-
-                    <p v-if="form.errors.position" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.position }}
-                    </p>
-                </div>
-            </div>
-
-            <div class="border-t border-slate-200 pt-6">
-                <h3 class="text-base font-semibold text-slate-900">
-                    Kontakt a profil
-                </h3>
-
-                <p class="mt-1 text-sm text-slate-600">
-                    Nepovinné údaje, ktoré môžu byť použité v profile zamestnanca.
-                </p>
-            </div>
-
-            <div class="grid gap-5 md:grid-cols-2">
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Email
-                    </label>
-
-                    <InputText
-                        v-model="form.email"
-                        class="w-full"
-                        placeholder="meno@firma.sk"
-                    />
-
-                    <p v-if="form.errors.email" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.email }}
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Telefón
-                    </label>
-
-                    <div class="grid gap-3 sm:grid-cols-[12rem_1fr]">
-                        <Select
-                            v-model="selectedPhoneCountryCode"
-                            :options="phoneCountries"
-                            optionLabel="label"
-                            optionValue="value"
-                            class="w-full"
-                        >
-                            <template #value>
-                                <div class="flex items-center gap-2">
-                                    <span>{{ selectedPhoneCountry.flag }}</span>
-                                    <span class="font-medium">
-                                        {{ selectedPhoneCountry.dialCode }}
-                                    </span>
-                                </div>
-                            </template>
-
-                            <template #option="{ option }">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="flex items-center gap-2">
-                                        <span>{{ option.flag }}</span>
-                                        <span>{{ option.label }}</span>
-                                    </div>
-
-                                    <span class="text-sm text-slate-500">
-                                        {{ option.dialCode }}
-                                    </span>
-                                </div>
-                            </template>
-                        </Select>
-
-                        <InputMask
-                            v-model="localPhoneNumber"
-                            :mask="selectedPhoneCountry.mask"
-                            :placeholder="selectedPhoneCountry.placeholder"
-                            class="w-full"
-                            inputmode="numeric"
-                            slotChar=""
-                        />
-                    </div>
-
-                    <p class="mt-1 text-xs text-slate-500">
-                        Vyberte predvoľbu krajiny a zadajte iba čísla. Uloží sa napríklad
-                        {{ selectedPhoneCountry.dialCode }} {{ selectedPhoneCountry.placeholder }}.
-                    </p>
-
-                    <p v-if="form.errors.phone" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.phone }}
-                    </p>
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Bio
-                    </label>
-
-                    <Textarea
-                        v-model="form.bio"
-                        class="w-full"
-                        rows="4"
-                        placeholder="Krátky popis, špecializácia alebo prax..."
-                    />
-
-                    <p v-if="form.errors.bio" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.bio }}
-                    </p>
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm font-medium text-slate-700">
-                        Fotografia
-                    </label>
-
-                    <div
-                        v-if="photoPreviewUrl && !form.photo"
-                        class="mb-3 flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3"
-                    >
-                        <img
-                            :src="photoPreviewUrl"
-                            alt="Aktuálna fotografia"
-                            class="h-16 w-16 rounded-xl object-cover"
-                        />
-
-                        <p class="text-sm text-slate-600">
-                            Aktuálna fotografia zamestnanca.
-                        </p>
-                    </div>
-
-                    <FileUpload
-                        mode="basic"
-                        name="photo"
-                        accept="image/*"
-                        chooseLabel="Vybrať fotografiu"
-                        customUpload
-                        auto
-                        @select="handleEmployeePhoto"
-                    />
-
-                    <p v-if="form.photo" class="mt-2 text-sm text-slate-500">
-                        Vybraný súbor: {{ form.photo.name }}
-                    </p>
-
-                    <p v-if="form.errors.photo" class="mt-1 text-sm text-red-600">
-                        {{ form.errors.photo }}
-                    </p>
-                </div>
-            </div>
-
-            <div class="flex justify-end border-t border-slate-200 pt-5">
-                <Button
-                    type="submit"
-                    :label="submitLabel"
-                    icon="pi pi-save"
-                    :loading="loading"
+        <FormSection
+            title="Osobné údaje"
+            columns="md:grid-cols-2"
+        >
+            <FormField
+                label="Titul pred menom"
+                for="title_before"
+                :error="form.errors.title_before"
+            >
+                <InputText
+                    id="title_before"
+                    v-model="form.title_before"
+                    class="w-full"
+                    placeholder="Mgr., PhDr., MUDr."
+                    :invalid="Boolean(form.errors.title_before)"
                 />
-            </div>
-        </div>
-    </div>
+            </FormField>
+
+            <FormField
+                label="Titul za menom"
+                for="title_after"
+                :error="form.errors.title_after"
+            >
+                <InputText
+                    id="title_after"
+                    v-model="form.title_after"
+                    class="w-full"
+                    placeholder="PhD., MBA"
+                    :invalid="Boolean(form.errors.title_after)"
+                />
+            </FormField>
+
+            <FormField
+                label="Meno"
+                for="first_name"
+                required
+                :error="form.errors.first_name"
+            >
+                <InputText
+                    id="first_name"
+                    v-model="form.first_name"
+                    class="w-full"
+                    placeholder="Ján"
+                    :invalid="Boolean(form.errors.first_name)"
+                />
+            </FormField>
+
+            <FormField
+                label="Priezvisko"
+                for="last_name"
+                required
+                :error="form.errors.last_name"
+            >
+                <InputText
+                    id="last_name"
+                    v-model="form.last_name"
+                    class="w-full"
+                    placeholder="Novák"
+                    :invalid="Boolean(form.errors.last_name)"
+                />
+            </FormField>
+
+            <FormField
+                label="Pozícia"
+                for="position"
+                required
+                :error="form.errors.position"
+                span="md:col-span-2"
+            >
+                <AutoComplete
+                    id="position"
+                    v-model="form.position"
+                    :suggestions="filteredPositionOptions"
+                    option-label="label"
+                    option-group-label="label"
+                    option-group-children="items"
+                    dropdown
+                    dropdown-mode="blank"
+                    complete-on-focus
+                    placeholder="Vyberte alebo napíšte pozíciu"
+                    class="w-full"
+                    input-class="w-full"
+                    :invalid="Boolean(form.errors.position)"
+                    @complete="searchPositions"
+                    @option-select="selectPosition"
+                >
+                    <template #optiongroup="{ option }">
+                        <div class="bg-dark rounded-md p-2 text-normal font-semibold text-white">
+                            {{ option.label }}
+                        </div>
+                    </template>
+
+                    <template #option="{ option }">
+                        <div class="text-sm text-dark">
+                            {{ option.label }}
+                        </div>
+                    </template>
+                </AutoComplete>
+            </FormField>
+        </FormSection>
+
+        <FormSection
+            title="Profil"
+            columns="md:grid-cols-2"
+        >
+            <FormField
+                label="Bio"
+                for="bio"
+                :error="form.errors.bio"
+                span="md:col-span-2"
+            >
+                <Textarea
+                    id="bio"
+                    v-model="form.bio"
+                    class="w-full"
+                    rows="4"
+                    placeholder="Krátky popis, špecializácia alebo prax..."
+                    :invalid="Boolean(form.errors.bio)"
+                />
+            </FormField>
+
+            <FormField
+                label="Fotografia"
+                :error="form.errors.photo"
+                span="md:col-span-2"
+            >
+                <div
+                    v-if="photoPreviewUrl && !form.photo"
+                    class="mb-3 flex items-center gap-4 rounded-md bg-soft p-3"
+                >
+                    <img
+                        :src="photoPreviewUrl"
+                        alt="Aktuálna fotografia"
+                        class="h-16 w-16 rounded-md object-cover"
+                    >
+
+                    <p class="text-sm text-accent">
+                        Aktuálna fotografia zamestnanca.
+                    </p>
+                </div>
+
+                <FileUpload
+                    mode="basic"
+                    name="photo"
+                    accept="image/*"
+                    choose-label="Vybrať fotografiu"
+                    custom-upload
+                    auto
+                    @select="handleEmployeePhoto"
+                />
+
+                <p
+                    v-if="form.photo"
+                    class="mt-2 text-sm text-accent"
+                >
+                    Vybraný súbor: {{ form.photo.name }}
+                </p>
+            </FormField>
+        </FormSection>
+
+        <FormSection
+            title="Kontaktné údaje"
+            columns="md:grid-cols-2"
+        >
+            <FormField
+                label="Email"
+                for="email"
+                :error="form.errors.email"
+            >
+                <InputText
+                    id="email"
+                    v-model="form.email"
+                    type="email"
+                    class="w-full"
+                    placeholder="meno@firma.sk"
+                    :invalid="Boolean(form.errors.email)"
+                />
+            </FormField>
+
+            <FormField
+                label="Telefón"
+                :error="form.errors.phone"
+            >
+                <PhoneInput
+                    v-model="localPhoneNumber"
+                    v-model:country-code="selectedPhoneCountryCode"
+                    :invalid="Boolean(form.errors.phone)"
+                    @update:full-value="updateFullPhoneValue"
+                />
+            </FormField>
+        </FormSection>
+    </FormPage>
 </template>
