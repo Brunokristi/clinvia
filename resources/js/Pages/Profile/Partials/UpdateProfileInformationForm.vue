@@ -21,6 +21,7 @@ const form = useForm({
     last_name: user.last_name,
     email: user.email,
 });
+const emit = defineEmits(['saved']);
 </script>
 
 <template>
@@ -36,7 +37,7 @@ const form = useForm({
         </header>
 
         <form
-            @submit.prevent="form.patch(route('profile.update'))"
+            @submit.prevent="form.patch(route('profile.update'), { onSuccess: () => emit('saved') })"
             class="mt-6 space-y-6"
         >
             <div>

@@ -15,11 +15,27 @@ import { sk } from './primevue/locales/sk';
 
 
 createInertiaApp({
-    title: (title) => `${title} - Clinvia`,
-    resolve: (name) => resolvePageComponent(
-        `./Pages/${name}.vue`,
-        import.meta.glob('./Pages/**/*.vue')
-    ),
+    title: (title) => title ? `${title} - Clinvia` : 'Clinvia',
+    resolve: async (name) => {
+        const page = await resolvePageComponent(
+            `./Pages/${name}.vue`,
+            import.meta.glob('./Pages/**/*.vue')
+        );
+
+        // If a page doesn't export a title, generate a readable default from the component name
+        if (!page.default.title) {
+            const parts = name.split('/');
+            const last = parts[parts.length - 1] || name;
+            const words = last
+                .replace(/[-_]/g, ' ')
+                .replace(/([A-Z])/g, ' $1')
+                .trim();
+
+            page.default.title = words.charAt(0).toUpperCase() + words.slice(1);
+        }
+
+        return page;
+    },
     setup({ el, App, props, plugin }) {
         const vueApp = createApp({ render: () => h(App, props) });
 

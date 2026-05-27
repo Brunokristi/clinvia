@@ -853,5 +853,37 @@ export const primevuePt = {
         },
     },
 
+    menu: {
+        root: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
 
+        content: {
+            class: [
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-white',
+                '!shadow-lg',
+            ],
+        },
+
+        item: {
+            class: [
+                '!rounded-md !px-3 !py-2',
+                '!text-normal !text-accent',
+                'transition-all duration-150',
+                'hover:!bg-soft',
+                'data-[p-focused=true]:!bg-soft',
+                'data-[p-focused=true]:!text-accent',
+            ],
+        },
+
+        label: {
+            class: [
+                '!font-medium',
+            ],
+        },
+    },
 };

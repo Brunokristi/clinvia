@@ -4,8 +4,9 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import PanelMenu from 'primevue/panelmenu';
 import Menu from 'primevue/menu';
+import FormDialog from '@/Components/Dialogs/FormDialog.vue';
+import UpdateProfileInformationForm from '@/Pages/Profile/Partials/UpdateProfileInformationForm.vue';
 import Button from 'primevue/button';
-import Avatar from 'primevue/avatar';
 
 const page = usePage();
 
@@ -16,7 +17,6 @@ const branch = computed(() => page.props.branch ?? null);
 const company = computed(() => page.props.company ?? branch.value?.company ?? null);
 
 const companies = computed(() => {
-    // Don't show the full companies list in the sidebar when creating a branch
     if (route().current('branches.create')) {
         return company.value ? [company.value] : [];
     }
@@ -34,7 +34,9 @@ const userName = computed(() => {
         || 'Používateľ';
 });
 
-const userRole = computed(() => user.value?.global_role?.replace('_', ' ') ?? 'user');
+const userRole = computed(() => {
+    return user.value?.global_role?.replace('_', ' ') ?? 'user';
+});
 
 const userInitials = computed(() => {
     return userName.value
@@ -73,7 +75,9 @@ const expandedMenuKeys = computed(() => {
     return keys;
 });
 
-const isSuperAdmin = computed(() => user.value?.global_role === 'super_admin');
+const isSuperAdmin = computed(() => {
+    return user.value?.global_role === 'super_admin';
+});
 
 const makeMenuLink = (link) => {
     return {
@@ -200,15 +204,20 @@ const navigationItems = computed(() => {
     return items;
 });
 
+const profileDialogVisible = ref(false);
+
+const goToUserSettings = () => {
+    // Always open the profile dialog for signed-in users
+    if (user.value) {
+        profileDialogVisible.value = true;
+    }
+};
+
 const userMenuItems = computed(() => {
     const items = [
         {
             label: userName.value,
             items: [
-                {
-                    label: contextTitle.value,
-                    disabled: true,
-                },
                 {
                     label: userRole.value,
                     disabled: true,
@@ -219,12 +228,12 @@ const userMenuItems = computed(() => {
 
     const actionItems = [];
 
-    if (route().has('profile.edit')) {
+    if (user.value) {
         actionItems.push({
-            label: 'Nastavenia účtu',
+            label: 'Nastavenia',
             icon: 'pi pi-cog',
             command: () => {
-                router.visit(route('profile.edit'));
+                profileDialogVisible.value = true;
             },
         });
     }
@@ -256,7 +265,7 @@ const toggleUserMenu = (event) => {
 </script>
 
 <template>
-    <aside class="flex h-screen w-80 shrink-0 flex-col p-4 bg-accent">
+    <aside class="flex h-screen w-80 shrink-0 flex-col bg-accent p-4">
         <div class="mb-4">
             <Link :href="route('dashboard')">
                 <ApplicationLogo class="h-14" />
@@ -275,19 +284,27 @@ const toggleUserMenu = (event) => {
             </PanelMenu>
         </nav>
 
-        <div class="mt-4">
+        <div class="mt-4 space-y-3">
             <Button
                 type="button"
-                severity="secondary"
-                class="!w-full !bg-dark justify-start"
+                class="!flex !w-full !items-center !justify-start !gap-3 !rounded-md !border !border-white/10 !bg-dark !px-3 !py-3 !text-white hover:!bg-dark/90"
                 @click="toggleUserMenu"
             >
-
-                <span class="ml-2 flex-1 text-left">
-                    {{ userName }}
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm font-semibold text-white">
+                    {{ userInitials }}
                 </span>
 
-                <i class="pi pi-chevron-up ml-2" />
+                <span class="min-w-0 flex-1 text-left">
+                    <span class="block truncate text-sm font-semibold text-white">
+                        {{ userName }}
+                    </span>
+
+                    <span class="block truncate text-xs text-white/60">
+                        {{ contextTitle }}
+                    </span>
+                </span>
+
+                <i class="pi pi-chevron-up text-xs text-white/70" />
             </Button>
 
             <Menu
@@ -295,6 +312,19 @@ const toggleUserMenu = (event) => {
                 :model="userMenuItems"
                 popup
             />
+
+                <FormDialog
+                    v-model:visible="profileDialogVisible"
+                    title="Nastavenia používateľa"
+                    width="max-w-xl"
+                    :dismissable-mask="true"
+                    @close="profileDialogVisible = false"
+                >
+                    <UpdateProfileInformationForm
+                        class="p-4"
+                        @saved="profileDialogVisible = false"
+                    />
+                </FormDialog>
         </div>
     </aside>
 </template>
