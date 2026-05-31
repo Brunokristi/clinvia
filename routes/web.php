@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\ServiceNecessityController;
 use App\Http\Controllers\Admin\ServiceStepController;
 use App\Http\Controllers\Admin\ServiceTagController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\BranchPublicSiteController;
 use App\Http\Controllers\Api\PublicCompanyController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
@@ -180,6 +181,12 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::delete('/services/{branchService}', [BranchServiceController::class, 'destroy'])
                     ->name('services.destroy');
+
+                Route::get('/public-site', [BranchPublicSiteController::class, 'edit'])
+                    ->name('public-site.edit');
+
+                Route::put('/public-site', [BranchPublicSiteController::class, 'update'])
+                    ->name('public-site.update');
             });
 
         Route::prefix('services/{service}')

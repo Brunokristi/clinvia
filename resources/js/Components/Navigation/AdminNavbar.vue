@@ -205,6 +205,12 @@ const branchLinks = computed(() => {
             href: route('branches.users.page', branch.value),
             active: route().current('branches.users.page'),
         },
+        {
+            label: 'Verejná stránka',
+            icon: 'pi pi-globe',
+            href: route('branches.public-site.edit', branch.value),
+            active: route().current('branches.public-site.edit'),
+        },
     ];
 });
 

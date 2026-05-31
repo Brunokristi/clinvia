@@ -79,6 +79,10 @@ const breadcrumbs = computed(() => {
             items.push(breadcrumbItem('Info'));
         }
 
+        if (route().current('branches.public-site.edit')) {
+            items.push(breadcrumbItem('Verejná stránka'));
+        }
+
         if (route().current('branches.contacts.page')) {
             items.push(breadcrumbItem('Kontakty'));
         }
