@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\BranchPublicSiteController;
 use App\Http\Controllers\Api\PublicCompanyController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicBranchSiteController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
@@ -31,6 +32,22 @@ Route::middleware('api.client')
     ->group(function () {
         Route::get('/companies/{company:slug}', [PublicCompanyController::class, 'show'])
             ->name('companies.show');
+    });
+
+Route::prefix('p/{branch:slug}')
+    ->name('public.branch.')
+    ->group(function () {
+        Route::get('/', [PublicBranchSiteController::class, 'home'])
+            ->name('home');
+
+        Route::get('/sluzby', [PublicBranchSiteController::class, 'services'])
+            ->name('services');
+
+        Route::get('/sluzby/{service:slug}', [PublicBranchSiteController::class, 'service'])
+            ->name('services.show');
+
+        Route::get('/kontakt', [PublicBranchSiteController::class, 'contact'])
+            ->name('contact');
     });
 
 Route::middleware(['auth', 'active'])->group(function () {

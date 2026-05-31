@@ -11,6 +11,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 
@@ -295,8 +296,8 @@ const addContact = () => {
             ...data,
             label: finalLabel.value,
             value: normalizedContactValue.value,
-            is_primary: false,
-            sort_order: 0,
+            is_primary: Boolean(data.is_primary),
+            sort_order: Number(data.sort_order ?? 0),
         }))
         .post(route('branches.contacts.store', props.branch.id), {
             preserveScroll: true,
@@ -318,6 +319,18 @@ const deleteContact = (contact) => {
                 preserveScroll: true,
             });
         },
+    });
+};
+
+const makePrimaryContact = (contact) => {
+    router.put(route('branches.contacts.update', [props.branch.id, contact.id]), {
+        type: contact.type,
+        label: contact.label ?? '',
+        value: contact.value,
+        is_primary: true,
+        sort_order: contact.sort_order ?? 0,
+    }, {
+        preserveScroll: true,
     });
 };
 </script>
@@ -457,9 +470,18 @@ const deleteContact = (contact) => {
                 </template>
 
                 <template #cell-label_text="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.label_text }}
-                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-accent">
+                            {{ row.label_text }}
+                        </span>
+
+                        <span
+                            v-if="row.is_primary"
+                            class="rounded-md bg-soft px-2 py-1 text-[11px] font-semibold text-accent"
+                        >
+                            Hlavný
+                        </span>
+                    </div>
                 </template>
 
                 <template #cell-value_text="{ row }">
@@ -469,6 +491,17 @@ const deleteContact = (contact) => {
                 </template>
 
                 <template #row-actions="{ row }">
+                    <Button
+                        v-if="!row.is_primary"
+                        label="Nastaviť ako hlavný"
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        icon="pi pi-star"
+                        class="mr-2"
+                        @click="makePrimaryContact(row)"
+                    />
+
                     <Button
                         label="Odstrániť"
                         size="small"

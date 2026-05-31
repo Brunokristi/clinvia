@@ -8,13 +8,14 @@ use App\Models\Contact;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class BranchContactController extends Controller
 {
     public function store(Request $request, Branch $branch): RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
-        
+
         $data = $request->validate([
             'type' => ['required', 'string', Rule::in([
                 'phone',
@@ -32,15 +33,15 @@ class BranchContactController extends Controller
             'sort_order' => ['nullable', 'integer'],
         ]);
 
-        $data['sort_order'] = $data['sort_order'] ?? 0;
+        DB::transaction(function () use ($branch, $data): void {
+            $data['sort_order'] = $data['sort_order'] ?? 0;
 
-        if ($data['is_primary']) {
-            $branch->contacts()
-                ->where('type', $data['type'])
-                ->update(['is_primary' => false]);
-        }
+            if ($data['is_primary']) {
+                $branch->contacts()->update(['is_primary' => false]);
+            }
 
-        $branch->contacts()->create($data);
+            $branch->contacts()->create($data);
+        });
 
         return back()->with('success', 'Kontakt bol pridaný.');
     }
@@ -67,16 +68,17 @@ class BranchContactController extends Controller
             'sort_order' => ['nullable', 'integer'],
         ]);
 
-        $data['sort_order'] = $data['sort_order'] ?? 0;
+        DB::transaction(function () use ($branch, $contact, $data): void {
+            $data['sort_order'] = $data['sort_order'] ?? 0;
 
-        if ($data['is_primary']) {
-            $branch->contacts()
-                ->where('type', $data['type'])
-                ->where('id', '!=', $contact->id)
-                ->update(['is_primary' => false]);
-        }
+            if ($data['is_primary']) {
+                $branch->contacts()
+                    ->whereKeyNot($contact->id)
+                    ->update(['is_primary' => false]);
+            }
 
-        $contact->update($data);
+            $contact->update($data);
+        });
 
         return back()->with('success', 'Kontakt bol upravený.');
     }

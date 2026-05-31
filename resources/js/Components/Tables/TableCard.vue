@@ -198,10 +198,12 @@ const resolveCellValue = (row, column) => {
                     :style="rowActionsStyle"
                 >
                     <template #body="{ data }">
-                        <slot
-                            name="row-actions"
-                            :row="data"
-                        />
+                        <div class="flex items-center gap-2 whitespace-nowrap">
+                            <slot
+                                name="row-actions"
+                                :row="data"
+                            />
+                        </div>
                     </template>
                 </Column>
 

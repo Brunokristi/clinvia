@@ -56,7 +56,7 @@ const publicUrl = `/p/${props.branch.slug}`;
             >
                 <FormSection
                     title="Verejná stránka"
-                    :description="`Nastavenia automaticky generovanej stránky pre pobočku ${branch.name}.`"
+                    :description="`Nastavenia stránky pre pobočku ${branch.name}.`"
                     columns="md:grid-cols-2"
                 >
                     <FormField
@@ -65,7 +65,7 @@ const publicUrl = `/p/${props.branch.slug}`;
                         :error="form.errors.is_enabled"
                         span="md:col-span-2"
                     >
-                        <div class="flex items-center gap-3 rounded-md bg-soft px-4 py-3">
+                        <div class="flex items-center gap-3 mt-2">
                             <Checkbox
                                 id="is_enabled"
                                 v-model="form.is_enabled"
@@ -73,15 +73,9 @@ const publicUrl = `/p/${props.branch.slug}`;
                                 :invalid="Boolean(form.errors.is_enabled)"
                             />
 
-                            <div>
-                                <p class="text-normal font-semibold text-dark">
+                                <p class="text-normal text-accent">
                                     Verejná stránka je aktívna
                                 </p>
-
-                                <p class="text-sm text-accent">
-                                    Ak je vypnutá, stránka nebude verejne dostupná.
-                                </p>
-                            </div>
                         </div>
                     </FormField>
 
@@ -213,17 +207,6 @@ const publicUrl = `/p/${props.branch.slug}`;
                         />
                     </FormField>
                 </FormSection>
-
-                <div class="flex justify-end">
-                    <Link
-                        v-if="form.is_enabled"
-                        :href="publicUrl"
-                        class="rounded-md bg-soft px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft/80"
-                        target="_blank"
-                    >
-                        Zobraziť verejnú stránku
-                    </Link>
-                </div>
             </FormPage>
         </form>
     </AdminLayout>
