@@ -94,6 +94,8 @@ class UserInvitationService
                 'is_active' => true,
             ]);
 
+            $user->syncGlobalRoleWithMemberships();
+
             $invitation->forceFill([
                 'accepted_at' => now(),
             ])->save();
@@ -136,7 +138,7 @@ class UserInvitationService
                 'last_name' => $data['last_name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
-                'global_role' => 'admin',
+                'global_role' => 'editor',
                 'is_active' => true,
             ]);
 
@@ -147,6 +149,8 @@ class UserInvitationService
                 'role' => 'branch_admin',
                 'is_active' => true,
             ]);
+
+            $user->syncGlobalRoleWithMemberships();
 
             $invitation->forceFill([
                 'accepted_at' => now(),
@@ -231,20 +235,9 @@ class UserInvitationService
     {
         $normalizedEmail = Str::lower($email);
 
-        $existingUser = User::query()
-            ->select(['id', 'email', 'global_role'])
-            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
-            ->first();
-
         if ($invitedBy !== null && Str::lower($invitedBy->email) === $normalizedEmail) {
             throw ValidationException::withMessages([
                 'invite_email' => 'Nemôžeš pozvať samého seba ako branch admina.',
-            ]);
-        }
-
-        if ($existingUser && in_array($existingUser->global_role, ['super_admin', 'admin'], true)) {
-            throw ValidationException::withMessages([
-                'invite_email' => 'Admina nemožno pozvať ako branch admina. Pošli mu pozvánku do firmy.',
             ]);
         }
 

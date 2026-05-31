@@ -162,7 +162,7 @@ class CompanyController extends Controller
     {
         $user = request()->user();
 
-        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+        abort_if(! $user->canManageCompany($company->id), 403);
 
         return Inertia::render('Admin/Companies/Edit', [
             'company' => $company,
@@ -173,7 +173,7 @@ class CompanyController extends Controller
     {
         $user = request()->user();
 
-        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+        abort_if(! $user->canManageCompany($company->id), 403);
 
         return Inertia::render('Admin/Companies/Branches', [
             'company' => $company,
@@ -206,7 +206,7 @@ class CompanyController extends Controller
     {
         $user = request()->user();
 
-        abort_if(! $company->newQuery()->accessibleTo($user)->whereKey($company->id)->exists(), 403);
+        abort_if(! $user->canManageCompany($company->id), 403);
 
         return Inertia::render('Admin/Companies/Users', [
             'company' => $company->load([
@@ -218,7 +218,7 @@ class CompanyController extends Controller
 
     public function update(Request $request, Company $company): RedirectResponse
     {
-        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+        abort_if(! $request->user()->canManageCompany($company->id), 403);
 
         $data = $request->validate([
             'legal_name' => ['required', 'string', 'max:255'],
@@ -255,7 +255,7 @@ class CompanyController extends Controller
 
     public function destroy(Company $company): RedirectResponse
     {
-        abort_if(! request()->user()->canAccessCompany($company->id), 403);
+        abort_if(! request()->user()->canManageCompany($company->id), 403);
 
         $companyUserIds = $company->users()
             ->pluck('users.id')

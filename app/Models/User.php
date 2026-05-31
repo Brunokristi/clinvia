@@ -105,10 +105,48 @@ class User extends Authenticatable
             return true;
         }
 
+        if ($this->companies()
+            ->where('companies.id', $companyId)
+            ->wherePivot('is_active', true)
+            ->exists()) {
+            return true;
+        }
+
+        return $this->branches()
+            ->where('branches.company_id', $companyId)
+            ->wherePivot('is_active', true)
+            ->exists();
+    }
+
+    public function canManageCompany(int $companyId): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
         return $this->companies()
             ->where('companies.id', $companyId)
             ->wherePivot('is_active', true)
             ->exists();
+    }
+
+    public function syncGlobalRoleWithMemberships(): void
+    {
+        if ($this->isSuperAdmin()) {
+            return;
+        }
+
+        $newRole = $this->companies()
+            ->wherePivot('is_active', true)
+            ->exists()
+            ? 'admin'
+            : ($this->branches()->wherePivot('is_active', true)->exists() ? 'editor' : 'viewer');
+
+        if ($this->global_role !== $newRole) {
+            $this->forceFill([
+                'global_role' => $newRole,
+            ])->save();
+        }
     }
 
     public function canAccessBranch(Branch $branch): bool

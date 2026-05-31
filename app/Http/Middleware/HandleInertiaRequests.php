@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Company;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -29,6 +30,26 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $managedCompanies = [];
+
+        if ($request->user()) {
+            if ($request->user()->isSuperAdmin()) {
+                $managedCompanies = Company::query()
+                    ->select(['id', 'legal_name', 'slug'])
+                    ->orderBy('legal_name')
+                    ->get()
+                    ->all();
+            } else {
+                $managedCompanies = $request->user()
+                    ->companies()
+                    ->select(['companies.id', 'companies.legal_name', 'companies.slug'])
+                    ->wherePivot('is_active', true)
+                    ->orderBy('companies.legal_name')
+                    ->get()
+                    ->all();
+            }
+        }
+
         return [
             ...parent::share($request),
             'auth' => [
@@ -42,6 +63,7 @@ class HandleInertiaRequests extends Middleware
                     'is_active' => $request->user()->is_active,
                 ] : null,
             ],
+            'managedCompanies' => $managedCompanies,
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'api_token' => fn () => $request->session()->get('api_token'),

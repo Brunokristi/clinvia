@@ -7,33 +7,33 @@ import Button from 'primevue/button';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
-    companies: {
+    branches: {
         type: [Array, Object],
         required: true,
     },
     title: {
         type: String,
-        default: 'Firmy',
+        default: 'Pobočky',
     },
     description: {
         type: String,
-        default: 'Správa firiem v systéme.',
+        default: 'Správa pobočiek v systéme.',
     },
     showCreateButton: {
         type: Boolean,
-        default: true,
+        default: false,
     },
     createHref: {
         type: String,
-        default: 'companies.create',
+        default: 'branches.create',
     },
     createLabel: {
         type: String,
-        default: 'Pridať firmu',
+        default: 'Pridať pobočku',
     },
     emptyMessage: {
         type: String,
-        default: 'Zatiaľ tu nie sú žiadne firmy.',
+        default: 'Zatiaľ tu nie sú žiadne pobočky.',
     },
     showActions: {
         type: Boolean,
@@ -44,67 +44,71 @@ const props = defineProps({
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
 const rows = computed(() => {
-    return Array.isArray(props.companies)
-        ? props.companies
-        : props.companies?.data ?? [];
+    return Array.isArray(props.branches)
+        ? props.branches
+        : props.branches?.data ?? [];
 });
 
-const selectedCompanyToDelete = ref(null);
+const selectedBranchToDelete = ref(null);
 
 const tableRows = computed(() => {
-    return rows.value.map((company) => ({
-        ...company,
-        legal_name: company.legal_name || company.name || '',
-        company_number: String(company.id_number || company.company_id_number || ''),
+    return rows.value.map((branch) => ({
+        ...branch,
+        company_name: branch.company?.legal_name || branch.company_name || '',
     }));
 });
 
 const columns = [
     {
-        field: 'legal_name',
-        header: 'Názov firmy',
+        field: 'name',
+        header: 'Názov pobočky',
         sortable: true,
     },
     {
-        field: 'company_number',
-        header: 'IČO',
+        field: 'company_name',
+        header: 'Firma',
+        sortable: true,
+    },
+    {
+        field: 'city',
+        header: 'Mesto',
         sortable: true,
         emptyValue: '—',
     },
 ];
 
-const companyName = (company) => {
-    return company.legal_name || company.name || 'Bez názvu';
+const branchName = (branch) => {
+    return branch.name || 'Bez názvu';
 };
 
-const openDeleteDialog = (company) => {
-    selectedCompanyToDelete.value = company;
+const openDeleteDialog = (branch) => {
+    selectedBranchToDelete.value = branch;
 
     openDialog({
-        title: 'Odstrániť firmu',
-        message: `Naozaj odstrániť firmu ${companyName(company)}?`,
+        title: 'Odstrániť pobočku',
+        message: `Naozaj odstrániť pobočku ${branchName(branch)}?`,
         confirmLabel: 'Odstrániť',
-        onConfirm: deleteCompany,
+        confirmSeverity: 'danger',
+        onConfirm: deleteBranch,
     });
 };
 
 const closeDeleteDialog = () => {
-    selectedCompanyToDelete.value = null;
+    selectedBranchToDelete.value = null;
     closeDialog();
 };
 
-const deleteCompany = () => {
-    if (!selectedCompanyToDelete.value) {
+const deleteBranch = () => {
+    if (!selectedBranchToDelete.value) {
         return;
     }
 
-    router.delete(route('companies.destroy', { company: selectedCompanyToDelete.value.id }), {
+    router.delete(route('branches.destroy', { branch: selectedBranchToDelete.value.id }), {
         preserveScroll: true,
         onSuccess: closeDeleteDialog,
         onError: closeDeleteDialog,
     });
 };
-
 </script>
 
 <template>
@@ -114,8 +118,8 @@ const deleteCompany = () => {
             :description="description"
             :rows="tableRows"
             :columns="columns"
-            :search-fields="['legal_name', 'company_number']"
-            empty-message="Zatiaľ tu nie sú žiadne firmy."
+            :search-fields="['name', 'company_name', 'city']"
+            :empty-message="emptyMessage"
             show-row-actions
         >
             <template #actions>
@@ -123,9 +127,7 @@ const deleteCompany = () => {
                     v-if="showCreateButton"
                     :href="route(createHref)"
                 >
-                    <Button
-                        :label="createLabel"
-                    />
+                    <Button :label="createLabel" />
                 </a>
             </template>
 
@@ -135,7 +137,7 @@ const deleteCompany = () => {
                     class="flex gap-2"
                 >
                     <Button
-                        @click="router.visit(route('companies.edit', { company: row.id }))"
+                        @click="router.visit(route('branches.edit', { branch: row.id }))"
                         label="Detail"
                     />
 

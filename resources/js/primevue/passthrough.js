@@ -1,4 +1,5 @@
 import { itemIcon } from "@primeuix/themes/aura/tabmenu";
+import { tabpanel } from "@primeuix/themes/aura/tabs";
 
 export const primevuePt = {
     button: {
@@ -863,7 +864,7 @@ export const primevuePt = {
         content: {
             class: [
                 '!rounded-md',
-                '!border !border-soft',
+                '!border !border-0',
                 '!bg-white',
                 '!shadow-lg',
             ],
@@ -883,6 +884,43 @@ export const primevuePt = {
         label: {
             class: [
                 '!font-medium',
+            ],
+        },
+    },
+
+    tablist: {
+        tabList: {
+            class: [
+                '!flex !gap-2',
+                '!border-0 !bg-transparent !p-0',
+                '!mb-2',
+
+                '[&_.p-tab]:!rounded-md',
+                '[&_.p-tab]:!border-0',
+                '[&_.p-tab]:!bg-soft',
+                '[&_.p-tab]:!px-4',
+                '[&_.p-tab]:!py-2',
+                '[&_.p-tab]:!text-normal',
+                '[&_.p-tab]:!font-medium',
+                '[&_.p-tab]:!text-accent',
+                '[&_.p-tab]:!shadow-none',
+
+                '[&_.p-tab[data-p-active=true]]:!bg-accent',
+                '[&_.p-tab[data-p-active=true]]:!text-white',
+                '[&_.p-tab[data-p-active=true]]:!border-accent',
+            ],
+        },
+        activeBar: {
+            class: [
+                '!hidden',
+            ],
+        },
+    },
+
+    tabPanels: {
+        root: {
+            class: [
+                '!p-0',
             ],
         },
     },

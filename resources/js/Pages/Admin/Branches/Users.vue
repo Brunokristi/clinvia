@@ -188,14 +188,6 @@ const inviteBranchAdmin = () => {
         return;
     }
 
-    const matchedUser = availableUsersByEmail.value.get(email);
-
-    if (matchedUser && ['super_admin', 'admin'].includes(matchedUser.global_role)) {
-        inviteForm.setError('invite_email', 'Admina nemožno pozvať ako branch admina. Pošli mu pozvánku do firmy.');
-
-        return;
-    }
-
     inviteForm.post(route('branches.users.store', props.branch.id), {
         preserveScroll: true,
         onSuccess: () => {

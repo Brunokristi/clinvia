@@ -1,45 +1,55 @@
 <?php
 
-use App\Http\Controllers\Admin\DashboardController;
-use App\Http\Controllers\Admin\UserController;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Admin\CompanyController;
-use App\Http\Controllers\Admin\BranchController;
+use App\Http\Controllers\Admin\ApiClientController;
 use App\Http\Controllers\Admin\BranchContactController;
-use App\Http\Controllers\Admin\BranchOpeningHoursController;
-use App\Http\Controllers\Admin\BranchUserController;
+use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
+use App\Http\Controllers\Admin\BranchOpeningHoursController;
 use App\Http\Controllers\Admin\BranchServiceController;
+use App\Http\Controllers\Admin\BranchUserController;
+use App\Http\Controllers\Admin\CompanyController;
+use App\Http\Controllers\Admin\CompanyUserController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\ServiceController;
+use App\Http\Controllers\Admin\ServiceFileController;
 use App\Http\Controllers\Admin\ServiceInformationController;
 use App\Http\Controllers\Admin\ServiceNecessityController;
 use App\Http\Controllers\Admin\ServiceStepController;
 use App\Http\Controllers\Admin\ServiceTagController;
-use App\Http\Controllers\Admin\ServiceFileController;
-use App\Http\Controllers\Admin\CompanyUserController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Api\PublicCompanyController;
-use App\Http\Controllers\Admin\ApiClientController;
+use App\Http\Controllers\PasswordController;
+use App\Http\Controllers\ProfileController;
+use Illuminate\Support\Facades\Route;
 
+Route::redirect('/', '/dashboard');
 
-
-Route::get('/', function () {
-    return redirect()->route('dashboard');
-});
-
-Route::middleware('api.client')->prefix('public')->group(function () {
-    Route::get('/companies/{company:slug}', [PublicCompanyController::class, 'show'])
-        ->name('api.public.companies.show');
-});
+Route::middleware('api.client')
+    ->prefix('public')
+    ->name('api.public.')
+    ->group(function () {
+        Route::get('/companies/{company:slug}', [PublicCompanyController::class, 'show'])
+            ->name('companies.show');
+    });
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
+    Route::get('/profile', [ProfileController::class, 'edit'])
+        ->name('profile.edit');
+
+    Route::patch('/profile', [ProfileController::class, 'update'])
+        ->name('profile.update');
+
+    Route::put('/password', [PasswordController::class, 'update'])
+        ->name('password.update');
+
     Route::middleware('superadmin')->group(function () {
-        Route::resource('/users', UserController::class)
+        Route::resource('users', UserController::class)
             ->except(['show']);
 
-        Route::resource('/api-clients', ApiClientController::class)
+        Route::resource('api-clients', ApiClientController::class)
             ->except(['show']);
 
         Route::post('/api-clients/{apiClient}/regenerate', [ApiClientController::class, 'regenerate'])
@@ -56,14 +66,21 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         Route::post('/companies/onboard', [CompanyController::class, 'storeOnboard'])
             ->name('companies.onboard.store');
+
+        Route::get('/companies/{company}/api-clients', [CompanyController::class, 'apiClients'])
+            ->name('companies.api-clients');
     });
 
     Route::middleware('manage.companies')->group(function () {
-        Route::get('/users/lookup/by-email', [UserController::class, 'lookupByEmail'])
-            ->name('users.lookup-by-email');
+        Route::prefix('users/lookup')
+            ->name('users.lookup.')
+            ->group(function () {
+                Route::get('/by-email', [UserController::class, 'lookupByEmail'])
+                    ->name('by-email');
 
-        Route::get('/users/lookup/email-suggestions', [UserController::class, 'emailSuggestions'])
-            ->name('users.lookup-email-suggestions');
+                Route::get('/email-suggestions', [UserController::class, 'emailSuggestions'])
+                    ->name('email-suggestions');
+            });
 
         Route::get('/companies', [CompanyController::class, 'index'])
             ->name('companies.index');
@@ -71,133 +88,140 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/companies/{company}/edit', [CompanyController::class, 'edit'])
             ->name('companies.edit');
 
-        Route::get('/companies/{company}/branches', [CompanyController::class, 'branches'])
-            ->name('companies.branches');
-
-        Route::get('/companies/{company}/users', [CompanyController::class, 'users'])
-            ->name('companies.users.page');
-
-        Route::post('/companies/{company}/users', [CompanyUserController::class, 'store'])
-            ->name('companies.users.store');
-
-        Route::delete('/companies/{company}/users/{user}', [CompanyUserController::class, 'destroy'])
-            ->name('companies.users.destroy');
-
-        Route::post('/companies/{company}/invitations/{companyInvitation}/resend', [CompanyUserController::class, 'resendInvitation'])
-            ->name('companies.invitations.resend');
-
-        Route::delete('/companies/{company}/invitations/{companyInvitation}', [CompanyUserController::class, 'destroyInvitation'])
-            ->name('companies.invitations.destroy');
-
         Route::put('/companies/{company}', [CompanyController::class, 'update'])
             ->name('companies.update');
 
         Route::delete('/companies/{company}', [CompanyController::class, 'destroy'])
             ->name('companies.destroy');
-    });
 
-    Route::get('/companies/{company}/api-clients', [CompanyController::class, 'apiClients'])
-        ->middleware('superadmin')
-        ->name('companies.api-clients');
+        Route::prefix('companies/{company}')
+            ->name('companies.')
+            ->group(function () {
+                Route::get('/branches', [CompanyController::class, 'branches'])
+                    ->name('branches');
+
+                Route::get('/users', [CompanyController::class, 'users'])
+                    ->name('users.page');
+
+                Route::post('/users', [CompanyUserController::class, 'store'])
+                    ->name('users.store');
+
+                Route::delete('/users/{user}', [CompanyUserController::class, 'destroy'])
+                    ->name('users.destroy');
+
+                Route::post('/invitations/{companyInvitation}/resend', [CompanyUserController::class, 'resendInvitation'])
+                    ->name('invitations.resend');
+
+                Route::delete('/invitations/{companyInvitation}', [CompanyUserController::class, 'destroyInvitation'])
+                    ->name('invitations.destroy');
+            });
+    });
 
     Route::middleware('manage.branches')->group(function () {
-        Route::resource('/branches', BranchController::class)
+        Route::resource('branches', BranchController::class)
             ->except(['show']);
 
-        Route::get('/branches/{branch}/contacts', [BranchController::class, 'contacts'])
-            ->name('branches.contacts.page');
+        Route::prefix('branches/{branch}')
+            ->name('branches.')
+            ->group(function () {
+                Route::get('/contacts', [BranchController::class, 'contacts'])
+                    ->name('contacts.page');
 
-        Route::get('/branches/{branch}/opening-hours', [BranchController::class, 'openingHours'])
-            ->name('branches.opening-hours.page');
+                Route::post('/contacts', [BranchContactController::class, 'store'])
+                    ->name('contacts.store');
 
-        Route::get('/branches/{branch}/users', [BranchController::class, 'users'])
-            ->name('branches.users.page');
+                Route::put('/contacts/{contact}', [BranchContactController::class, 'update'])
+                    ->name('contacts.update');
 
-        Route::post('/branches/{branch}/users', [BranchUserController::class, 'store'])
-            ->name('branches.users.store');
+                Route::delete('/contacts/{contact}', [BranchContactController::class, 'destroy'])
+                    ->name('contacts.destroy');
 
-        Route::delete('/branches/{branch}/users/{user}', [BranchUserController::class, 'destroy'])
-            ->name('branches.users.destroy');
+                Route::get('/opening-hours', [BranchController::class, 'openingHours'])
+                    ->name('opening-hours.page');
 
-        Route::post('/branches/{branch}/invitations/{branchInvitation}/resend', [BranchUserController::class, 'resendInvitation'])
-            ->name('branches.invitations.resend');
+                Route::put('/opening-hours', [BranchOpeningHoursController::class, 'update'])
+                    ->name('opening-hours.update');
 
-        Route::delete('/branches/{branch}/invitations/{branchInvitation}', [BranchUserController::class, 'destroyInvitation'])
-            ->name('branches.invitations.destroy');
+                Route::get('/users', [BranchController::class, 'users'])
+                    ->name('users.page');
 
-        Route::get('/branches/{branch}/employees', [BranchController::class, 'employees'])
-            ->name('branches.employees.page');
+                Route::post('/users', [BranchUserController::class, 'store'])
+                    ->name('users.store');
 
-        Route::get('/branches/{branch}/services', [BranchController::class, 'services'])
-            ->name('branches.services.page');
+                Route::delete('/users/{user}', [BranchUserController::class, 'destroy'])
+                    ->name('users.destroy');
 
-        Route::post('/branches/{branch}/contacts', [BranchContactController::class, 'store'])
-            ->name('branches.contacts.store');
+                Route::post('/invitations/{branchInvitation}/resend', [BranchUserController::class, 'resendInvitation'])
+                    ->name('invitations.resend');
 
-        Route::put('/branches/{branch}/contacts/{contact}', [BranchContactController::class, 'update'])
-            ->name('branches.contacts.update');
+                Route::delete('/invitations/{branchInvitation}', [BranchUserController::class, 'destroyInvitation'])
+                    ->name('invitations.destroy');
 
-        Route::delete('/branches/{branch}/contacts/{contact}', [BranchContactController::class, 'destroy'])
-            ->name('branches.contacts.destroy');
+                Route::get('/employees', [BranchController::class, 'employees'])
+                    ->name('employees.page');
 
-        Route::put('/branches/{branch}/opening-hours', [BranchOpeningHoursController::class, 'update'])
-            ->name('branches.opening-hours.update');
-        
-        Route::post('/branches/{branch}/employees', [BranchEmployeeController::class, 'store'])
-            ->name('branches.employees.store');
+                Route::post('/employees', [BranchEmployeeController::class, 'store'])
+                    ->name('employees.store');
 
-        Route::put('/branches/{branch}/employees/{employee}', [BranchEmployeeController::class, 'update'])
-            ->name('branches.employees.update');
+                Route::put('/employees/{employee}', [BranchEmployeeController::class, 'update'])
+                    ->name('employees.update');
 
-        Route::delete('/branches/{branch}/employees/{employee}', [BranchEmployeeController::class, 'destroy'])
-            ->name('branches.employees.destroy');
+                Route::delete('/employees/{employee}', [BranchEmployeeController::class, 'destroy'])
+                    ->name('employees.destroy');
 
-        Route::post('/branches/{branch}/services', [BranchServiceController::class, 'store'])
-            ->name('branches.services.store');
+                Route::get('/services', [BranchController::class, 'services'])
+                    ->name('services.page');
 
-        Route::put('/branches/{branch}/services/{branchService}', [BranchServiceController::class, 'update'])
-            ->name('branches.services.update');
+                Route::post('/services', [BranchServiceController::class, 'store'])
+                    ->name('services.store');
 
-        Route::delete('/branches/{branch}/services/{branchService}', [BranchServiceController::class, 'destroy'])
-            ->name('branches.services.destroy');
+                Route::put('/services/{branchService}', [BranchServiceController::class, 'update'])
+                    ->name('services.update');
 
-        Route::get('/services/{service}/edit', [ServiceController::class, 'edit'])
-            ->name('services.edit');
+                Route::delete('/services/{branchService}', [BranchServiceController::class, 'destroy'])
+                    ->name('services.destroy');
+            });
 
-        Route::put('/services/{service}', [ServiceController::class, 'update'])
-            ->name('services.update');
+        Route::prefix('services/{service}')
+            ->name('services.')
+            ->group(function () {
+                Route::get('/edit', [ServiceController::class, 'edit'])
+                    ->name('edit');
 
-        Route::post('/services/{service}/information', [ServiceInformationController::class, 'store'])
-            ->name('services.information.store');
+                Route::put('/', [ServiceController::class, 'update'])
+                    ->name('update');
 
-        Route::delete('/services/{service}/information/{information}', [ServiceInformationController::class, 'destroy'])
-            ->name('services.information.destroy');
+                Route::post('/information', [ServiceInformationController::class, 'store'])
+                    ->name('information.store');
 
-        Route::post('/services/{service}/necessities', [ServiceNecessityController::class, 'store'])
-            ->name('services.necessities.store');
+                Route::delete('/information/{information}', [ServiceInformationController::class, 'destroy'])
+                    ->name('information.destroy');
 
-        Route::delete('/services/{service}/necessities/{necessity}', [ServiceNecessityController::class, 'destroy'])
-            ->name('services.necessities.destroy');
+                Route::post('/necessities', [ServiceNecessityController::class, 'store'])
+                    ->name('necessities.store');
 
-        Route::post('/services/{service}/steps', [ServiceStepController::class, 'store'])
-            ->name('services.steps.store');
+                Route::delete('/necessities/{necessity}', [ServiceNecessityController::class, 'destroy'])
+                    ->name('necessities.destroy');
 
-        Route::delete('/services/{service}/steps/{step}', [ServiceStepController::class, 'destroy'])
-            ->name('services.steps.destroy');
+                Route::post('/steps', [ServiceStepController::class, 'store'])
+                    ->name('steps.store');
 
-        Route::post('/services/{service}/tags', [ServiceTagController::class, 'store'])
-            ->name('services.tags.store');
+                Route::delete('/steps/{step}', [ServiceStepController::class, 'destroy'])
+                    ->name('steps.destroy');
 
-        Route::delete('/services/{service}/tags/{tag}', [ServiceTagController::class, 'destroy'])
-            ->name('services.tags.destroy');
+                Route::post('/tags', [ServiceTagController::class, 'store'])
+                    ->name('tags.store');
 
-        Route::post('/services/{service}/files', [ServiceFileController::class, 'store'])
-            ->name('services.files.store');
+                Route::delete('/tags/{tag}', [ServiceTagController::class, 'destroy'])
+                    ->name('tags.destroy');
 
-        Route::delete('/services/{service}/files/{file}', [ServiceFileController::class, 'destroy'])
-            ->name('services.files.destroy');
+                Route::post('/files', [ServiceFileController::class, 'store'])
+                    ->name('files.store');
+
+                Route::delete('/files/{file}', [ServiceFileController::class, 'destroy'])
+                    ->name('files.destroy');
+            });
     });
 });
-
 
 require __DIR__.'/auth.php';

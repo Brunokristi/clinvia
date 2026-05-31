@@ -14,7 +14,7 @@ class CompanyUserController extends Controller
 {
     public function store(Request $request, Company $company): RedirectResponse
     {
-        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+        abort_if(! $request->user()->canManageCompany($company->id), 403);
 
         $data = $request->validate([
             'invite_email' => ['required', 'email', 'max:255'],
@@ -31,7 +31,7 @@ class CompanyUserController extends Controller
 
     public function destroy(Request $request, Company $company, User $user): RedirectResponse
     {
-        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+        abort_if(! $request->user()->canManageCompany($company->id), 403);
 
         $companyRole = $company->users()
             ->whereKey($user->id)
@@ -43,12 +43,14 @@ class CompanyUserController extends Controller
 
         $company->users()->detach($user->id);
 
+        $user->syncGlobalRoleWithMemberships();
+
         return back()->with('success', 'Používateľ bol odstránený z firmy.');
     }
 
     public function resendInvitation(Request $request, Company $company, CompanyInvitation $companyInvitation): RedirectResponse
     {
-        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+        abort_if(! $request->user()->canManageCompany($company->id), 403);
         abort_if($companyInvitation->company_id !== $company->id, 404);
         abort_if($companyInvitation->isAccepted(), 422);
 
@@ -59,7 +61,7 @@ class CompanyUserController extends Controller
 
     public function destroyInvitation(Request $request, Company $company, CompanyInvitation $companyInvitation): RedirectResponse
     {
-        abort_if(! $request->user()->canAccessCompany($company->id), 403);
+        abort_if(! $request->user()->canManageCompany($company->id), 403);
         abort_if($companyInvitation->company_id !== $company->id, 404);
 
         $companyInvitation->delete();

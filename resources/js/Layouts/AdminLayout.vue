@@ -21,6 +21,13 @@ const breadcrumbItem = (label, url = null) => ({
 const breadcrumbs = computed(() => {
     const items = [];
 
+    if (route().current('profile.edit')) {
+        items.push(breadcrumbItem('Hlavné', route('dashboard')));
+        items.push(breadcrumbItem('Nastavenia'));
+
+        return items;
+    }
+
     if (route().current('dashboard') || route().current('companies.index') || route().current('companies.onboard')) {
         items.push(breadcrumbItem('Hlavné', route('dashboard')));
 

@@ -20,7 +20,7 @@ class EnsureUserCanManageBranches
             return $next($request);
         }
 
-        if (! in_array($user->global_role, ['admin', 'editor'], true)) {
+        if (! in_array($user->global_role, ['admin', 'editor', 'branch_admin'], true)) {
             abort(403);
         }
 

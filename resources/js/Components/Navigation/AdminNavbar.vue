@@ -4,8 +4,6 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import PanelMenu from 'primevue/panelmenu';
 import Menu from 'primevue/menu';
-import FormDialog from '@/Components/Dialogs/FormDialog.vue';
-import UpdateProfileInformationForm from '@/Pages/Profile/Partials/UpdateProfileInformationForm.vue';
 import Button from 'primevue/button';
 
 const page = usePage();
@@ -14,18 +12,51 @@ const userMenu = ref(null);
 
 const user = computed(() => page.props.auth?.user);
 const branch = computed(() => page.props.branch ?? null);
-const company = computed(() => page.props.company ?? branch.value?.company ?? null);
+const managedCompanies = computed(() => Array.isArray(page.props.managedCompanies) ? page.props.managedCompanies : []);
 
-const companies = computed(() => {
-    if (route().current('branches.create')) {
-        return company.value ? [company.value] : [];
+const currentRouteCompanyParam = computed(() => {
+    const routeCompany = route().params?.company;
+
+    if (routeCompany === undefined || routeCompany === null || routeCompany === '') {
+        return null;
     }
 
-    if (Array.isArray(page.props.companies) && page.props.companies.length) {
-        return page.props.companies;
+    return String(routeCompany);
+});
+
+const currentRouteCompany = computed(() => {
+    if (!currentRouteCompanyParam.value) {
+        return null;
     }
 
-    return company.value ? [company.value] : [];
+    return managedCompanies.value.find((companyItem) => {
+        return String(companyItem.id) === currentRouteCompanyParam.value
+            || companyItem.slug === currentRouteCompanyParam.value;
+    }) ?? null;
+});
+
+const company = computed(() => {
+    return page.props.company
+        ?? branch.value?.company
+        ?? currentRouteCompany.value
+        ?? null;
+});
+
+const canSeeCompanyLinks = computed(() => {
+    return ['super_admin', 'admin'].includes(user.value?.global_role)
+        && Boolean(company.value?.id);
+});
+
+const activeCompany = computed(() => {
+    if (!canSeeCompanyLinks.value) {
+        return null;
+    }
+
+    return {
+        id: company.value.id,
+        legal_name: company.value.legal_name,
+        slug: company.value.slug,
+    };
 });
 
 const userName = computed(() => {
@@ -48,6 +79,10 @@ const userInitials = computed(() => {
 });
 
 const contextTitle = computed(() => {
+    if (['super_admin', 'admin'].includes(user.value?.global_role) && company.value) {
+        return company.value.legal_name;
+    }
+
     if (branch.value) {
         return branch.value.name;
     }
@@ -64,9 +99,9 @@ const expandedMenuKeys = computed(() => {
         main: true,
     };
 
-    companies.value.forEach((companyItem) => {
-        keys[`company-${companyItem.id}`] = true;
-    });
+    if (activeCompany.value?.id) {
+        keys[`company-${activeCompany.value.id}`] = true;
+    }
 
     if (branch.value) {
         keys.branch = true;
@@ -183,14 +218,16 @@ const navigationItems = computed(() => {
         },
     ];
 
-    companies.value.forEach((companyItem) => {
+    if (activeCompany.value) {
+        const companyItem = activeCompany.value;
+
         items.push({
             key: `company-${companyItem.id}`,
             label: companyItem.legal_name,
             icon: 'pi pi-building',
             items: companyLinks(companyItem).map(makeMenuLink),
         });
-    });
+    }
 
     if (branch.value) {
         items.push({
@@ -204,56 +241,37 @@ const navigationItems = computed(() => {
     return items;
 });
 
+const panelMenuKey = computed(() => {
+    const companyKey = activeCompany.value?.id ? `company-${activeCompany.value.id}` : 'company-none';
+    const branchKey = branch.value?.id ? `branch-${branch.value.id}` : 'branch-none';
+
+    return `${companyKey}|${branchKey}`;
+});
+
 const profileDialogVisible = ref(false);
 
-const goToUserSettings = () => {
-    // Always open the profile dialog for signed-in users
-    if (user.value) {
-        profileDialogVisible.value = true;
-    }
-};
 
 const userMenuItems = computed(() => {
-    const items = [
-        {
-            label: userName.value,
-            items: [
-                {
-                    label: userRole.value,
-                    disabled: true,
-                },
-            ],
-        },
-    ];
+    const items = [];
 
-    const actionItems = [];
-
-    if (user.value) {
-        actionItems.push({
+    if (user.value && route().has('profile.edit')) {
+        items.push({
             label: 'Nastavenia',
             icon: 'pi pi-cog',
             command: () => {
-                profileDialogVisible.value = true;
+                router.visit(route('profile.edit'));
             },
         });
     }
 
     if (route().has('logout')) {
-        actionItems.push({
+        items.push({
             label: 'Odhlásiť sa',
             icon: 'pi pi-sign-out',
             command: () => {
                 router.post(route('logout'));
             },
         });
-    }
-
-    if (actionItems.length) {
-        items.push({
-            separator: true,
-        });
-
-        items.push(...actionItems);
     }
 
     return items;
@@ -266,14 +284,15 @@ const toggleUserMenu = (event) => {
 
 <template>
     <aside class="flex h-screen w-80 shrink-0 flex-col bg-accent p-4">
-        <div class="mb-4">
+        <div class="mb-4 flex items-center justify-center">
             <Link :href="route('dashboard')">
-                <ApplicationLogo class="h-14" />
+                <ApplicationLogo class="h-8" type="textual" />
             </Link>
         </div>
 
         <nav class="flex-1 overflow-y-auto">
             <PanelMenu
+                :key="panelMenuKey"
                 v-model:expandedKeys="expandedMenuKeys"
                 :model="navigationItems"
                 multiple
@@ -304,27 +323,66 @@ const toggleUserMenu = (event) => {
                     </span>
                 </span>
 
-                <i class="pi pi-chevron-up text-xs text-white/70" />
+                <i class="pi pi-chevron-up text-xs text-white" />
             </Button>
 
             <Menu
                 ref="userMenu"
                 :model="userMenuItems"
                 popup
-            />
+                unstyled
+            >
+                <template #start>
+                    <div class="w-72 overflow-hidden rounded-md border border-soft bg-white shadow-lg">
+                        <div class="border-b border-soft bg-soft/40 p-4">
+                            <div class="flex items-center gap-3">
+                                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white text-base font-semibold text-accent">
+                                    {{ userInitials }}
+                                </div>
 
-                <FormDialog
-                    v-model:visible="profileDialogVisible"
-                    title="Nastavenia používateľa"
-                    width="max-w-xl"
-                    :dismissable-mask="true"
-                    @close="profileDialogVisible = false"
-                >
-                    <UpdateProfileInformationForm
-                        class="p-4"
-                        @saved="profileDialogVisible = false"
-                    />
-                </FormDialog>
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-semibold text-dark">
+                                        {{ userName }}
+                                    </p>
+
+                                    <p class="mt-0.5 truncate text-xs text-accent">
+                                        {{ userRole }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-2">
+                            <template
+                                v-for="item in userMenuItems"
+                                :key="item.label"
+                            >
+                                <button
+                                    type="button"
+                                    class="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition"
+                                    :class="item.danger
+                                        ? 'text-red-500 hover:bg-red-50'
+                                        : 'text-accent hover:bg-soft'"
+                                    @click="item.command"
+                                >
+                                    <i
+                                        :class="item.icon"
+                                        class="text-sm"
+                                    />
+
+                                    <span>
+                                        {{ item.label }}
+                                    </span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <template #item>
+                    <span />
+                </template>
+            </Menu>
         </div>
     </aside>
 </template>

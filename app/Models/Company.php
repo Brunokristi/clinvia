@@ -94,4 +94,21 @@ class Company extends Model
                 ->where('user_companies.is_active', true);
         });
     }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $query) use ($user) {
+            $query->whereHas('users', function (Builder $query) use ($user) {
+                $query->where('users.id', $user->id)
+                    ->where('user_companies.is_active', true);
+            })->orWhereHas('branches.users', function (Builder $query) use ($user) {
+                $query->where('users.id', $user->id)
+                    ->where('user_branches.is_active', true);
+            });
+        });
+    }
 }
