@@ -109,9 +109,9 @@ const fullAddress = computed(() => {
 </script>
 
 <template>
-    <footer class="border-t border-soft bg-soft/40">
-        <div class="mx-auto grid max-w-6xl gap-10 px-6 py-12 md:grid-cols-2 lg:grid-cols-4">
-            <div>
+    <footer class="border-t border-accent bg-soft">
+        <div class="mx-auto grid max-w-6xl gap-10 px-6 md:grid-cols-1 lg:grid-cols-3">
+            <div class="border-r border-accent py-10">
                 <h2 class="text-normal font-semibold text-dark">
                     {{ branch.name }}
                 </h2>
@@ -136,56 +136,7 @@ const fullAddress = computed(() => {
                 </p>
             </div>
 
-            <div>
-                <h2 class="text-normal font-semibold text-dark">
-                    Navigácia
-                </h2>
-
-                <nav class="mt-4 flex flex-col gap-2">
-                    <Link
-                        v-for="link in links"
-                        :key="link.label"
-                        :href="link.href"
-                        class="text-sm text-accent transition hover:text-dark"
-                    >
-                        {{ link.label }}
-                    </Link>
-                </nav>
-            </div>
-
-            <div>
-                <h2 class="text-normal font-semibold text-dark">
-                    Otváracie hodiny
-                </h2>
-
-                <div
-                    v-if="branch.opening_hours?.length"
-                    class="mt-4 space-y-2"
-                >
-                    <div
-                        v-for="openingHour in branch.opening_hours"
-                        :key="openingHour.day_of_week"
-                        class="flex justify-between gap-4 text-sm"
-                    >
-                        <span class="font-medium text-dark">
-                            {{ dayNames[openingHour.day_of_week] }}
-                        </span>
-
-                        <span class="text-right text-accent">
-                            {{ openingHoursLabel(openingHour) }}
-                        </span>
-                    </div>
-                </div>
-
-                <p
-                    v-else
-                    class="mt-4 text-sm text-accent"
-                >
-                    Otváracie hodiny zatiaľ nie sú uvedené.
-                </p>
-            </div>
-
-            <div>
+            <div class="border-r border-accent py-10">
                 <h2 class="text-normal font-semibold text-dark">
                     Kontakt
                 </h2>
@@ -219,35 +170,64 @@ const fullAddress = computed(() => {
                     Kontaktné údaje zatiaľ nie sú uvedené.
                 </p>
             </div>
+
+            <div class=" py-10">
+                <h2 class="text-normal font-semibold text-dark">
+                    Otváracie hodiny
+                </h2>
+
+                <div
+                    v-if="branch.opening_hours?.length"
+                    class="mt-4 space-y-2"
+                >
+                    <div
+                        v-for="openingHour in branch.opening_hours"
+                        :key="openingHour.day_of_week"
+                        class="flex justify-between gap-4 text-sm"
+                    >
+                        <span class="text-dark">
+                            {{ dayNames[openingHour.day_of_week] }}
+                        </span>
+
+                        <span class="text-right text-accent">
+                            {{ openingHoursLabel(openingHour) }}
+                        </span>
+                    </div>
+                </div>
+
+                <p
+                    v-else
+                    class="mt-4 text-sm text-accent"
+                >
+                    Otváracie hodiny zatiaľ nie sú uvedené.
+                </p>
+            </div>
         </div>
 
-        <div class="border-t border-soft">
-            <div class="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-5 text-xs text-accent md:flex-row md:items-center md:justify-between">
-                <div>
-                    <p>
-                        © {{ new Date().getFullYear() }} {{ branch.name }}
-                    </p>
+        <div class="border-t border-accent">
+            <div class="mx-auto flex max-w-6xl flex flex-col gap-3 px-6 py-5 text-normal text-accent">
+                <p>
+                    © {{ new Date().getFullYear() }} {{ branch.name }}
+                </p>
 
+                <div class="flex gap-6">
                     <p
                         v-if="companyName"
-                        class="mt-1"
                     >
                         Prevádzkovateľ: {{ companyName }}
                     </p>
-                </div>
 
-                <div class="flex flex-wrap gap-4">
-                    <span v-if="companyIco">
+                    <p v-if="companyIco">
                         IČO: {{ companyIco }}
-                    </span>
+                    </p>
 
-                    <span v-if="companyDic">
+                    <p v-if="companyDic">
                         DIČ: {{ companyDic }}
-                    </span>
+                    </p>
 
-                    <span v-if="companyIcDph">
+                    <p v-if="companyIcDph">
                         IČ DPH: {{ companyIcDph }}
-                    </span>
+                    </p>
                 </div>
             </div>
         </div>

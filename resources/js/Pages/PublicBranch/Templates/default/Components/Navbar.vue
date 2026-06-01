@@ -23,6 +23,18 @@ const todaysOpeningHours = computed(() => {
     });
 });
 
+const timeToMinutes = (time) => {
+    const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
+
+    return hours * 60 + minutes;
+};
+
+const currentTimeInMinutes = computed(() => {
+    const now = new Date();
+
+    return now.getHours() * 60 + now.getMinutes();
+});
+
 const openingHoursTodayLabel = computed(() => {
     const openingHours = todaysOpeningHours.value;
 
@@ -38,11 +50,35 @@ const openingHoursTodayLabel = computed(() => {
         return 'Dnes neuvedené';
     }
 
-    return openingHours.intervals
+    const now = currentTimeInMinutes.value;
+
+    const intervals = openingHours.intervals
         .map((interval) => {
-            return `${interval.opens_at.slice(0, 5)} – ${interval.closes_at.slice(0, 5)}`;
+            return {
+                ...interval,
+                opensAtMinutes: timeToMinutes(interval.opens_at),
+                closesAtMinutes: timeToMinutes(interval.closes_at),
+            };
         })
-        .join(', ');
+        .sort((a, b) => a.opensAtMinutes - b.opensAtMinutes);
+
+    const currentInterval = intervals.find((interval) => {
+        return now >= interval.opensAtMinutes && now < interval.closesAtMinutes;
+    });
+
+    if (currentInterval) {
+        return `${currentInterval.opens_at.slice(0, 5)} – ${currentInterval.closes_at.slice(0, 5)}`;
+    }
+
+    const nextInterval = intervals.find((interval) => {
+        return interval.opensAtMinutes > now;
+    });
+
+    if (nextInterval) {
+        return `${nextInterval.opens_at.slice(0, 5)} – ${nextInterval.closes_at.slice(0, 5)}`;
+    }
+
+    return 'Dnes už zatvorené';
 });
 
 const primaryContact = computed(() => {
@@ -73,22 +109,6 @@ const primaryContactHref = computed(() => {
     }
 
     return null;
-});
-
-const primaryContactIcon = computed(() => {
-    if (!primaryContact.value) {
-        return 'pi pi-info-circle';
-    }
-
-    if (['phone', 'booking_phone'].includes(primaryContact.value.type)) {
-        return 'pi pi-phone';
-    }
-
-    if (primaryContact.value.type === 'email') {
-        return 'pi pi-envelope';
-    }
-
-    return 'pi pi-send';
 });
 
 const primaryContactButtonLabel = computed(() => {
@@ -131,19 +151,19 @@ const links = computed(() => [
 </script>
 
 <template>
-    <header class="border-b border-accent/20 bg-white">
+    <header class="border-b border-accent sticky top-0 z-20 bg-soft">
         <div class="mx-auto max-w-6xl px-6">
             <div class="hidden grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-stretch lg:grid">
-                <div class="flex min-w-0 items-center border-r border-accent/20 px-5 py-4">
+                <div class="flex min-w-0 items-center border-r border-accent px-5 py-4">
                     <Link
                         :href="route('public.branch.home', branch.slug)"
-                        class="block max-w-52 truncate text-heading font-semibold text-accent"
+                        class="block max-w-52 truncate font-semibold text-accent"
                     >
                         {{ branch.name }}
                     </Link>
                 </div>
 
-                <div class="flex max-w-64 items-center gap-2 border-r border-accent/20 px-5 py-4 text-accent">
+                <div class="flex max-w-64 items-center gap-2 border-r border-accent px-5 py-4 text-accent">
                     <i class="pi pi-map-marker text-lg" />
 
                     <p
@@ -161,29 +181,28 @@ const links = computed(() => [
                     </p>
                 </div>
 
-                <nav class="flex min-w-0 items-center justify-center gap-12 border-r border-accent/20 px-6 py-4 text-normal font-medium text-accent">
+                <nav class="flex min-w-0 items-center justify-center gap-4 border-r border-accent px-6 py-4 text-normal text-accent">
                     <Link
                         v-for="link in links"
                         :key="link.label"
                         :href="link.href"
-                        class="whitespace-nowrap transition hover:text-dark"
-                        :class="link.active ? 'text-dark' : ''"
+                        class="whitespace-nowrap transition hover:text-dark px-3 py-2 rounded-md"
+                        :class="link.active ? 'bg-accent text-white' : ''"
                     >
                         {{ link.label }}
                     </Link>
                 </nav>
 
-                <div class="flex items-center justify-end border-r border-accent/20 px-5 py-4 text-right">
+                <Link
+                    :href="route('public.branch.contact', branch.slug)"
+                    class="flex items-center justify-end border-r border-accent px-5 py-4 text-right transition hover:bg-accent/5"
+                >
                     <div>
-                        <p class="text-xs font-medium uppercase tracking-wide text-accent/60">
-                            Dnes
-                        </p>
-
-                        <p class="whitespace-nowrap text-sm font-semibold text-dark">
-                            {{ openingHoursTodayLabel }}
+                        <p class="text-normal tracking-wide text-accent">
+                            Dnes: {{ openingHoursTodayLabel }}
                         </p>
                     </div>
-                </div>
+                </Link>
 
                 <div class="flex items-center justify-end px-5 py-4">
                     <component
@@ -192,11 +211,6 @@ const links = computed(() => [
                         :href="primaryContactHref"
                         class="inline-flex items-center gap-2 whitespace-nowrap rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent/90"
                     >
-                        <i
-                            :class="primaryContactIcon"
-                            class="text-xs"
-                        />
-
                         <span>
                             {{ primaryContactButtonLabel }}
                         </span>
@@ -255,15 +269,16 @@ const links = computed(() => [
                 </nav>
 
                 <div class="grid gap-3 py-4">
-                    <div>
-                        <p class="text-xs font-medium uppercase tracking-wide text-accent/60">
-                            Dnes
-                        </p>
-
-                        <p class="text-sm font-semibold text-dark">
-                            {{ openingHoursTodayLabel }}
-                        </p>
-                    </div>
+                    <Link
+                        :href="route('public.branch.contact', branch.slug)"
+                        class="flex items-center justify-end border-r border-accent px-5 py-4 text-right transition hover:bg-accent/5"
+                    >
+                        <div>
+                            <p class="text-normal tracking-wide text-accent">
+                                Dnes: {{ openingHoursTodayLabel }}
+                            </p>
+                        </div>
+                    </Link>
 
                     <component
                         :is="primaryContactHref ? 'a' : 'div'"

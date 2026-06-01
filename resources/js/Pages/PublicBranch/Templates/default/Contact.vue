@@ -1,8 +1,9 @@
 <script setup>
 import PublicBranchLayout from '@/Layouts/PublicBranchLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     branch: {
         type: Object,
         required: true,
@@ -65,58 +66,68 @@ const openingHoursLabel = (openingHour) => {
         .map((interval) => `${interval.opens_at.slice(0, 5)} – ${interval.closes_at.slice(0, 5)}`)
         .join(', ');
 };
+
+const mapEmbedUrl = computed(() => {
+    if (props.branch.location?.latitude && props.branch.location?.longitude) {
+        return `https://www.google.com/maps?q=${props.branch.location.latitude},${props.branch.location.longitude}&output=embed`;
+    }
+
+    if (props.branch.address) {
+        const address = [
+            props.branch.address.line_1,
+            props.branch.address.line_2,
+            props.branch.address.postal_code,
+            props.branch.address.city,
+            props.branch.address.country,
+        ].filter(Boolean).join(', ');
+
+        return `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
+    }
+
+    return null;
+});
+
+const mapOpenUrl = computed(() => {
+    if (props.branch.location?.latitude && props.branch.location?.longitude) {
+        return `https://www.google.com/maps/search/?api=1&query=${props.branch.location.latitude},${props.branch.location.longitude}`;
+    }
+
+    if (props.branch.address) {
+        const address = [
+            props.branch.address.line_1,
+            props.branch.address.line_2,
+            props.branch.address.postal_code,
+            props.branch.address.city,
+            props.branch.address.country,
+        ].filter(Boolean).join(', ');
+
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+    }
+
+    return null;
+});
 </script>
 
 <template>
     <PublicBranchLayout :branch="branch">
         <Head :title="`Kontakt | ${branch.name}`" />
 
-        <section class="bg-soft/40">
-            <div class="mx-auto max-w-6xl px-6 py-16">
-                <p class="text-normal font-semibold text-accent">
-                    Kontakt
-                </p>
+        <section>
+            <h1 class="text-heading font-semibold text-dark">
+                Kontakty
+            </h1>
 
-                <h1 class="mt-4 text-4xl font-semibold text-dark">
-                    Kontaktujte pobočku {{ branch.name }}
-                </h1>
-
-                <p class="mt-6 max-w-2xl text-normal leading-7 text-accent">
-                    Nájdete tu adresu, kontaktné údaje, tím a otváracie hodiny.
-                </p>
-            </div>
+            <p class="mt-3 max-w-2xl text-normal leading-7 text-accent">
+                V {{ branch.name }} sme tu pre vás
+            </p>       
         </section>
 
-        <section class="mx-auto grid max-w-6xl gap-8 px-6 py-16 lg:grid-cols-2">
+        
+
+        <section class="grid gap-8 lg:grid-cols-2 my-8">
             <div class="space-y-8">
-                <div class="rounded-md border border-soft bg-white p-6">
-                    <h2 class="text-heading font-semibold text-dark">
-                        Adresa
-                    </h2>
-
-                    <div class="mt-4 text-normal leading-7 text-accent">
-                        <p>{{ branch.address.line_1 }}</p>
-                        <p v-if="branch.address.line_2">
-                            {{ branch.address.line_2 }}
-                        </p>
-                        <p>
-                            {{ branch.address.postal_code }} {{ branch.address.city }}
-                        </p>
-                        <p>{{ branch.address.country }}</p>
-                    </div>
-
-                    <a
-                        v-if="branch.location?.latitude && branch.location?.longitude"
-                        :href="`https://www.google.com/maps/search/?api=1&query=${branch.location.latitude},${branch.location.longitude}`"
-                        target="_blank"
-                        class="mt-5 inline-flex rounded-md bg-soft px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft/80"
-                    >
-                        Otvoriť mapu
-                    </a>
-                </div>
-
-                <div class="rounded-md border border-soft bg-white p-6">
-                    <h2 class="text-heading font-semibold text-dark">
+                <div>
+                    <h2 class="text-normal font-semibold text-dark">
                         Kontakty
                     </h2>
 
@@ -152,44 +163,11 @@ const openingHoursLabel = (openingHour) => {
                         Kontaktné údaje zatiaľ nie sú uvedené.
                     </p>
                 </div>
-            </div>
 
-            <div class="space-y-8">
-                <div class="rounded-md border border-soft bg-white p-6">
-                    <h2 class="text-heading font-semibold text-dark">
-                        Otváracie hodiny
-                    </h2>
 
-                    <div
-                        v-if="branch.opening_hours?.length"
-                        class="mt-5 divide-y divide-soft"
-                    >
-                        <div
-                            v-for="openingHour in branch.opening_hours"
-                            :key="openingHour.day_of_week"
-                            class="flex items-center justify-between gap-4 py-3"
-                        >
-                            <p class="text-sm font-semibold text-dark">
-                                {{ dayNames[openingHour.day_of_week] }}
-                            </p>
-
-                            <p class="text-sm text-accent">
-                                {{ openingHoursLabel(openingHour) }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <p
-                        v-else
-                        class="mt-4 text-normal text-accent"
-                    >
-                        Otváracie hodiny zatiaľ nie sú uvedené.
-                    </p>
-                </div>
-
-                <div class="rounded-md border border-soft bg-white p-6">
-                    <h2 class="text-heading font-semibold text-dark">
-                        Tím
+                <div>
+                    <h2 class="text-normal font-semibold text-dark">
+                        Profesionáli o vašu starostlivosť
                     </h2>
 
                     <div
@@ -243,6 +221,63 @@ const openingHoursLabel = (openingHour) => {
                     >
                         Tím zatiaľ nie je uvedený.
                     </p>
+                </div>
+            </div>
+
+            <div class="space-y-8">
+                <div>
+                    <h2 class="text-normal font-semibold text-dark">
+                        Otváracie hodiny
+                    </h2>
+
+                    <div
+                        v-if="branch.opening_hours?.length"
+                        class="mt-5 divide-y divide-soft"
+                    >
+                        <div
+                            v-for="openingHour in branch.opening_hours"
+                            :key="openingHour.day_of_week"
+                            class="flex items-center justify-between gap-4 py-3"
+                        >
+                            <p class="text-normal text-dark">
+                                {{ dayNames[openingHour.day_of_week] }}
+                            </p>
+
+                            <p class="text-normal text-accent">
+                                {{ openingHoursLabel(openingHour) }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <p
+                        v-else
+                        class="mt-4 text-normal text-accent"
+                    >
+                        Otváracie hodiny zatiaľ nie sú uvedené.
+                    </p>
+                </div>
+
+                <div class="overflow-hidden rounded-md bg-white">
+                    <h2 class="text-normal font-semibold text-dark">
+                        Adresa
+                    </h2>
+                    
+                    <div class="text-normal leading-7 text-accent">
+                        <p>{{ branch.address.line_1 }} {{ branch.address.line_2 }},  {{ branch.address.postal_code }} {{ branch.address.city }}, {{ branch.address.country }}</p>
+                    </div>
+                    <div
+                        v-if="mapEmbedUrl"
+                        class="border-t border-soft"
+                    >
+                        <iframe
+                            :src="mapEmbedUrl"
+                            class="h-72 w-full"
+                            style="border: 0;"
+                            loading="lazy"
+                            referrerpolicy="no-referrer-when-downgrade"
+                            allowfullscreen
+                        />
+                    </div>
                 </div>
             </div>
         </section>

@@ -1,3 +1,4 @@
+import { content } from "@primeuix/themes/aura/confirmdialog";
 import { itemIcon } from "@primeuix/themes/aura/tabmenu";
 import { tabpanel } from "@primeuix/themes/aura/tabs";
 
@@ -924,4 +925,44 @@ export const primevuePt = {
             ],
         },
     },
+
+    AccordionHeader: {
+        root: {
+            class: [
+                '!rounded-md !px-4 !py-2',
+                '!text-normal !font-medium',
+                '!text-accent',
+                'transition-all duration-200',
+                'hover:!bg-soft hover:!text-dark',
+                '!bg-soft'
+            ],
+        },
+
+        toggleIcon: {
+            class: [
+                '!text-normal',
+                '!text-accent',
+            ],
+        },
+    },
+
+    AccordionContent: {
+        content: {
+            class: [
+                '!bg-transparent',
+                '!px-4 !py-3',
+                '!text-normal',
+                '!text-accent',
+            ],
+        },
+    },
+
+    AccordionPanel: {
+        root: {
+            class: [
+                '!border-0 !bg-transparent',
+            ],
+        },
+    },
+
 };

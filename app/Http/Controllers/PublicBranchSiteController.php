@@ -196,6 +196,7 @@ class PublicBranchSiteController extends Controller
             'name' => $service->name,
             'slug' => $service->slug,
             'short_description' => $service->short_description,
+            'description' => $service->description,
             'icon' => $service->icon,
             'duration_sessions' => $service->duration_sessions,
             'duration_minutes' => $service->duration_minutes,
