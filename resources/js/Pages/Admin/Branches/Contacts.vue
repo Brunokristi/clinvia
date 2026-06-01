@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
+import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
 
 const props = defineProps({
@@ -33,6 +34,16 @@ const contactForm = useForm({
 
 const selectedPhoneCountryCode = ref('SK');
 const phoneFullValue = ref('');
+const faqItems = ref(
+    (props.branch.public_site?.faq_items ?? []).length
+        ? (props.branch.public_site.faq_items ?? []).map((item) => ({
+            question: item.question ?? '',
+            answer: item.answer ?? '',
+        }))
+        : [
+            { question: '', answer: '' },
+        ],
+);
 
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
@@ -313,7 +324,6 @@ const deleteContact = (contact) => {
         message: `Naozaj odstrániť kontakt ${contact.value}?`,
         confirmLabel: 'Zmazať',
         confirmSeverity: 'danger',
-        icon: 'pi pi-trash',
         onConfirm: () => {
             router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {
                 preserveScroll: true,
@@ -329,6 +339,34 @@ const makePrimaryContact = (contact) => {
         value: contact.value,
         is_primary: true,
         sort_order: contact.sort_order ?? 0,
+    }, {
+        preserveScroll: true,
+    });
+};
+
+const addFaqItem = () => {
+    faqItems.value.push({
+        question: '',
+        answer: '',
+    });
+};
+
+const removeFaqItem = (index) => {
+    faqItems.value.splice(index, 1);
+
+    if (!faqItems.value.length) {
+        addFaqItem();
+    }
+};
+
+const saveFaqItems = () => {
+    router.put(route('branches.faq-items.update', props.branch.id), {
+        faq_items: faqItems.value
+            .map((item) => ({
+                question: String(item.question || '').trim(),
+                answer: String(item.answer || '').trim(),
+            }))
+            .filter((item) => item.question && item.answer),
     }, {
         preserveScroll: true,
     });
@@ -507,11 +545,86 @@ const makePrimaryContact = (contact) => {
                         size="small"
                         severity="danger"
                         outlined
-                        icon="pi pi-trash"
                         @click="deleteContact(row)"
                     />
                 </template>
             </TableCard>
+
+            <form @submit.prevent="saveFaqItems">
+                <FormPage
+                    :show-submit="false"
+                    :loading="false"
+                >
+                    <FormSection
+                        title="Časté otázky"
+                        description="Vyhnite sa opakovaným otázkam klientov a ušetrite čas tým, že zverejníte odpovede na často kladené otázky."
+                        columns="lg:grid-cols-2"
+                    >
+                        <div class="lg:col-span-2 space-y-4">
+                            <div
+                                v-for="(item, index) in faqItems"
+                                :key="index"
+                                class="rounded-md border border-accent bg-white p-4"
+                            >
+                                <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                                    <div class="grid gap-4 md:grid-cols-1">
+                                        <FormField
+                                            :label="`Otázka ${index + 1}`"
+                                            required
+                                        >
+                                            <InputText
+                                                v-model="item.question"
+                                                class="w-full"
+                                                placeholder="Napr. Ako sa objednať?"
+                                            />
+                                        </FormField>
+
+                                        <FormField
+                                            :label="`Odpoveď ${index + 1}`"
+                                            required
+                                        >
+                                            <Textarea
+                                                v-model="item.answer"
+                                                class="w-full"
+                                                rows="3"
+                                                placeholder="Napr. Zavolajte nám na hlavný kontakt alebo použite kontaktný formulár."
+                                            />
+                                        </FormField>
+                                    </div>
+
+                                    <div class="flex items-start justify-end">
+                                        <Button
+                                            type="button"
+                                            label="Odstrániť"
+                                            severity="danger"
+                                            size="small"
+                                            outlined
+                                            :disabled="faqItems.length === 1"
+                                            @click="removeFaqItem(index)"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3 lg:col-span-2">
+                            <Button
+                                type="button"
+                                label="Pridať otázku"
+                                icon="pi pi-plus"
+                                severity="secondary"
+                                outlined
+                                @click="addFaqItem"
+                            />
+
+                            <Button
+                                type="submit"
+                                label="Uložiť otázky a odpovede"
+                            />
+                        </div>
+                    </FormSection>
+                </FormPage>
+            </form>
         </div>
 
         <ConfirmationDialog

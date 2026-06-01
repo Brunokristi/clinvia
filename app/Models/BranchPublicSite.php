@@ -17,10 +17,12 @@ class BranchPublicSite extends Model
         'logo_path',
         'meta_title',
         'meta_description',
+        'faq_items',
     ];
 
     protected $casts = [
         'is_enabled' => 'boolean',
+        'faq_items' => 'array',
     ];
 
     public function branch(): BelongsTo

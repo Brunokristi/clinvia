@@ -158,6 +158,7 @@ class PublicBranchSiteController extends Controller
                 'logo_path' => $branch->publicSite->logo_path,
                 'meta_title' => $branch->publicSite->meta_title,
                 'meta_description' => $branch->publicSite->meta_description,
+                'faq_items' => $branch->publicSite->faq_items ?? [],
             ] : null,
             'contacts' => $branch->contacts->map(fn ($contact) => [
                 'type' => $contact->type,

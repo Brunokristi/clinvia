@@ -143,7 +143,17 @@ const featuredServicesCountLabel = computed(() => {
 });
 
 const generatedFaq = computed(() => {
-    return [
+    const customFaqItems = props.branch.public_site?.faq_items ?? [];
+
+    const customQuestions = customFaqItems.map((item) => {
+        return {
+            icon: 'pi pi-question',
+            question: item.question,
+            answer: item.answer,
+        };
+    });
+
+    const defaultQuestions = [
         {
             icon: 'pi pi-map-marker',
             question: 'Kde nás nájdete?',
@@ -161,6 +171,11 @@ const generatedFaq = computed(() => {
             question: 'Kedy máme otvorené?',
             answer: `Dnes máme otvorené v čase: ${openingHoursTodayLabel.value}`,
         },
+    ];
+
+    return [
+        ...customQuestions,
+        ...defaultQuestions,
     ];
 });
 

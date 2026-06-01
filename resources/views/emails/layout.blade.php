@@ -2,37 +2,45 @@
 <html lang="sk">
 <head>
     <meta charset="UTF-8">
-    <title>{{ $title ?? 'Clinvia' }}</title>
+    <title>{{ $title ?? 'Email' }}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8f5f2; font-family: Arial, sans-serif; color: #2f172a;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f5f2; padding: 32px 16px;">
+
+<body style="margin: 0; padding: 0; background-color: #FFE5E5; font-family: Arial, sans-serif; color: #2f172a;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color: #FFE5E5; padding: 32px 16px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden;">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden;">
                     <tr>
-                        <td style="padding: 32px 32px 16px 32px; text-align: center;">
+                        <td style="padding: 32px 32px 12px 32px; text-align: center;">
                             <img
-                                src="{{ asset('brand/logo_accent.svg') }}"
-                                alt="Clinvia"
-                                style="height: 48px; width: auto;"
+                                src="{{ asset('brand/logo_accent.png') }}"
+                                alt="Logo aplikácie"
+                                width="40"
+                                style="display: block; width: 40px; max-width: 40px; height: auto; margin: 0 auto; border: 0;"
                             >
                         </td>
                     </tr>
 
                     <tr>
-                        <td style="padding: 16px 32px 32px 32px;">
+                        <td style="padding: 16px 32px 36px 32px; text-align: center;">
                             @yield('content')
                         </td>
                     </tr>
 
                     <tr>
-                        <td style="padding: 24px 32px; background-color: #f8f5f2; text-align: center;">
-                            <p style="margin: 0; font-size: 13px; color: #9b6b6b;">
-                                Clinvia
+                        <td style="padding: 20px 32px; background-color: #FFE5E5; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #C17979;">
+                                Tento email bol odoslaný automaticky. Neodpovedajte naň.
                             </p>
+                        </td>
+                    </tr>
+                </table>
 
-                            <p style="margin: 8px 0 0 0; font-size: 12px; color: #9b6b6b;">
-                                Tento email bol odoslaný automaticky.
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px;">
+                    <tr>
+                        <td style="padding: 16px 24px 0 24px; text-align: center;">
+                            <p style="margin: 0; font-size: 11px; line-height: 1.5; color: #C17979;">
+                                Ak ste túto správu neočakávali, môžete ju ignorovať.
                             </p>
                         </td>
                     </tr>

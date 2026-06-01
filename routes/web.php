@@ -204,6 +204,9 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::put('/public-site', [BranchPublicSiteController::class, 'update'])
                     ->name('public-site.update');
+
+                Route::put('/faq-items', [BranchPublicSiteController::class, 'updateFaqItems'])
+                    ->name('faq-items.update');
             });
 
         Route::prefix('services/{service}')

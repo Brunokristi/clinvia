@@ -58,4 +58,24 @@ class BranchPublicSiteController extends Controller
 
         return back()->with('success', 'Nastavenia verejnej stránky boli uložené.');
     }
+
+    public function updateFaqItems(Request $request, Branch $branch): RedirectResponse
+    {
+        $validated = $request->validate([
+            'faq_items' => ['nullable', 'array'],
+            'faq_items.*.question' => ['required', 'string', 'max:255'],
+            'faq_items.*.answer' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $branch->publicSite()->updateOrCreate(
+            [
+                'branch_id' => $branch->id,
+            ],
+            [
+                'faq_items' => array_values($validated['faq_items'] ?? []),
+            ],
+        );
+
+        return back()->with('success', 'Otázky a odpovede boli uložené.');
+    }
 }

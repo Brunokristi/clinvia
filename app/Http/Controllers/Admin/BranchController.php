@@ -164,7 +164,7 @@ class BranchController extends Controller
         abort_if(! request()->user()->canAccessBranch($branch), 403);
 
         return Inertia::render('Admin/Branches/Contacts', [
-            'branch' => $branch->load(['company:id,legal_name,slug', 'contacts']),
+            'branch' => $branch->load(['company:id,legal_name,slug', 'contacts', 'publicSite']),
         ]);
     }
 
