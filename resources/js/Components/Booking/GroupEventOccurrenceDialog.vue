@@ -2,10 +2,13 @@
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import DatePicker from 'primevue/datepicker';
-import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
+
+import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
     visible: {
@@ -144,6 +147,10 @@ const formatDateForBackend = (value) => {
     return `${year}-${month}-${day} ${hours}:${minutes}:00`;
 };
 
+const closeDialog = () => {
+    emit('update:visible', false);
+};
+
 const updateStatus = (booking, status) => {
     emit('update-booking', booking, status, {
         notify_patient: false,
@@ -238,15 +245,15 @@ const deleteCapacityWindowSeries = () => {
 </script>
 
 <template>
-    <Dialog
+    <AppDialog
         v-model:visible="dialogVisible"
-        modal
-        header="Skupinový termín"
-        :style="{ width: '980px', maxWidth: '95vw' }"
+        title="Skupinový termín"
+        width="max-w-5xl"
+        @close="closeDialog"
     >
         <div
             v-if="capacityWindow"
-            class="space-y-5"
+            class="space-y-8"
         >
             <div class="rounded-md bg-soft p-4">
                 <p class="text-lg font-semibold text-dark">
@@ -265,48 +272,42 @@ const deleteCapacityWindowSeries = () => {
                 </p>
             </div>
 
-            <div class="rounded-md border border-soft bg-white p-4">
-                <p class="text-base font-semibold text-dark">
-                    Hromadné akcie pre celý skupinový termín
-                </p>
+            <FormSection
+                title="Hromadné akcie pre celý skupinový termín"
+                description="Tieto akcie sa použijú na všetkých pacientov v tomto skupinovom termíne."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Nový začiatok"
+                    for="capacity_window_starts_at"
+                >
+                    <DatePicker
+                        input-id="capacity_window_starts_at"
+                        v-model="groupForm.starts_at"
+                        show-time
+                        hour-format="24"
+                        class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte nový začiatok"
+                    />
+                </FormField>
 
-                <p class="mt-1 text-sm text-accent">
-                    Tieto akcie sa použijú na všetkých pacientov v tomto skupinovom termíne.
-                </p>
+                <FormField
+                    label="Nový koniec"
+                    for="capacity_window_ends_at"
+                >
+                    <DatePicker
+                        input-id="capacity_window_ends_at"
+                        v-model="groupForm.ends_at"
+                        show-time
+                        hour-format="24"
+                        class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte nový koniec"
+                    />
+                </FormField>
 
-                <div class="mt-4 grid gap-4 md:grid-cols-2">
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-dark">
-                            Nový začiatok
-                        </label>
-
-                        <DatePicker
-                            v-model="groupForm.starts_at"
-                            show-time
-                            hour-format="24"
-                            class="w-full"
-                            input-class="w-full"
-                            placeholder="Vyberte nový začiatok"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-dark">
-                            Nový koniec
-                        </label>
-
-                        <DatePicker
-                            v-model="groupForm.ends_at"
-                            show-time
-                            hour-format="24"
-                            class="w-full"
-                            input-class="w-full"
-                            placeholder="Vyberte nový koniec"
-                        />
-                    </div>
-                </div>
-
-                <div class="mt-4 flex items-center gap-2">
+                <div class="md:col-span-2 flex items-center gap-2">
                     <Checkbox
                         v-model="groupForm.notify_patient"
                         binary
@@ -321,20 +322,21 @@ const deleteCapacityWindowSeries = () => {
                     </label>
                 </div>
 
-                <div class="mt-4">
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Dôvod pre pacientov
-                    </label>
-
+                <FormField
+                    label="Dôvod pre pacientov"
+                    for="capacity_window_notification_reason"
+                    span="md:col-span-2"
+                >
                     <Textarea
+                        id="capacity_window_notification_reason"
                         v-model="groupForm.notification_reason"
                         rows="3"
                         class="w-full"
                         placeholder="Napríklad: Termín musíme presunúť z organizačných dôvodov."
                     />
-                </div>
+                </FormField>
 
-                <div class="mt-4 flex flex-wrap gap-3">
+                <div class="md:col-span-2 flex flex-wrap gap-3">
                     <Button
                         type="button"
                         label="Presunúť celý termín"
@@ -353,18 +355,14 @@ const deleteCapacityWindowSeries = () => {
                         @click="cancelCapacityWindow"
                     />
                 </div>
-            </div>
+            </FormSection>
 
-            <div class="rounded-md border border-red-100 bg-red-50 p-4">
-                <p class="text-base font-semibold text-dark">
-                    Vymazať skupinový termín
-                </p>
-
-                <p class="mt-1 text-sm text-accent">
-                    Ak sú v tomto termíne pacienti, rezervácie sa zrušia a podľa nastavenia dostanú email.
-                </p>
-
-                <div class="mt-4 flex flex-wrap gap-3">
+            <FormSection
+                title="Vymazať skupinový termín"
+                description="Ak sú v tomto termíne pacienti, rezervácie sa zrušia a podľa nastavenia dostanú email."
+                columns="md:grid-cols-1"
+            >
+                <div class="flex flex-wrap gap-3 rounded-md border border-red-100 bg-red-50 p-4">
                     <Button
                         type="button"
                         label="Vymazať iba tento termín"
@@ -391,110 +389,116 @@ const deleteCapacityWindowSeries = () => {
                         @click="deleteCapacityWindowSeries"
                     />
                 </div>
-            </div>
+            </FormSection>
 
-            <div
+            <FormSection
                 v-if="bookings.length"
-                class="space-y-4"
+                title="Rezervácie v skupinovom termíne"
+                description="Tu môžete upraviť stav, poznámku alebo presunúť jednotlivé rezervácie."
+                columns="md:grid-cols-1"
             >
-                <div
-                    v-for="booking in bookings"
-                    :key="booking.id"
-                    class="rounded-md border border-soft bg-white p-4"
-                >
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p class="font-semibold text-dark">
-                                {{ booking.patient_name ?? 'Bez mena' }}
-                            </p>
+                <div class="space-y-4">
+                    <div
+                        v-for="booking in bookings"
+                        :key="booking.id"
+                        class="rounded-md border border-soft bg-white p-4"
+                    >
+                        <div class="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <p class="font-semibold text-dark">
+                                    {{ booking.patient_name ?? 'Bez mena' }}
+                                </p>
 
-                            <p class="mt-1 text-sm text-accent">
-                                Stav: {{ booking.status ?? '—' }}
-                            </p>
+                                <p class="mt-1 text-sm text-accent">
+                                    Stav: {{ booking.status ?? '—' }}
+                                </p>
 
-                            <p
-                                v-if="booking.patient_email"
-                                class="mt-1 text-sm text-accent"
-                            >
-                                Email: {{ booking.patient_email }}
-                            </p>
+                                <p
+                                    v-if="booking.patient_email"
+                                    class="mt-1 text-sm text-accent"
+                                >
+                                    Email: {{ booking.patient_email }}
+                                </p>
 
-                            <p
-                                v-if="booking.patient_phone"
-                                class="mt-1 text-sm text-accent"
-                            >
-                                Telefón: {{ booking.patient_phone }}
-                            </p>
+                                <p
+                                    v-if="booking.patient_phone"
+                                    class="mt-1 text-sm text-accent"
+                                >
+                                    Telefón: {{ booking.patient_phone }}
+                                </p>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    label="Potvrdené"
+                                    severity="success"
+                                    outlined
+                                    size="small"
+                                    @click="updateStatus(booking, 'confirmed')"
+                                />
+
+                                <Button
+                                    type="button"
+                                    label="Dokončené"
+                                    severity="secondary"
+                                    outlined
+                                    size="small"
+                                    @click="updateStatus(booking, 'completed')"
+                                />
+
+                                <Button
+                                    type="button"
+                                    label="No-show"
+                                    severity="warn"
+                                    outlined
+                                    size="small"
+                                    @click="updateStatus(booking, 'no_show')"
+                                />
+
+                                <Button
+                                    type="button"
+                                    label="Zrušiť"
+                                    severity="danger"
+                                    outlined
+                                    size="small"
+                                    @click="cancelBooking(booking)"
+                                />
+                            </div>
                         </div>
 
-                        <div class="flex flex-wrap gap-2">
-                            <Button
-                                type="button"
-                                label="Potvrdené"
-                                severity="success"
-                                outlined
-                                size="small"
-                                @click="updateStatus(booking, 'confirmed')"
-                            />
+                        <div class="mt-4 grid gap-4 md:grid-cols-2">
+                            <FormField
+                                label="Admin poznámka"
+                                :for="`capacity_booking_note_${booking.id}`"
+                                span="md:col-span-2"
+                            >
+                                <Textarea
+                                    :id="`capacity_booking_note_${booking.id}`"
+                                    v-model="bookingNotes[booking.id]"
+                                    rows="3"
+                                    class="w-full"
+                                    placeholder="Admin poznámka"
+                                />
+                            </FormField>
 
-                            <Button
-                                type="button"
-                                label="Dokončené"
-                                severity="secondary"
-                                outlined
-                                size="small"
-                                @click="updateStatus(booking, 'completed')"
-                            />
+                            <FormField
+                                label="Nový dostupný termín"
+                                :for="`capacity_booking_slot_${booking.id}`"
+                                span="md:col-span-2"
+                            >
+                                <Select
+                                    :id="`capacity_booking_slot_${booking.id}`"
+                                    v-model="ensureForm(booking).booking_slot_id"
+                                    :options="slotOptionsForBooking(booking)"
+                                    option-label="label"
+                                    option-value="value"
+                                    placeholder="Vyberte nový dostupný termín"
+                                    class="w-full"
+                                />
+                            </FormField>
 
-                            <Button
-                                type="button"
-                                label="No-show"
-                                severity="warn"
-                                outlined
-                                size="small"
-                                @click="updateStatus(booking, 'no_show')"
-                            />
-
-                            <Button
-                                type="button"
-                                label="Zrušiť"
-                                severity="danger"
-                                outlined
-                                size="small"
-                                @click="cancelBooking(booking)"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="mt-4">
-                        <label class="mb-2 block text-sm font-medium text-dark">
-                            Admin poznámka
-                        </label>
-
-                        <Textarea
-                            v-model="bookingNotes[booking.id]"
-                            rows="3"
-                            class="w-full"
-                            placeholder="Admin poznámka"
-                        />
-                    </div>
-
-                    <div class="mt-4 rounded-md bg-soft/50 p-4">
-                        <p class="mb-3 text-sm font-semibold text-dark">
-                            Presunúť rezerváciu
-                        </p>
-
-                        <div class="space-y-3">
-                            <Select
-                                v-model="ensureForm(booking).booking_slot_id"
-                                :options="slotOptionsForBooking(booking)"
-                                option-label="label"
-                                option-value="value"
-                                placeholder="Vyberte nový dostupný termín"
-                                class="w-full"
-                            />
-
-                            <div class="flex items-center gap-2">
+                            <div class="md:col-span-2 flex items-center gap-2">
                                 <Checkbox
                                     v-model="ensureForm(booking).notify_patient"
                                     binary
@@ -509,25 +513,34 @@ const deleteCapacityWindowSeries = () => {
                                 </label>
                             </div>
 
-                            <Textarea
-                                v-model="ensureForm(booking).notification_reason"
-                                rows="2"
-                                class="w-full"
-                                placeholder="Dôvod zmeny pre pacienta"
-                            />
+                            <FormField
+                                label="Dôvod zmeny"
+                                :for="`capacity_booking_notification_reason_${booking.id}`"
+                                span="md:col-span-2"
+                            >
+                                <Textarea
+                                    :id="`capacity_booking_notification_reason_${booking.id}`"
+                                    v-model="ensureForm(booking).notification_reason"
+                                    rows="2"
+                                    class="w-full"
+                                    placeholder="Dôvod zmeny pre pacienta"
+                                />
+                            </FormField>
 
-                            <Button
-                                type="button"
-                                label="Presunúť rezerváciu"
-                                icon="pi pi-calendar"
-                                size="small"
-                                :disabled="!ensureForm(booking).booking_slot_id"
-                                @click="rescheduleBooking(booking)"
-                            />
+                            <div class="md:col-span-2">
+                                <Button
+                                    type="button"
+                                    label="Presunúť rezerváciu"
+                                    icon="pi pi-calendar"
+                                    size="small"
+                                    :disabled="!ensureForm(booking).booking_slot_id"
+                                    @click="rescheduleBooking(booking)"
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </FormSection>
 
             <div
                 v-else
@@ -543,5 +556,5 @@ const deleteCapacityWindowSeries = () => {
         >
             Skupinový termín sa nepodarilo načítať.
         </div>
-    </Dialog>
+    </AppDialog>
 </template>

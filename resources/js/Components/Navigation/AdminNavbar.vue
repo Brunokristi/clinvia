@@ -170,6 +170,12 @@ const branchLinks = computed(() => {
 
     return [
         {
+            label: 'Rezervácie',
+            icon: 'pi pi-calendar',
+            href: route('branches.booking.dashboard.page', branch.value),
+            active: route().current('branches.booking.dashboard.page') || route().current('branches.booking.settings.page') || route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page'),
+        },
+        {
             label: 'Info',
             icon: 'pi pi-info-circle',
             href: route('branches.edit', branch.value),
@@ -198,12 +204,6 @@ const branchLinks = computed(() => {
             icon: 'pi pi-briefcase',
             href: route('branches.services.page', branch.value),
             active: route().current('branches.services.page'),
-        },
-        {
-            label: 'Rezervácie',
-            icon: 'pi pi-calendar',
-            href: route('branches.booking.dashboard.page', branch.value),
-            active: route().current('branches.booking.dashboard.page') || route().current('branches.booking.settings.page') || route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page'),
         },
         {
             label: 'Používatelia',

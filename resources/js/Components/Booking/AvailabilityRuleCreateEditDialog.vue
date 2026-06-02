@@ -1,12 +1,15 @@
 <script setup>
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
 import { computed, ref } from 'vue';
+
+import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
     visible: {
@@ -59,6 +62,11 @@ const dialogVisible = computed({
 
 const deleteRuleDialogVisible = ref(false);
 
+const closeDialog = () => {
+    emit('update:visible', false);
+    emit('close');
+};
+
 const openDeleteRuleDialog = () => {
     deleteRuleDialogVisible.value = true;
 };
@@ -84,61 +92,73 @@ const deleteCurrentRuleEverywhere = () => {
 </script>
 
 <template>
-    <Dialog
+    <AppDialog
         v-model:visible="dialogVisible"
-        modal
-        header="Pravidlo dostupnosti"
-        :style="{ width: '780px', maxWidth: '95vw' }"
+        title="Pravidlo dostupnosti"
+        width="max-w-3xl"
+        @close="closeDialog"
     >
         <div
             v-if="currentRule"
-            class="space-y-5"
+            class="space-y-8"
         >
-            <div class="grid gap-4 md:grid-cols-3">
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Dátum
-                    </label>
-
+            <FormSection
+                title="Čas dostupnosti"
+                description="Nastavte deň a časový interval, počas ktorého budú služby dostupné na rezervovanie."
+                columns="md:grid-cols-3"
+            >
+                <FormField
+                    label="Dátum"
+                    for="availability_rule_date"
+                    required
+                >
                     <InputText
+                        id="availability_rule_date"
                         v-model="currentRule.date"
                         type="date"
                         class="w-full"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Od
-                    </label>
-
+                <FormField
+                    label="Od"
+                    for="availability_rule_starts_at"
+                    required
+                >
                     <InputText
+                        id="availability_rule_starts_at"
                         v-model="currentRule.starts_at"
                         type="time"
                         class="w-full"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Do
-                    </label>
-
+                <FormField
+                    label="Do"
+                    for="availability_rule_ends_at"
+                    required
+                >
                     <InputText
+                        id="availability_rule_ends_at"
                         v-model="currentRule.ends_at"
                         type="time"
                         class="w-full"
                     />
-                </div>
-            </div>
+                </FormField>
+            </FormSection>
 
-            <div class="space-y-4 rounded-md border border-soft bg-soft/40 p-4">
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Rezervovateľné služby
-                    </label>
-
+            <FormSection
+                title="Rezervovateľné služby"
+                description="Klient si vyberie jednu z povolených služieb a systém obsadí potrebný čas podľa trvania služby."
+                columns="md:grid-cols-1"
+            >
+                <FormField
+                    label="Služby"
+                    for="availability_service_ids"
+                    required
+                >
                     <MultiSelect
+                        id="availability_service_ids"
                         v-model="currentRule.service_ids"
                         :options="services"
                         option-label="name"
@@ -147,65 +167,71 @@ const deleteCurrentRuleEverywhere = () => {
                         placeholder="Vyberte služby"
                         class="w-full"
                     />
+                </FormField>
+            </FormSection>
+
+            <FormSection
+                title="Opakovanie"
+                description="Nastavte, či sa má toto pravidlo dostupnosti opakovať."
+                columns="md:grid-cols-3"
+            >
+                <div class="md:col-span-3">
+                    <label class="flex items-center gap-2 text-sm font-medium text-dark">
+                        <Checkbox
+                            v-model="currentRule.repeats"
+                            binary
+                            input-id="availability_rule_repeats"
+                        />
+
+                        Opakovať
+                    </label>
                 </div>
 
-                <p class="text-sm leading-6 text-accent">
-                    Tento režim použite pre voľný čas v kalendári. Klient si vyberie jednu
-                    z povolených služieb a systém obsadí potrebný čas podľa trvania služby.
-                </p>
-            </div>
-
-            <div class="rounded-md border border-soft bg-white p-4">
-                <label class="flex items-center gap-2 text-sm font-medium text-dark">
-                    <Checkbox
-                        v-model="currentRule.repeats"
-                        binary
-                    />
-
-                    Opakovať
-                </label>
-
-                <div
-                    v-if="currentRule.repeats"
-                    class="mt-4 grid gap-4 md:grid-cols-3"
-                >
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-dark">
-                            Opakovať každých
-                        </label>
-
+                <template v-if="currentRule.repeats">
+                    <FormField
+                        label="Opakovať každých"
+                        for="availability_repeat_every"
+                    >
                         <InputNumber
+                            id="availability_repeat_every"
                             v-model="currentRule.repeat_every"
                             :min="1"
                             class="w-full"
                             input-class="w-full"
                         />
-                    </div>
+                    </FormField>
 
-                    <div class="md:col-span-2">
-                        <label class="mb-2 block text-sm font-medium text-dark">
-                            Obdobie
-                        </label>
-
+                    <FormField
+                        label="Obdobie"
+                        for="availability_repeat_unit"
+                        span="md:col-span-2"
+                    >
                         <Select
+                            id="availability_repeat_unit"
                             v-model="currentRule.repeat_unit"
                             :options="repeatUnitOptions"
                             option-label="label"
                             option-value="value"
                             class="w-full"
                         />
-                    </div>
-                </div>
-            </div>
+                    </FormField>
+                </template>
+            </FormSection>
 
-            <label class="flex items-center gap-2 text-sm text-dark">
-                <Checkbox
-                    v-model="currentRule.is_enabled"
-                    binary
-                />
+            <FormSection
+                title="Stav pravidla"
+                columns="md:grid-cols-1"
+            >
+                <label class="flex items-center gap-2 text-sm text-dark">
+                    <Checkbox
+                        v-model="currentRule.is_enabled"
+                        binary
+                        input-id="availability_rule_is_enabled"
+                    />
 
-                Pravidlo je aktívne
-            </label>
+                    Pravidlo je aktívne
+                </label>
+            </FormSection>
 
             <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent">
                 <strong>Ukážka:</strong>
@@ -236,7 +262,7 @@ const deleteCurrentRuleEverywhere = () => {
                         label="Zrušiť"
                         severity="secondary"
                         outlined
-                        @click="$emit('close')"
+                        @click="closeDialog"
                     />
 
                     <Button
@@ -244,20 +270,28 @@ const deleteCurrentRuleEverywhere = () => {
                         label="Uložiť pravidlo"
                         icon="pi pi-save"
                         :loading="loading"
-                        @click="$emit('save')"
+                        :disabled="loading"
+                        @click="emit('save')"
                     />
                 </div>
             </div>
         </div>
-    </Dialog>
 
-    <Dialog
+        <div
+            v-else
+            class="rounded-md bg-soft p-4 text-sm text-accent"
+        >
+            Pravidlo dostupnosti sa nepodarilo načítať.
+        </div>
+    </AppDialog>
+
+    <AppDialog
         v-model:visible="deleteRuleDialogVisible"
-        modal
-        header="Vymazať pravidlo"
-        :style="{ width: '520px', maxWidth: '95vw' }"
+        title="Vymazať pravidlo"
+        width="max-w-xl"
+        @close="closeDeleteRuleDialog"
     >
-        <div class="space-y-4">
+        <div class="space-y-5">
             <p class="text-sm text-accent">
                 Čo chcete vymazať?
             </p>
@@ -312,5 +346,5 @@ const deleteCurrentRuleEverywhere = () => {
                 />
             </div>
         </div>
-    </Dialog>
+    </AppDialog>
 </template>

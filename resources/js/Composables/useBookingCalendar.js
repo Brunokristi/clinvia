@@ -624,9 +624,9 @@ export function useBookingCalendar(props) {
         }
     };
 
-    const openCreateBookingDialog = () => {
-        pendingCalendarSelection.value = null;
-        createBookingDialogVisible.value = true;
+    const openCreateChoiceFromButton = () => {
+        pendingCalendarSelection.value = getDefaultSelectionForCreateChoice();
+        createChoiceDialogVisible.value = true;
     };
 
     const closeCreateBookingDialog = () => {
@@ -749,6 +749,36 @@ export function useBookingCalendar(props) {
                 changeInfo.revert();
             },
         });
+    };
+
+    const getDefaultSelectionForCreateChoice = () => {
+        const now = new Date();
+        const minutes = now.getMinutes();
+
+        if (minutes > 0 && minutes <= 15) {
+            now.setMinutes(15);
+        } else if (minutes > 15 && minutes <= 30) {
+            now.setMinutes(30);
+        } else if (minutes > 30 && minutes <= 45) {
+            now.setMinutes(45);
+        } else if (minutes > 45) {
+            now.setHours(now.getHours() + 1);
+            now.setMinutes(0);
+        }
+
+        now.setSeconds(0, 0);
+
+        const end = new Date(now);
+        end.setMinutes(end.getMinutes() + 30);
+
+        return {
+            start: now,
+            end,
+            date: getDateFromDate(now),
+            starts_at: getTimeFromDate(now),
+            ends_at: getTimeFromDate(end),
+            allDay: false,
+        };
     };
 
     const handleEventDropOrResize = (changeInfo) => {
@@ -880,9 +910,8 @@ export function useBookingCalendar(props) {
             booking_slot_id: data.booking_slot_id ?? null,
             service_id: data.service_id ?? booking.service_id,
             starts_at: data.starts_at ?? null,
-            ends_at: data.ends_at ?? null,
             admin_note: bookingNotes.value[booking.id] ?? '',
-            notify_patient: Boolean(data.notify_patient ?? true),
+            notify_patient: Boolean(data.notify_patient ?? false),
             notification_reason: data.notification_reason ?? null,
         }, {
             preserveScroll: true,
@@ -1228,7 +1257,7 @@ export function useBookingCalendar(props) {
         getRepeatLabel,
         availableSlotsForBooking,
 
-        openCreateBookingDialog,
+        openCreateChoiceFromButton,
         closeCreateBookingDialog,
 
         closeCreateChoiceDialog,

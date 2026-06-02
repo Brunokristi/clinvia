@@ -965,4 +965,16 @@ export const primevuePt = {
         },
     },
 
+    ToggleSwitch: {
+        slider: {
+            class: [
+                'before:!bg-white',
+                '!bg-accent',
+                'peer-checked:!bg-accent',
+                'peer-checked:before:translate-x-full',
+                'peer-checked:before:!bg-white',
+            ],
+        },
+    },
+
 };

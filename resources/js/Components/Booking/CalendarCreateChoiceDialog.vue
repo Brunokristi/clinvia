@@ -1,9 +1,13 @@
 <script setup>
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
-import InputText from 'primevue/inputtext';
+import DatePicker from 'primevue/datepicker';
 import Select from 'primevue/select';
 import { computed, reactive, ref, watch } from 'vue';
+
+import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
     visible: {
@@ -24,15 +28,10 @@ const emit = defineEmits([
 
 const isContinuing = ref(false);
 
-const dialogVisible = computed({
-    get: () => props.visible,
-    set: (value) => emit('update:visible', value),
-});
-
 const form = reactive({
-    date: '',
-    starts_at: '',
-    ends_at: '',
+    date: null,
+    starts_at: null,
+    ends_at: null,
     create_type: null,
 });
 
@@ -58,7 +57,15 @@ const canContinue = computed(() => {
         && Boolean(form.create_type);
 });
 
-const getDateFromDate = (date) => {
+const formatDateForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -66,31 +73,114 @@ const getDateFromDate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
-const getTimeFromDate = (date) => {
+const formatTimeForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
 
     return `${hours}:${minutes}`;
 };
 
+const createDateFromDateAndTime = (dateValue, timeValue) => {
+    if (!dateValue || !timeValue) {
+        return null;
+    }
+
+    const date = dateValue instanceof Date
+        ? new Date(dateValue)
+        : new Date(dateValue);
+
+    if (timeValue instanceof Date) {
+        date.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
+
+        return date;
+    }
+
+    const [hours, minutes] = String(timeValue).split(':');
+
+    date.setHours(Number(hours), Number(minutes), 0, 0);
+
+    return date;
+};
+
+const createDefaultStartDate = () => {
+    const now = new Date();
+
+    now.setSeconds(0, 0);
+
+    const minutes = now.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / 15) * 15;
+
+    now.setMinutes(roundedMinutes);
+
+    if (roundedMinutes === 60) {
+        now.setHours(now.getHours() + 1, 0, 0, 0);
+    }
+
+    return now;
+};
+
+const createDefaultEndDate = (start) => {
+    const end = new Date(start);
+
+    end.setMinutes(end.getMinutes() + 60);
+
+    return end;
+};
+
 const resetFormFromSelection = (selection) => {
     if (!selection?.start || !selection?.end) {
-        form.date = '';
-        form.starts_at = '';
-        form.ends_at = '';
+        const start = createDefaultStartDate();
+        const end = createDefaultEndDate(start);
+
+        form.date = start;
+        form.starts_at = start;
+        form.ends_at = end;
         form.create_type = null;
 
         return;
     }
 
-    form.date = selection.date ?? getDateFromDate(selection.start);
-    form.starts_at = selection.starts_at ?? getTimeFromDate(selection.start);
-    form.ends_at = selection.ends_at ?? getTimeFromDate(selection.end);
+    const start = selection.start instanceof Date
+        ? selection.start
+        : new Date(selection.start);
+
+    const end = selection.end instanceof Date
+        ? selection.end
+        : new Date(selection.end);
+
+    form.date = selection.date
+        ? new Date(`${selection.date}T00:00:00`)
+        : start;
+
+    form.starts_at = selection.starts_at
+        ? createDateFromDateAndTime(form.date, selection.starts_at)
+        : start;
+
+    form.ends_at = selection.ends_at
+        ? createDateFromDateAndTime(form.date, selection.ends_at)
+        : end;
+
     form.create_type = null;
 };
 
 watch(() => props.selection, (selection) => {
-    resetFormFromSelection(selection);
+    if (props.visible) {
+        resetFormFromSelection(selection);
+    }
+});
+
+watch(() => props.visible, (visible) => {
+    if (visible) {
+        resetFormFromSelection(props.selection);
+    }
 }, {
     immediate: true,
 });
@@ -114,93 +204,111 @@ const submit = () => {
     isContinuing.value = true;
 
     emit('continue', {
-        date: form.date,
-        starts_at: form.starts_at,
-        ends_at: form.ends_at,
+        date: formatDateForBackend(form.date),
+        starts_at: formatTimeForBackend(form.starts_at),
+        ends_at: formatTimeForBackend(form.ends_at),
         create_type: form.create_type,
     });
 };
 </script>
 
 <template>
-    <Dialog
-        v-model:visible="dialogVisible"
-        modal
-        header="Čo chcete vytvoriť?"
-        :style="{ width: '560px', maxWidth: '95vw' }"
-        @hide="closeDialog"
+    <AppDialog
+        :visible="visible"
+        title="Vytvoriť novú udalosť"
+        width="max-w-xl"
+        show-footer
+        close-label="Zrušiť"
+        @update:visible="emit('update:visible', $event)"
+        @close="closeDialog"
     >
-        <div class="space-y-5">
-            <div class="grid gap-4 md:grid-cols-3">
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Dátum
-                    </label>
-
-                    <InputText
+        <FormPage
+            :loading="false"
+            :show-submit="false"
+        >
+            <FormSection
+                title="Dátum a čas"
+                columns="md:grid-cols-3"
+            >
+                <FormField
+                    label="Dátum"
+                    for="create_choice_date"
+                    required
+                >
+                    <DatePicker
+                        input-id="create_choice_date"
                         v-model="form.date"
-                        type="date"
+                        date-format="dd.mm.yy"
                         class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte dátum"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Od
-                    </label>
-
-                    <InputText
+                <FormField
+                    label="Od"
+                    for="create_choice_starts_at"
+                    required
+                >
+                    <DatePicker
+                        input-id="create_choice_starts_at"
                         v-model="form.starts_at"
-                        type="time"
+                        time-only
+                        hour-format="24"
+                        icon-display="input"
                         class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte čas"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Do
-                    </label>
-
-                    <InputText
+                <FormField
+                    label="Do"
+                    for="create_choice_ends_at"
+                    required
+                >
+                    <DatePicker
+                        input-id="create_choice_ends_at"
                         v-model="form.ends_at"
-                        type="time"
+                        time-only
+                        hour-format="24"
+                        icon-display="input"
+                        class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte čas"
+                    />
+                </FormField>
+            </FormSection>
+
+            <FormSection
+                title="Vytvorte udalosť"
+                columns="md:grid-cols-1"
+            >
+                <FormField
+                    label="Typ"
+                    for="create_choice_type"
+                    required
+                >
+                    <Select
+                        id="create_choice_type"
+                        v-model="form.create_type"
+                        :options="createTypeOptions"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Vyberte čo chcete vytvoriť"
                         class="w-full"
                     />
-                </div>
-            </div>
+                </FormField>
+            </FormSection>
+        </FormPage>
 
-            <div>
-                <label class="mb-2 block text-sm font-medium text-dark">
-                    Typ vytvorenia
-                </label>
-
-                <Select
-                    v-model="form.create_type"
-                    :options="createTypeOptions"
-                    option-label="label"
-                    option-value="value"
-                    placeholder="Vyberte čo chcete vytvoriť"
-                    class="w-full"
-                />
-            </div>
-
-            <div class="flex justify-end gap-2 border-t border-soft pt-5">
-                <Button
-                    type="button"
-                    label="Zrušiť"
-                    severity="secondary"
-                    outlined
-                    @click="closeDialog"
-                />
-
-                <Button
-                    type="button"
-                    label="Pokračovať"
-                    icon="pi pi-arrow-right"
-                    :disabled="!canContinue"
-                    @click="submit"
-                />
-            </div>
-        </div>
-    </Dialog>
+        <template #footer>
+            <Button
+                type="button"
+                label="Pokračovať"
+                :disabled="!canContinue"
+                @click="submit"
+            />
+        </template>
+    </AppDialog>
 </template>

@@ -77,7 +77,7 @@ const {
     getRepeatLabel,
     availableSlotsForBooking,
 
-    openCreateBookingDialog,
+    openCreateChoiceFromButton,
     closeCreateBookingDialog,
 
     closeCreateChoiceDialog,
@@ -107,45 +107,11 @@ const {
 <template>
     <AdminLayout>
         <div class="space-y-6">
-            <div class="grid gap-4 md:grid-cols-3">
-                <div class="rounded-md bg-white p-4 shadow-sm">
-                    <p class="text-xs uppercase tracking-wide text-accent/60">
-                        Dnešné rezervácie
-                    </p>
-
-                    <p class="mt-2 text-2xl font-semibold text-dark">
-                        {{ todayBookingsCount }}
-                    </p>
-                </div>
-
-                <div class="rounded-md bg-white p-4 shadow-sm">
-                    <p class="text-xs uppercase tracking-wide text-accent/60">
-                        Pravidlá dostupnosti
-                    </p>
-
-                    <p class="mt-2 text-2xl font-semibold text-dark">
-                        {{ ruleForm.rules.length }}
-                    </p>
-                </div>
-
-                <div class="rounded-md bg-white p-4 shadow-sm">
-                    <p class="text-xs uppercase tracking-wide text-accent/60">
-                        Neprečítané správy
-                    </p>
-
-                    <p class="mt-2 text-2xl font-semibold text-dark">
-                        {{ unreadMessagesCount }}
-                    </p>
-                </div>
-            </div>
-
             <FormSection
-                title="Kalendár rezervácií"
-                description="Pre kapacitné služby sa v kalendári zobrazuje jedno časové okno s počtom prihlásených klientov."
                 columns="grid-cols-1"
             >
                 <div class="space-y-4">
-                    <div class="flex flex-wrap items-center justify-between gap-4 rounded-md bg-white p-4 shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
                         <div class="flex flex-wrap gap-6">
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showAvailabilityRules" />
@@ -160,13 +126,12 @@ const {
 
                         <Button
                             type="button"
-                            label="Vytvoriť rezerváciu"
-                            icon="pi pi-plus"
-                            @click="openCreateBookingDialog"
+                            label="Pridať do kalendára"
+                            @click="openCreateChoiceFromButton"
                         />
                     </div>
 
-                    <div class="booking-calendar rounded-md bg-white p-4 shadow-sm">
+                    <div class="booking-calendar">
                         <FullCalendar :options="calendarOptions" />
                     </div>
                 </div>
@@ -191,6 +156,7 @@ const {
                 v-model:visible="bookingDialogVisible"
                 :booking="selectedBooking"
                 :booking-notes="bookingNotes"
+                :services="services"
                 :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
                 @update-booking="updateBooking"
                 @cancel-booking="cancelBooking"
@@ -255,22 +221,22 @@ const {
 .booking-calendar :deep(.fc-toolbar-title) {
     font-size: 18px;
     font-weight: 700;
-    color: #2f172a;
+    color: #A75A5A;
 }
 
 .booking-calendar :deep(.fc-button) {
     border: 0;
-    border-radius: 8px;
-    background: #ffe5e5;
-    color: #a75a5a;
-    font-size: 13px;
-    font-weight: 700;
+    border-radius: 6px;
+    background: #FFE5E5;
+    color: #C17979;
+    font-size: 14px;
+    font-weight: 500;
     box-shadow: none;
 }
 
 .booking-calendar :deep(.fc-button:hover),
 .booking-calendar :deep(.fc-button-primary:not(:disabled).fc-button-active) {
-    background: #c17979;
+    background: #C17979;
     color: #ffffff;
 }
 
@@ -282,19 +248,18 @@ const {
     padding: 10px 0;
     font-size: 13px;
     font-weight: 700;
-    color: #2f172a;
+    color: #A75A5A;
 }
 
 .booking-calendar :deep(.fc-timegrid-axis),
 .booking-calendar :deep(.fc-timegrid-slot-label) {
     font-size: 12px;
-    color: #a75a5a;
+    color: #A75A5A;
 }
 
 .booking-calendar :deep(.booking-rule-free-time) {
-    border: 1px dashed #a75a5a;
-    background: #fff4f4;
-    color: #2f172a;
+    border: 1px dashed #FFE5E5;
+    background: #FFE5E5;
     border-radius: 8px;
     padding: 2px 4px;
     opacity: 0.75;
@@ -303,24 +268,43 @@ const {
     cursor: pointer;
 }
 
+.booking-calendar :deep(.booking-rule-free-time),
+.booking-calendar :deep(.booking-rule-free-time .fc-event-main),
+.booking-calendar :deep(.booking-rule-free-time .fc-event-time),
+.booking-calendar :deep(.booking-rule-free-time .fc-event-title) {
+    color: #C17979 !important;
+}
+
 .booking-calendar :deep(.booking-reservation-event) {
-    border: 1px solid #2f172a;
-    background: #c17979;
-    color: #ffffff;
+    border: 1px solid #C17979;
+    background: #C17979;
     border-radius: 8px;
     padding: 2px 4px;
     z-index: 30;
     cursor: pointer;
 }
 
+.booking-calendar :deep(.booking-reservation-event),
+.booking-calendar :deep(.booking-reservation-event .fc-event-main),
+.booking-calendar :deep(.booking-reservation-event .fc-event-time),
+.booking-calendar :deep(.booking-reservation-event .fc-event-title) {
+    color: #ffffff !important;
+}
+
 .booking-calendar :deep(.booking-capacity-window-event) {
-    border: 1px solid #7c2d2d;
-    background: #a75a5a;
-    color: #ffffff;
+    border: 1px solid #A75A5A;
+    background: #A75A5A;
     border-radius: 8px;
     padding: 2px 4px;
     z-index: 20;
     cursor: pointer;
+}
+
+.booking-calendar :deep(.booking-capacity-window-event),
+.booking-calendar :deep(.booking-capacity-window-event .fc-event-main),
+.booking-calendar :deep(.booking-capacity-window-event .fc-event-time),
+.booking-calendar :deep(.booking-capacity-window-event .fc-event-title) {
+    color: #ffffff !important;
 }
 
 .booking-calendar :deep(.booking-capacity-window-full) {

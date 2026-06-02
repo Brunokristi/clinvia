@@ -1,11 +1,17 @@
 <script setup>
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import Dialog from 'primevue/dialog';
+import DatePicker from 'primevue/datepicker';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
+
+import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
+import FormSection from '@/Components/Forms/FormSection.vue';
+import PhoneInput from '@/Components/Forms/PhoneInput.vue';
 
 const props = defineProps({
     visible: {
@@ -28,18 +34,15 @@ const emit = defineEmits([
     'create-booking',
 ]);
 
-const dialogVisible = computed({
-    get: () => props.visible,
-    set: (value) => emit('update:visible', value),
-});
-
 const form = reactive({
     service_id: null,
-    date: '',
-    starts_at: '',
+    date: null,
+    starts_at: null,
     patient_name: '',
     patient_email: '',
     patient_phone: '',
+    patient_phone_country: 'SK',
+    patient_phone_full: '',
     patient_note: '',
     admin_note: '',
     notify_patient: true,
@@ -60,6 +63,10 @@ const selectedService = computed(() => {
     }) ?? null;
 });
 
+const hasPatientEmail = computed(() => {
+    return Boolean(form.patient_email.trim());
+});
+
 const selectedServiceDuration = computed(() => {
     const service = selectedService.value;
 
@@ -76,46 +83,15 @@ const selectedServiceDuration = computed(() => {
     );
 });
 
-const calculatedEndsAt = computed(() => {
-    if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+const formatDateForBackend = (value) => {
+    if (!value) {
         return '';
     }
 
-    const start = new Date(`${form.date}T${form.starts_at}:00`);
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
 
-    start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
-
-    const hours = String(start.getHours()).padStart(2, '0');
-    const minutes = String(start.getMinutes()).padStart(2, '0');
-
-    return `${hours}:${minutes}`;
-});
-
-const startsAtForBackend = computed(() => {
-    if (!form.date || !form.starts_at) {
-        return null;
-    }
-
-    return `${form.date} ${form.starts_at}:00`;
-});
-
-const endsAtForBackend = computed(() => {
-    if (!form.date || !calculatedEndsAt.value) {
-        return null;
-    }
-
-    return `${form.date} ${calculatedEndsAt.value}:00`;
-});
-
-const canSubmit = computed(() => {
-    return Boolean(form.service_id)
-        && Boolean(form.date)
-        && Boolean(form.starts_at)
-        && Boolean(calculatedEndsAt.value)
-        && Boolean(form.patient_name.trim());
-});
-
-const getDateFromDate = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -123,28 +99,119 @@ const getDateFromDate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
-const getTimeFromDate = (date) => {
+const formatTimeForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
 
     return `${hours}:${minutes}`;
 };
 
+const createDateFromDateAndTime = (dateValue, timeValue) => {
+    if (!dateValue || !timeValue) {
+        return null;
+    }
+
+    const date = dateValue instanceof Date
+        ? new Date(dateValue)
+        : new Date(dateValue);
+
+    if (timeValue instanceof Date) {
+        date.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
+
+        return date;
+    }
+
+    const [hours, minutes] = String(timeValue).split(':');
+
+    date.setHours(Number(hours), Number(minutes), 0, 0);
+
+    return date;
+};
+
+const calculatedEndsAtDate = computed(() => {
+    if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+        return null;
+    }
+
+    const start = createDateFromDateAndTime(form.date, form.starts_at);
+
+    if (!start) {
+        return null;
+    }
+
+    start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
+
+    return start;
+});
+
+const calculatedEndsAtLabel = computed(() => {
+    if (!calculatedEndsAtDate.value) {
+        return '';
+    }
+
+    return formatTimeForBackend(calculatedEndsAtDate.value);
+});
+
+const startsAtForBackend = computed(() => {
+    if (!form.date || !form.starts_at) {
+        return null;
+    }
+
+    return `${formatDateForBackend(form.date)} ${formatTimeForBackend(form.starts_at)}:00`;
+});
+
+const endsAtForBackend = computed(() => {
+    if (!form.date || !calculatedEndsAtDate.value) {
+        return null;
+    }
+
+    return `${formatDateForBackend(form.date)} ${formatTimeForBackend(calculatedEndsAtDate.value)}:00`;
+});
+
+const canSubmit = computed(() => {
+    return Boolean(form.service_id)
+        && Boolean(form.date)
+        && Boolean(form.starts_at)
+        && Boolean(calculatedEndsAtDate.value)
+        && Boolean(form.patient_name.trim());
+});
+
 const resetForm = () => {
     form.service_id = null;
 
-    form.date = props.selection?.date
-        ?? (props.selection?.start ? getDateFromDate(props.selection.start) : '');
+    if (props.selection?.start) {
+        const start = props.selection.start instanceof Date
+            ? props.selection.start
+            : new Date(props.selection.start);
 
-    form.starts_at = props.selection?.starts_at
-        ?? (props.selection?.start ? getTimeFromDate(props.selection.start) : '');
+        form.date = props.selection?.date
+            ? new Date(`${props.selection.date}T00:00:00`)
+            : start;
+
+        form.starts_at = props.selection?.starts_at
+            ? createDateFromDateAndTime(form.date, props.selection.starts_at)
+            : start;
+    } else {
+        form.date = null;
+        form.starts_at = null;
+    }
 
     form.patient_name = '';
     form.patient_email = '';
     form.patient_phone = '';
+    form.patient_phone_country = 'SK';
+    form.patient_phone_full = '';
     form.patient_note = '';
     form.admin_note = '';
-    form.notify_patient = true;
+    form.notify_patient = false;
 };
 
 watch(() => props.visible, (visible) => {
@@ -156,6 +223,12 @@ watch(() => props.visible, (visible) => {
 watch(() => props.selection, () => {
     if (props.visible) {
         resetForm();
+    }
+});
+
+watch(() => form.patient_email, (email) => {
+    if (!email.trim()) {
+        form.notify_patient = false;
     }
 });
 
@@ -176,7 +249,7 @@ const submit = () => {
         ends_at: endsAtForBackend.value,
         patient_name: form.patient_name,
         patient_email: form.patient_email,
-        patient_phone: form.patient_phone,
+        patient_phone: form.patient_phone_full || form.patient_phone,
         patient_note: form.patient_note,
         admin_note: form.admin_note,
         notify_patient: form.notify_patient,
@@ -185,172 +258,178 @@ const submit = () => {
 </script>
 
 <template>
-    <Dialog
-        v-model:visible="dialogVisible"
-        modal
-        header="Vytvoriť rezerváciu"
-        :style="{ width: '760px', maxWidth: '95vw' }"
-        @hide="closeDialog"
+    <AppDialog
+        :visible="visible"
+        title="Vytvoriť rezerváciu"
+        width="max-w-3xl"
+        show-footer
+        close-label="Zavrieť"
+        @update:visible="emit('update:visible', $event)"
+        @close="closeDialog"
     >
-        <div class="space-y-5">
-            <div class="grid gap-4 md:grid-cols-2">
-                <div class="md:col-span-2">
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Služba
-                    </label>
+        <FormPage
+            submit-label="Vytvoriť rezerváciu"
+            :loading="false"
+            :show-submit="false"
+        >
+            <FormSection
+                title="Rezervácia"
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Dátum"
+                    for="booking_date"
+                    required
+                >
+                    <DatePicker
+                        input-id="booking_date"
+                        v-model="form.date"
+                        date-format="dd.mm.yy"
+                        class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte dátum"
+                    />
+                </FormField>
 
+                <FormField
+                    label="Začiatok"
+                    for="booking_starts_at"
+                    required
+                >
+                    <DatePicker
+                        input-id="booking_starts_at"
+                        v-model="form.starts_at"
+                        time-only
+                        hour-format="24"
+                        icon-display="input"
+                        class="w-full"
+                        input-class="w-full"
+                        placeholder="Vyberte čas"
+                    />
+                </FormField>
+
+                <FormField
+                    label="Služba"
+                    for="service_id"
+                    required
+                    span="md:col-span-2"
+                >
                     <Select
+                        id="service_id"
                         v-model="form.service_id"
                         :options="serviceOptions"
                         option-label="label"
                         option-value="value"
                         placeholder="Vyberte službu"
-                        class="w-full"
+                        class="w-full"  
                     />
+                </FormField>
+
+                <div
+                    v-if="selectedService && !selectedServiceDuration"
+                    class="md:col-span-2 rounded-md bg-red-50 p-4 text-sm text-red-600"
+                >
+                    Vybraná služba nemá nastavené trvanie. Skontrolujte pole duration_minutes, duration, length_minutes alebo minutes.
                 </div>
+            </FormSection>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Dátum
-                    </label>
-
+            <FormSection
+                title="Pacient"
+                description="Vyplňte kontaktné údaje pacienta."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Meno pacienta"
+                    for="patient_name"
+                    required
+                    span="md:col-span-2"
+                >
                     <InputText
-                        v-model="form.date"
-                        type="date"
-                        class="w-full"
-                    />
-                </div>
-
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Začiatok
-                    </label>
-
-                    <InputText
-                        v-model="form.starts_at"
-                        type="time"
-                        class="w-full"
-                    />
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Koniec
-                    </label>
-
-                    <InputText
-                        :model-value="calculatedEndsAt"
-                        type="time"
-                        class="w-full"
-                        readonly
-                    />
-
-                    <p class="mt-2 text-sm text-accent">
-                        Koniec sa vypočíta automaticky podľa trvania vybranej služby.
-                    </p>
-
-                    <p
-                        v-if="selectedService && !selectedServiceDuration"
-                        class="mt-2 text-sm text-red-600"
-                    >
-                        Vybraná služba nemá nastavené trvanie. Skontrolujte pole duration_minutes, duration, length_minutes alebo minutes.
-                    </p>
-                </div>
-
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Meno pacienta
-                    </label>
-
-                    <InputText
+                        id="patient_name"
                         v-model="form.patient_name"
                         class="w-full"
                         placeholder="Meno a priezvisko"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Email
-                    </label>
-
+                <FormField
+                    label="Email"
+                    for="patient_email"
+                >
                     <InputText
+                        id="patient_email"
                         v-model="form.patient_email"
+                        type="email"
                         class="w-full"
                         placeholder="email@example.com"
                     />
-                </div>
+                </FormField>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Telefón
-                    </label>
-
-                    <InputText
+                <FormField
+                    label="Telefón"
+                    for="patient_phone"
+                >
+                    <PhoneInput
                         v-model="form.patient_phone"
-                        class="w-full"
-                        placeholder="+421..."
+                        v-model:country-code="form.patient_phone_country"
+                        v-model:full-value="form.patient_phone_full"
                     />
-                </div>
+                </FormField>
 
-                <div class="flex items-center gap-2 pt-7">
+                <div class="md:col-span-2 flex items-center gap-2">
                     <Checkbox
                         v-model="form.notify_patient"
                         binary
                         input-id="notify_patient_create"
+                        :disabled="!hasPatientEmail"
                     />
 
                     <label
                         for="notify_patient_create"
                         class="cursor-pointer text-sm text-accent"
+                        :class="{ 'opacity-50': !hasPatientEmail }"
                     >
                         Poslať pacientovi email
                     </label>
                 </div>
 
-                <div class="md:col-span-2">
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Poznámka pacienta
-                    </label>
-
+                <FormField
+                    label="Správa pre pacienta"
+                    for="patient_note"
+                    span="md:col-span-2"
+                >
                     <Textarea
+                        id="patient_note"
                         v-model="form.patient_note"
                         rows="3"
                         class="w-full"
-                        placeholder="Poznámka od pacienta"
+                        placeholder="Správa pre pacienta"
                     />
-                </div>
+                </FormField>
 
-                <div class="md:col-span-2">
-                    <label class="mb-2 block text-sm font-medium text-dark">
-                        Admin poznámka
-                    </label>
-
+                <FormField
+                    label="Poznámka"
+                    for="admin_note"
+                    span="md:col-span-2"
+                >
                     <Textarea
+                        id="admin_note"
                         v-model="form.admin_note"
                         rows="3"
                         class="w-full"
                         placeholder="Interná poznámka"
                     />
-                </div>
-            </div>
+                </FormField>
+            </FormSection>
+        </FormPage>
 
-            <div class="flex justify-end gap-2 border-t border-soft pt-5">
-                <Button
-                    type="button"
-                    label="Zavrieť"
-                    severity="secondary"
-                    outlined
-                    @click="closeDialog"
-                />
-
-                <Button
-                    type="button"
-                    label="Vytvoriť rezerváciu"
-                    :disabled="!canSubmit"
-                    @click="submit"
-                />
-            </div>
-        </div>
-    </Dialog>
+        <template #footer>
+            <Button
+                type="button"
+                label="Vytvoriť rezerváciu"
+                :disabled="!canSubmit"
+                @click="submit"
+            />
+        </template>
+    </AppDialog>
 </template>
