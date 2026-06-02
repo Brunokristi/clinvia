@@ -56,6 +56,11 @@ class ServiceController extends Controller
             'description' => ['nullable', 'string'],
             'icon' => ['nullable', 'string', 'max:255'],
             'duration_minutes' => ['nullable', 'integer', 'min:0'],
+            'is_bookable' => ['required', 'boolean'],
+            'capacity' => ['nullable', 'integer', 'min:1'],
+            'buffer_before_minutes' => ['nullable', 'integer', 'min:0'],
+            'buffer_after_minutes' => ['nullable', 'integer', 'min:0'],
+            'booking_type' => ['required', 'in:individual,group'],
             'is_active' => ['required', 'boolean'],
             'sort_order' => ['nullable', 'integer'],
         ]);

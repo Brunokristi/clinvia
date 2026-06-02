@@ -4,10 +4,10 @@ import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
 import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import { computed, ref } from 'vue';
 
@@ -48,6 +48,8 @@ const props = defineProps({
 
 const emit = defineEmits(['submit']);
 
+const form = props.form;
+
 const draggedStepIndex = ref(null);
 
 const isCreateMode = computed(() => props.mode === 'create');
@@ -76,28 +78,7 @@ const iconOptions = [
 ];
 
 const isCreatingNewCategory = computed(() => {
-    return props.form.category_id === props.newCategoryValue;
-});
-
-const selectedCategoryName = computed(() => {
-    if (isCreatingNewCategory.value) {
-        return props.form.new_category_name || 'Nová kategória';
-    }
-
-    const category = props.categories.find((item) => item.id === props.form.category_id);
-
-    return category ? category.name : 'Bez kategórie';
-});
-
-const durationPreview = computed(() => {
-    const sessions = props.form.duration_sessions;
-    const minutes = props.form.duration_minutes;
-
-    if (!minutes) {
-        return '';
-    }
-
-    return `${sessions || 1} × ${minutes} min`;
+    return form.category_id === props.newCategoryValue;
 });
 
 const fileNameFor = (item) => {
@@ -105,23 +86,23 @@ const fileNameFor = (item) => {
 };
 
 const addInformation = () => {
-    props.form.information.push({
+    form.information.push({
         existing_id: null,
         text: '',
     });
 };
 
 const addStep = () => {
-    props.form.steps.push({
+    form.steps.push({
         existing_id: null,
-        number: props.form.steps.length + 1,
+        number: form.steps.length + 1,
         title: '',
         text: '',
     });
 };
 
 const addFile = () => {
-    props.form.files.push({
+    form.files.push({
         existing_id: null,
         label: '',
         file: null,
@@ -145,7 +126,7 @@ const handleStepDragStart = (index, event) => {
         event.dataTransfer.setData('text/plain', String(index));
         event.dataTransfer.effectAllowed = 'move';
     } catch (e) {
-        // ignore if dataTransfer isn't available in Safari
+        // Ignore if dataTransfer is not available.
     }
 };
 
@@ -160,9 +141,9 @@ const handleStepDrop = (dropIndex) => {
         return;
     }
 
-    const draggedItem = props.form.steps.splice(draggedStepIndex.value, 1)[0];
+    const draggedItem = form.steps.splice(draggedStepIndex.value, 1)[0];
 
-    props.form.steps.splice(dropIndex, 0, draggedItem);
+    form.steps.splice(dropIndex, 0, draggedItem);
 
     draggedStepIndex.value = null;
 
@@ -170,23 +151,23 @@ const handleStepDrop = (dropIndex) => {
 };
 
 const normalizeCollections = () => {
-    props.form.is_available = true;
-    props.form.sort_order = 0;
+    form.is_available = true;
+    form.sort_order = 0;
 
-    props.form.information = props.form.information.map((item, index) => ({
+    form.information = form.information.map((item, index) => ({
         ...item,
         sort_order: index,
         is_active: true,
     }));
 
-    props.form.steps = props.form.steps.map((item, index) => ({
+    form.steps = form.steps.map((item, index) => ({
         ...item,
         number: index + 1,
         sort_order: index,
         is_active: true,
     }));
 
-    props.form.files = props.form.files.map((item, index) => ({
+    form.files = form.files.map((item, index) => ({
         ...item,
         sort_order: index,
         is_active: true,
@@ -199,30 +180,15 @@ const submitForm = () => {
     emit('submit');
 };
 
-const slugify = (value) => {
-    return (value ?? '')
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-};
-
-const generatedSlug = computed(() => {
-    return slugify(props.form.name);
-});
-
 const canSubmit = computed(() => {
     if (!isCreateMode.value) {
         return true;
     }
 
-    const hasCategory = props.form.category_id !== null && props.form.category_id !== undefined;
-    const hasNewCategoryName = props.form.category_id !== props.newCategoryValue
-        || Boolean((props.form.new_category_name ?? '').trim());
-    const hasName = Boolean((props.form.name ?? '').trim());
+    const hasCategory = form.category_id !== null && form.category_id !== undefined;
+    const hasNewCategoryName = form.category_id !== props.newCategoryValue
+        || Boolean((form.new_category_name ?? '').trim());
+    const hasName = Boolean((form.name ?? '').trim());
 
     return hasCategory && hasNewCategoryName && hasName;
 });
@@ -236,7 +202,7 @@ const iconLabel = (value) => {
     <form @submit.prevent="submitForm">
         <FormPage
             :submit-label="submitLabel"
-            :loading="loading || props.form.processing"
+            :loading="loading || form.processing"
         >
             <FormSection
                 title="Základné informácie"
@@ -246,15 +212,15 @@ const iconLabel = (value) => {
                     label="Názov služby"
                     for="name"
                     required
-                    :error="props.form.errors.name"
+                    :error="form.errors.name"
                     span="md:col-span-2"
                 >
                     <InputText
                         id="name"
-                        v-model="props.form.name"
+                        v-model="form.name"
                         class="w-full"
                         placeholder="Napr. Klinicko-psychologické vyšetrenie"
-                        :invalid="Boolean(props.form.errors.name)"
+                        :invalid="Boolean(form.errors.name)"
                     />
                 </FormField>
 
@@ -262,18 +228,18 @@ const iconLabel = (value) => {
                     label="Kategória"
                     for="category_id"
                     required
-                    :error="props.form.errors.category_id"
+                    :error="form.errors.category_id"
                     :span="isCreatingNewCategory ? '' : 'md:col-span-2'"
                 >
                     <Select
                         id="category_id"
-                        v-model="props.form.category_id"
-                        :options="props.categories"
+                        v-model="form.category_id"
+                        :options="categories"
                         option-label="name"
                         option-value="id"
                         placeholder="Vyberte kategóriu"
                         class="w-full"
-                        :invalid="Boolean(props.form.errors.category_id)"
+                        :invalid="Boolean(form.errors.category_id)"
                     />
                 </FormField>
 
@@ -282,65 +248,90 @@ const iconLabel = (value) => {
                     label="Názov novej kategórie"
                     for="new_category_name"
                     required
-                    :error="props.form.errors.new_category_name"
+                    :error="form.errors.new_category_name"
                 >
                     <InputText
                         id="new_category_name"
-                        v-model="props.form.new_category_name"
+                        v-model="form.new_category_name"
                         class="w-full"
                         placeholder="Napr. Diagnostika"
-                        :invalid="Boolean(props.form.errors.new_category_name)"
+                        :invalid="Boolean(form.errors.new_category_name)"
                     />
                 </FormField>
 
                 <FormField
                     label="Počet stretnutí"
                     for="duration_sessions"
-                    :error="props.form.errors.duration_sessions"
+                    :error="form.errors.duration_sessions"
                 >
                     <InputNumber
                         id="duration_sessions"
-                        v-model="props.form.duration_sessions"
+                        v-model="form.duration_sessions"
                         class="w-full"
                         input-class="w-full"
                         :min="1"
                         placeholder="1"
-                        :invalid="Boolean(props.form.errors.duration_sessions)"
+                        :invalid="Boolean(form.errors.duration_sessions)"
                     />
                 </FormField>
 
                 <FormField
                     label="Minút na jedno stretnutie"
                     for="duration_minutes"
-                    :error="props.form.errors.duration_minutes"
+                    :error="form.errors.duration_minutes"
                 >
                     <InputNumber
                         id="duration_minutes"
-                        v-model="props.form.duration_minutes"
+                        v-model="form.duration_minutes"
                         class="w-full"
                         input-class="w-full"
                         :min="1"
                         placeholder="60"
-                        :invalid="Boolean(props.form.errors.duration_minutes)"
+                        :invalid="Boolean(form.errors.duration_minutes)"
                     />
+                </FormField>
+
+                <FormField
+                    label="Rezervácia"
+                    for="is_bookable"
+                    :error="form.errors.is_bookable"
+                    span="md:col-span-2"
+                >
+                    <div class="flex items-center gap-3">
+                        <Checkbox
+                            id="is_bookable"
+                            v-model="form.is_bookable"
+                            binary
+                            :invalid="Boolean(form.errors.is_bookable)"
+                        />
+
+                        <div>
+                            <label
+                                for="is_bookable"
+                                class="cursor-pointer text-normal text-accent"
+                            >
+                                Rezervovateľná služba
+                            </label>
+                        </div>
+                    </div>
                 </FormField>
 
                 <FormField
                     label="Ikona"
                     for="icon"
-                    :error="props.form.errors.icon"
+                    :error="form.errors.icon"
                     span="md:col-span-2"
                 >
                     <Select
                         id="icon"
-                        v-model="props.form.icon"
+                        v-model="form.icon"
                         :options="iconOptions"
                         option-label="label"
                         option-value="value"
                         placeholder="Vyberte ikonu"
                         filter
                         class="w-full"
-                        :invalid="Boolean(props.form.errors.icon)"
+                        :invalid="Boolean(form.errors.icon)"
                     >
                         <template #value="{ value }">
                             <div
@@ -371,31 +362,31 @@ const iconLabel = (value) => {
                 <FormField
                     label="Krátky popis"
                     for="short_description"
-                    :error="props.form.errors.short_description"
+                    :error="form.errors.short_description"
                     span="md:col-span-2"
                 >
                     <InputText
                         id="short_description"
-                        v-model="props.form.short_description"
+                        v-model="form.short_description"
                         class="w-full"
                         placeholder="Jedna veta, ktorá stručne vysvetlí službu."
-                        :invalid="Boolean(props.form.errors.short_description)"
+                        :invalid="Boolean(form.errors.short_description)"
                     />
                 </FormField>
 
                 <FormField
                     label="Dlhý popis"
                     for="description"
-                    :error="props.form.errors.description"
+                    :error="form.errors.description"
                     span="md:col-span-2"
                 >
                     <Textarea
                         id="description"
-                        v-model="props.form.description"
+                        v-model="form.description"
                         class="w-full"
                         rows="4"
                         placeholder="Detailný popis služby..."
-                        :invalid="Boolean(props.form.errors.description)"
+                        :invalid="Boolean(form.errors.description)"
                     />
                 </FormField>
             </FormSection>
@@ -413,11 +404,11 @@ const iconLabel = (value) => {
                         <FormField
                             label="Cena"
                             for="insurance_amount"
-                            :error="props.form.errors.insurance_amount"
+                            :error="form.errors.insurance_amount"
                         >
                             <InputNumber
                                 id="insurance_amount"
-                                v-model="props.form.insurance_amount"
+                                v-model="form.insurance_amount"
                                 class="w-full"
                                 input-class="w-full"
                                 mode="decimal"
@@ -425,21 +416,21 @@ const iconLabel = (value) => {
                                 :max-fraction-digits="2"
                                 placeholder="0.00"
                                 suffix=" €"
-                                :invalid="Boolean(props.form.errors.insurance_amount)"
+                                :invalid="Boolean(form.errors.insurance_amount)"
                             />
                         </FormField>
 
                         <FormField
                             label="Poznámka k cene"
                             for="insurance_note"
-                            :error="props.form.errors.insurance_note"
+                            :error="form.errors.insurance_note"
                         >
                             <InputText
                                 id="insurance_note"
-                                v-model="props.form.insurance_note"
+                                v-model="form.insurance_note"
                                 class="w-full"
                                 placeholder="Poznámka k cene"
-                                :invalid="Boolean(props.form.errors.insurance_note)"
+                                :invalid="Boolean(form.errors.insurance_note)"
                             />
                         </FormField>
                     </div>
@@ -454,11 +445,11 @@ const iconLabel = (value) => {
                         <FormField
                             label="Cena"
                             for="self_pay_amount"
-                            :error="props.form.errors.self_pay_amount"
+                            :error="form.errors.self_pay_amount"
                         >
                             <InputNumber
                                 id="self_pay_amount"
-                                v-model="props.form.self_pay_amount"
+                                v-model="form.self_pay_amount"
                                 class="w-full"
                                 input-class="w-full"
                                 mode="decimal"
@@ -466,21 +457,21 @@ const iconLabel = (value) => {
                                 :max-fraction-digits="2"
                                 placeholder="0.00"
                                 suffix=" €"
-                                :invalid="Boolean(props.form.errors.self_pay_amount)"
+                                :invalid="Boolean(form.errors.self_pay_amount)"
                             />
                         </FormField>
 
                         <FormField
                             label="Poznámka k cene"
                             for="self_pay_note"
-                            :error="props.form.errors.self_pay_note"
+                            :error="form.errors.self_pay_note"
                         >
                             <InputText
                                 id="self_pay_note"
-                                v-model="props.form.self_pay_note"
+                                v-model="form.self_pay_note"
                                 class="w-full"
                                 placeholder="Poznámka k cene"
-                                :invalid="Boolean(props.form.errors.self_pay_note)"
+                                :invalid="Boolean(form.errors.self_pay_note)"
                             />
                         </FormField>
                     </div>
@@ -494,14 +485,14 @@ const iconLabel = (value) => {
             >
                 <div class="space-y-4">
                     <div
-                        v-for="(item, index) in props.form.information"
+                        v-for="(item, index) in form.information"
                         :key="item.existing_id ?? index"
                     >
                         <div class="grid gap-4">
                             <FormField
                                 label="Text informácie"
                                 :for="`information_text_${index}`"
-                                :error="props.form.errors[`information.${index}.text`]"
+                                :error="form.errors[`information.${index}.text`]"
                             >
                                 <Textarea
                                     :id="`information_text_${index}`"
@@ -509,7 +500,7 @@ const iconLabel = (value) => {
                                     class="w-full"
                                     rows="3"
                                     placeholder="Popis alebo poznámka k službe"
-                                    :invalid="Boolean(props.form.errors[`information.${index}.text`])"
+                                    :invalid="Boolean(form.errors[`information.${index}.text`])"
                                 />
                             </FormField>
 
@@ -519,7 +510,7 @@ const iconLabel = (value) => {
                                     label="Odstrániť"
                                     severity="danger"
                                     outlined
-                                    @click="removeItem(props.form.information, index)"
+                                    @click="removeItem(form.information, index)"
                                 />
                             </div>
                         </div>
@@ -542,7 +533,7 @@ const iconLabel = (value) => {
             >
                 <div class="space-y-4">
                     <div
-                        v-for="(item, index) in props.form.steps"
+                        v-for="(item, index) in form.steps"
                         :key="item.existing_id ?? index"
                         draggable="true"
                         class="rounded-md border border-soft bg-white p-4 transition hover:bg-soft/30"
@@ -566,11 +557,11 @@ const iconLabel = (value) => {
                             <i class="pi pi-bars cursor-grab text-accent" />
                         </div>
 
-                        <div class="grid gap-4 grid-cols-2">
+                        <div class="grid grid-cols-2 gap-4">
                             <FormField
                                 label="Názov kroku"
                                 :for="`step_title_${index}`"
-                                :error="props.form.errors[`steps.${index}.title`]"
+                                :error="form.errors[`steps.${index}.title`]"
                                 span="md:col-span-2"
                             >
                                 <InputText
@@ -584,7 +575,7 @@ const iconLabel = (value) => {
                             <FormField
                                 label="Popis kroku"
                                 :for="`step_text_${index}`"
-                                :error="props.form.errors[`steps.${index}.text`]"
+                                :error="form.errors[`steps.${index}.text`]"
                                 span="md:col-span-2"
                             >
                                 <Textarea
@@ -602,7 +593,7 @@ const iconLabel = (value) => {
                                     label="Odstrániť"
                                     severity="danger"
                                     outlined
-                                    @click="removeItem(props.form.steps, index)"
+                                    @click="removeItem(form.steps, index)"
                                 />
                             </div>
                         </div>
@@ -625,7 +616,7 @@ const iconLabel = (value) => {
             >
                 <div class="space-y-4">
                     <div
-                        v-for="(item, index) in props.form.files"
+                        v-for="(item, index) in form.files"
                         :key="item.existing_id ?? index"
                         class="rounded-md border border-soft p-4"
                     >
@@ -633,7 +624,7 @@ const iconLabel = (value) => {
                             <FormField
                                 label="Názov dokumentu"
                                 :for="`file_label_${index}`"
-                                :error="props.form.errors[`files.${index}.label`]"
+                                :error="form.errors[`files.${index}.label`]"
                             >
                                 <InputText
                                     :id="`file_label_${index}`"
@@ -645,7 +636,7 @@ const iconLabel = (value) => {
 
                             <FormField
                                 label="Súbor"
-                                :error="props.form.errors[`files.${index}.file`]"
+                                :error="form.errors[`files.${index}.file`]"
                             >
                                 <input
                                     type="file"
@@ -664,7 +655,7 @@ const iconLabel = (value) => {
                                     label="Odstrániť"
                                     severity="danger"
                                     outlined
-                                    @click="removeItem(props.form.files, index)"
+                                    @click="removeItem(form.files, index)"
                                 />
                             </div>
                         </div>

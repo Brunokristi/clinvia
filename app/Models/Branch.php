@@ -89,6 +89,26 @@ class Branch extends Model
         return $this->hasMany(Service::class)->orderBy('sort_order');
     }
 
+    public function bookingAvailabilityRules(): HasMany
+    {
+        return $this->hasMany(BookingAvailabilityRule::class);
+    }
+
+    public function bookingSlots(): HasMany
+    {
+        return $this->hasMany(BookingSlot::class);
+    }
+
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
+
+    public function branchInboxMessages(): HasMany
+    {
+        return $this->hasMany(BranchInboxMessage::class);
+    }
+
     public function publicSite(): HasOne
     {
         return $this->hasOne(BranchPublicSite::class);

@@ -147,6 +147,11 @@ const links = computed(() => [
         href: route('public.branch.contact', props.branch.slug),
         active: route().current('public.branch.contact'),
     },
+    {
+        label: 'Rezervácia',
+        href: route('public.branch.booking', props.branch.slug),
+        active: route().current('public.branch.booking'),
+    },
 ]);
 </script>
 

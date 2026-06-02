@@ -42,6 +42,7 @@ const makeEmptyServiceData = () => ({
     icon: '',
     duration_sessions: 1,
     duration_minutes: null,
+    is_bookable: false,
     is_available: true,
     sort_order: 0,
     insurance_amount: null,
@@ -130,15 +131,27 @@ const serviceDuration = (service) => {
     return `${sessions || 1} × ${minutes} min`;
 };
 
+const bookingLabel = (service) => {
+    if (!service.is_bookable) {
+        return 'Nerezervovateľná';
+    }
+
+    if (!service.duration_minutes) {
+        return 'Rezervovateľná';
+    }
+
+    return `Rezervovateľná · ${service.duration_minutes} min`;
+};
+
 const fillInformationItems = (items = []) => {
-    return items.map((item, index) => ({
+    return items.map((item) => ({
         existing_id: item.id ?? null,
         text: item.text ?? '',
     }));
 };
 
 const fillStepItems = (items = []) => {
-    return items.map((item, index) => ({
+    return items.map((item) => ({
         existing_id: item.id ?? null,
         number: item.number ?? null,
         title: item.title ?? '',
@@ -147,7 +160,7 @@ const fillStepItems = (items = []) => {
 };
 
 const fillFileItems = (items = []) => {
-    return items.map((item, index) => ({
+    return items.map((item) => ({
         existing_id: item.id ?? null,
         label: item.label ?? '',
         file: null,
@@ -164,6 +177,7 @@ const services = computed(() => {
         insurance_price_label: formatPrice(service.insurance_amount),
         self_pay_price_label: formatPrice(service.self_pay_amount),
         availability_label: service.is_active ? 'Aktívna' : 'Neaktívna',
+        booking_label: bookingLabel(service),
     }));
 });
 
@@ -188,6 +202,11 @@ const columns = [
         header: 'Samoplatca',
         sortable: true,
     },
+    {
+        field: 'booking_label',
+        header: 'Rezervácia',
+        sortable: true,
+    },
 ];
 
 const resetForm = (form) => {
@@ -196,34 +215,6 @@ const resetForm = (form) => {
     form.clearErrors();
 
     Object.assign(form, empty);
-};
-
-const addInformation = (form) => {
-    form.information.push(makeEmptyInformationItem());
-};
-
-const removeInformation = (form, index) => {
-    form.information.splice(index, 1);
-};
-
-const addStep = (form) => {
-    form.steps.push(makeEmptyStepItem());
-};
-
-const removeStep = (form, index) => {
-    form.steps.splice(index, 1);
-};
-
-const addFile = (form) => {
-    form.files.push(makeEmptyFileItem());
-};
-
-const removeFile = (form, index) => {
-    form.files.splice(index, 1);
-};
-
-const onFileChange = (form, index, event) => {
-    form.files[index].file = event.target.files?.[0] ?? null;
 };
 
 const openCreateDialog = () => {
@@ -250,6 +241,7 @@ const fillEditForm = (service) => {
     editForm.icon = service.icon ?? '';
     editForm.duration_sessions = service.duration_sessions ?? 1;
     editForm.duration_minutes = service.duration_minutes ?? null;
+    editForm.is_bookable = Boolean(service.is_bookable);
     editForm.is_available = Boolean(service.is_active ?? true);
     editForm.sort_order = service.sort_order ?? 0;
     editForm.insurance_amount = service.insurance_amount ?? null;
@@ -287,6 +279,7 @@ const createService = () => {
         icon: createForm.icon,
         duration_sessions: createForm.duration_sessions,
         duration_minutes: createForm.duration_minutes,
+        is_bookable: createForm.is_bookable,
         is_available: createForm.is_available,
         sort_order: createForm.sort_order,
         insurance_amount: createForm.insurance_amount,
@@ -330,12 +323,15 @@ const updateService = () => {
     }
 
     const payload = {
+        category_id: editForm.category_id === newCategoryValue ? null : editForm.category_id,
+        new_category_name: editForm.new_category_name,
         name: editForm.name,
         short_description: editForm.short_description,
         description: editForm.description,
         icon: editForm.icon,
         duration_sessions: editForm.duration_sessions,
         duration_minutes: editForm.duration_minutes,
+        is_bookable: editForm.is_bookable,
         is_available: editForm.is_available,
         sort_order: editForm.sort_order,
         insurance_amount: editForm.insurance_amount,
@@ -456,6 +452,12 @@ const removeService = (service) => {
                 <template #cell-self_pay_price_label="{ row }">
                     <span class="text-sm text-accent">
                         {{ row.self_pay_price_label }}
+                    </span>
+                </template>
+
+                <template #cell-booking_label="{ row }">
+                    <span class="text-sm text-accent">
+                        {{ row.booking_label }}
                     </span>
                 </template>
 

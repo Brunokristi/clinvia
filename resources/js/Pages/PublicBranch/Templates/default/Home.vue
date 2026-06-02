@@ -226,6 +226,13 @@ const professionalName = (professional) => {
                                 Ponúkané služby
                             </Link>
 
+                            <Link
+                                :href="route('public.branch.booking', branch.slug)"
+                                class="inline-flex items-center justify-center gap-2 rounded-md border border-soft bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+                            >
+                                Rezervovať termín
+                            </Link>
+
                             <component
                                 :is="primaryContactHref ? 'a' : 'div'"
                                 v-if="primaryContact?.value"

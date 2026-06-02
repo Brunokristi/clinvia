@@ -99,6 +99,10 @@ const breadcrumbs = computed(() => {
             items.push(breadcrumbItem('Služby'));
         }
 
+        if (route().current('branches.booking.dashboard.page') || route().current('branches.booking.settings.page') || route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page')) {
+            items.push(breadcrumbItem('Rezervácie'));
+        }
+
         if (route().current('branches.users.page')) {
             items.push(breadcrumbItem('Používatelia'));
         }

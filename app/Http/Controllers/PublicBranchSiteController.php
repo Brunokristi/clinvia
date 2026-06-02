@@ -2,8 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\CreateBookingAction;
+use App\Models\Booking;
+use App\Models\BookingSlot;
 use App\Models\Branch;
+use App\Models\BranchInboxMessage;
 use App\Models\Service;
+use App\Services\BookingAvailabilityService;
+use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -91,6 +101,174 @@ class PublicBranchSiteController extends Controller
         return Inertia::render($this->templateView($branch, 'Contact'), [
             'branch' => $this->branchData($branch),
         ]);
+    }
+
+    public function booking(Request $request, Branch $branch, BookingAvailabilityService $availabilityService): Response
+    {
+        $this->ensurePublicSiteIsEnabled($branch);
+
+        $branch->load([
+            'company',
+            'publicSite',
+            'contacts',
+            'services.category',
+        ]);
+
+        $selectedDate = Carbon::parse($request->string('date', now()->toDateString()));
+        $selectedServiceId = $request->integer('service');
+
+        $selectedService = $selectedServiceId
+            ? $branch->services->firstWhere('id', $selectedServiceId)
+            : null;
+
+        $availableSlots = $selectedService
+            ? $this->filterSlotsForPatient(
+                $availabilityService->getAvailableSlots($branch, $selectedService, $selectedDate)
+            )
+            : collect();
+
+        return Inertia::render($this->templateView($branch, 'Booking'), [
+            'branch' => $this->branchData($branch),
+            'services' => $branch->services
+                ->where('is_active', true)
+                ->where('is_bookable', true)
+                ->values()
+                ->map(fn ($service) => $this->serviceCardData($service)),
+            'selectedServiceId' => $selectedServiceId ?: null,
+            'selectedDate' => $selectedDate->toDateString(),
+            'availableSlots' => $availableSlots->map(fn ($slot) => [
+                'id' => $slot->id,
+                'starts_at' => $slot->starts_at->toDateTimeString(),
+                'ends_at' => $slot->ends_at->toDateTimeString(),
+                'capacity' => $slot->capacity,
+                'confirmed_bookings_count' => $slot->confirmed_bookings_count,
+                'is_enabled' => $slot->is_enabled,
+            ])->values(),
+            'selectedService' => $selectedService ? $this->serviceCardData($selectedService) : null,
+        ]);
+    }
+
+    public function storeBooking(Request $request, Branch $branch, CreateBookingAction $createBookingAction): RedirectResponse
+    {
+        $this->ensurePublicSiteIsEnabled($branch);
+
+        $validated = $request->validate([
+            'booking_slot_id' => ['required', 'integer', 'exists:booking_slots,id'],
+            'patient_name' => ['required', 'string', 'max:255'],
+            'patient_email' => ['nullable', 'email', 'max:255'],
+            'patient_phone' => ['nullable', 'string', 'max:255'],
+            'patient_note' => ['nullable', 'string'],
+        ]);
+
+        $slot = $branch->bookingSlots()
+            ->with('service')
+            ->whereKey($validated['booking_slot_id'])
+            ->where('is_enabled', true)
+            ->firstOrFail();
+
+        $this->ensureSlotCanBeBooked($slot);
+
+        $createBookingAction->execute($branch, $slot, $validated);
+
+        return redirect()
+            ->route('public.branch.booking', ['branch' => $branch->slug])
+            ->with('success', 'Rezervácia bola prijatá. Skontrolujte si email s potvrdením.');
+    }
+
+    public function storeContactMessage(Request $request, Branch $branch): RedirectResponse
+    {
+        $this->ensurePublicSiteIsEnabled($branch);
+
+        $validated = $request->validate([
+            'sender_name' => ['required', 'string', 'max:255'],
+            'sender_email' => ['nullable', 'email', 'max:255'],
+            'sender_phone' => ['nullable', 'string', 'max:255'],
+            'body' => ['required', 'string', 'max:4000'],
+        ]);
+
+        BranchInboxMessage::create([
+            'branch_id' => $branch->id,
+            'type' => 'contact_message',
+            'title' => 'Nová správa z kontaktného formulára',
+            'body' => $validated['body'],
+            'sender_name' => $validated['sender_name'],
+            'sender_email' => $validated['sender_email'] ?? null,
+            'sender_phone' => $validated['sender_phone'] ?? null,
+        ]);
+
+        return back()->with('success', 'Správa bola odoslaná.');
+    }
+
+    private function filterSlotsForPatient(Collection $slots): Collection
+    {
+        return $slots
+            ->loadMissing('service')
+            ->filter(function (BookingSlot $slot) {
+                return $this->slotCanBeShownToPatient($slot);
+            })
+            ->values();
+    }
+
+    private function ensureSlotCanBeBooked(BookingSlot $slot): void
+    {
+        if (! $this->slotCanBeShownToPatient($slot)) {
+            throw ValidationException::withMessages([
+                'booking_slot_id' => 'Tento termín už nie je dostupný.',
+            ]);
+        }
+    }
+
+    private function slotCanBeShownToPatient(BookingSlot $slot): bool
+    {
+        $slot->loadMissing('service');
+
+        $service = $slot->service;
+
+        if (! $service) {
+            return false;
+        }
+
+        if (! $slot->is_enabled) {
+            return false;
+        }
+
+        if ($slot->starts_at->isPast()) {
+            return false;
+        }
+
+        $overlappingBookings = Booking::query()
+            ->where('branch_id', $slot->branch_id)
+            ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
+            ->whereHas('bookingSlot', function ($query) use ($slot) {
+                $query
+                    ->where('starts_at', '<', $slot->ends_at)
+                    ->where('ends_at', '>', $slot->starts_at);
+            })
+            ->get();
+
+        if (($service->booking_type ?? 'individual') !== 'group') {
+            return $overlappingBookings->isEmpty();
+        }
+
+        $blockingBookings = $overlappingBookings->filter(function (Booking $booking) use ($slot) {
+            return (int) $booking->service_id !== (int) $slot->service_id
+                || (int) $booking->booking_slot_id !== (int) $slot->id;
+        });
+
+        if ($blockingBookings->isNotEmpty()) {
+            return false;
+        }
+
+        $sameSlotBookingsCount = $overlappingBookings
+            ->filter(function (Booking $booking) use ($slot) {
+                return (int) $booking->service_id === (int) $slot->service_id
+                    && (int) $booking->booking_slot_id === (int) $slot->id;
+            })
+            ->count();
+
+        $capacity = max(1, (int) ($slot->capacity ?? $service->capacity ?? 1));
+
+        return $sameSlotBookingsCount < $capacity;
     }
 
     private function ensurePublicSiteIsEnabled(Branch $branch): void

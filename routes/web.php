@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\Admin\ApiClientController;
+use App\Http\Controllers\Admin\BranchBookingController;
 use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
 use App\Http\Controllers\Admin\BranchOpeningHoursController;
+use App\Http\Controllers\Admin\BranchPublicSiteController;
 use App\Http\Controllers\Admin\BranchServiceController;
 use App\Http\Controllers\Admin\BranchUserController;
 use App\Http\Controllers\Admin\CompanyController;
@@ -17,7 +19,6 @@ use App\Http\Controllers\Admin\ServiceNecessityController;
 use App\Http\Controllers\Admin\ServiceStepController;
 use App\Http\Controllers\Admin\ServiceTagController;
 use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\BranchPublicSiteController;
 use App\Http\Controllers\Api\PublicCompanyController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
@@ -48,6 +49,15 @@ Route::prefix('p/{branch:slug}')
 
         Route::get('/kontakt', [PublicBranchSiteController::class, 'contact'])
             ->name('contact');
+
+        Route::get('/booking', [PublicBranchSiteController::class, 'booking'])
+            ->name('booking');
+
+        Route::post('/booking', [PublicBranchSiteController::class, 'storeBooking'])
+            ->name('booking.store');
+
+        Route::post('/contact-message', [PublicBranchSiteController::class, 'storeContactMessage'])
+            ->name('contact-message.store');
     });
 
 Route::middleware(['auth', 'active'])->group(function () {
@@ -142,6 +152,60 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::prefix('branches/{branch}')
             ->name('branches.')
             ->group(function () {
+                Route::get('/booking', [BranchBookingController::class, 'index'])
+                    ->name('booking.dashboard.page');
+
+                Route::get('/booking/settings', [BranchBookingController::class, 'index'])
+                    ->name('booking.settings.page');
+
+                Route::get('/booking/agenda', [BranchBookingController::class, 'index'])
+                    ->name('booking.agenda.page');
+
+                Route::get('/booking/inbox', [BranchBookingController::class, 'index'])
+                    ->name('booking.inbox.page');
+
+                Route::put('/booking/services', [BranchBookingController::class, 'updateServices'])
+                    ->name('booking.services.update');
+
+                Route::put('/booking/rules', [BranchBookingController::class, 'updateRules'])
+                    ->name('booking.rules.update');
+
+                Route::put('/booking/slots/{slot}', [BranchBookingController::class, 'updateSlot'])
+                    ->name('booking.slots.update');
+
+                Route::put('/booking/bookings/{booking}', [BranchBookingController::class, 'updateBooking'])
+                    ->name('booking.bookings.update');
+
+                Route::post('/booking/bookings/{booking}/cancel', [BranchBookingController::class, 'cancelBooking'])
+                    ->name('booking.bookings.cancel');
+
+                Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingController::class, 'rescheduleBooking'])
+                    ->name('booking.bookings.reschedule');
+
+                Route::post('/booking/bookings', [BranchBookingController::class, 'storeAdminBooking'])
+                    ->name('booking.bookings.store');
+
+                Route::delete('/booking/rules/{rule}', [BranchBookingController::class, 'destroy'])
+                    ->name('booking.rules.destroy');
+
+                Route::post('/booking/rules/{rule}/exclude-date', [BranchBookingController::class, 'excludeDate'])
+                    ->name('booking.rules.exclude-date');
+
+                Route::post('/booking/rules/{rule}/end-before-date', [BranchBookingController::class, 'endBeforeDate'])
+                    ->name('booking.rules.end-before-date');
+
+                Route::post('/booking/capacity-windows/{rule}/cancel', [BranchBookingController::class, 'cancelCapacityWindow'])
+                    ->name('booking.capacity-windows.cancel');
+
+                Route::post('/booking/capacity-windows/{rule}/reschedule', [BranchBookingController::class, 'rescheduleCapacityWindow'])
+                    ->name('booking.capacity-windows.reschedule');
+
+                Route::put('/booking/messages/{message}/read', [BranchBookingController::class, 'markMessageRead'])
+                    ->name('booking.messages.read');
+
+                Route::post('/booking/generate-slots', [BranchBookingController::class, 'regenerateSlots'])
+                    ->name('booking.generate-slots');
+
                 Route::get('/contacts', [BranchController::class, 'contacts'])
                     ->name('contacts.page');
 
@@ -199,27 +263,30 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/services/{branchService}', [BranchServiceController::class, 'destroy'])
                     ->name('services.destroy');
 
-                Route::get('/public-site', [BranchPublicSiteController::class, 'edit'])
+                Route::get('/public-site', [BranchController::class, 'publicSite'])
+                    ->name('public-site.page');
+
+                Route::get('/public-site/edit', [BranchController::class, 'publicSite'])
                     ->name('public-site.edit');
 
                 Route::put('/public-site', [BranchPublicSiteController::class, 'update'])
                     ->name('public-site.update');
-
-                Route::put('/faq-items', [BranchPublicSiteController::class, 'updateFaqItems'])
-                    ->name('faq-items.update');
+                
             });
+    });
+
+    Route::middleware('manage.companies')->group(function () {
+        Route::resource('services', ServiceController::class)
+            ->except(['show']);
 
         Route::prefix('services/{service}')
             ->name('services.')
             ->group(function () {
-                Route::get('/edit', [ServiceController::class, 'edit'])
-                    ->name('edit');
-
-                Route::put('/', [ServiceController::class, 'update'])
-                    ->name('update');
-
                 Route::post('/information', [ServiceInformationController::class, 'store'])
                     ->name('information.store');
+
+                Route::put('/information/{information}', [ServiceInformationController::class, 'update'])
+                    ->name('information.update');
 
                 Route::delete('/information/{information}', [ServiceInformationController::class, 'destroy'])
                     ->name('information.destroy');
@@ -227,11 +294,17 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/necessities', [ServiceNecessityController::class, 'store'])
                     ->name('necessities.store');
 
+                Route::put('/necessities/{necessity}', [ServiceNecessityController::class, 'update'])
+                    ->name('necessities.update');
+
                 Route::delete('/necessities/{necessity}', [ServiceNecessityController::class, 'destroy'])
                     ->name('necessities.destroy');
 
                 Route::post('/steps', [ServiceStepController::class, 'store'])
                     ->name('steps.store');
+
+                Route::put('/steps/{step}', [ServiceStepController::class, 'update'])
+                    ->name('steps.update');
 
                 Route::delete('/steps/{step}', [ServiceStepController::class, 'destroy'])
                     ->name('steps.destroy');
@@ -239,11 +312,17 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/tags', [ServiceTagController::class, 'store'])
                     ->name('tags.store');
 
+                Route::put('/tags/{tag}', [ServiceTagController::class, 'update'])
+                    ->name('tags.update');
+
                 Route::delete('/tags/{tag}', [ServiceTagController::class, 'destroy'])
                     ->name('tags.destroy');
 
                 Route::post('/files', [ServiceFileController::class, 'store'])
                     ->name('files.store');
+
+                Route::put('/files/{file}', [ServiceFileController::class, 'update'])
+                    ->name('files.update');
 
                 Route::delete('/files/{file}', [ServiceFileController::class, 'destroy'])
                     ->name('files.destroy');
@@ -251,4 +330,4 @@ Route::middleware(['auth', 'active'])->group(function () {
     });
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

@@ -19,8 +19,13 @@ class Service extends Model
         'description',
         'icon',
         'featured_image_path',
+        'is_bookable',
         'duration_sessions',
         'duration_minutes',
+        'capacity',
+        'buffer_before_minutes',
+        'buffer_after_minutes',
+        'booking_type',
         'insurance_amount',
         'insurance_note',
         'self_pay_amount',
@@ -33,8 +38,12 @@ class Service extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_bookable' => 'boolean',
             'duration_sessions' => 'integer',
             'duration_minutes' => 'integer',
+            'capacity' => 'integer',
+            'buffer_before_minutes' => 'integer',
+            'buffer_after_minutes' => 'integer',
             'insurance_amount' => 'decimal:2',
             'self_pay_amount' => 'decimal:2',
             'sort_order' => 'integer',
@@ -78,5 +87,16 @@ class Service extends Model
     public function files(): HasMany
     {
         return $this->hasMany(ServiceFile::class)->orderBy('sort_order');
+    }
+
+    public function bookingAvailabilityRules(): BelongsToMany
+    {
+        return $this->belongsToMany(BookingAvailabilityRule::class, 'booking_availability_rule_service')
+            ->withTimestamps();
+    }
+
+    public function bookingSlots(): HasMany
+    {
+        return $this->hasMany(BookingSlot::class);
     }
 }
