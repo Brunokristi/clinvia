@@ -1,10 +1,14 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
-import BookingRuleDialog from '@/Components/Booking/BookingRuleDialog.vue';
-import BookingDialog from '@/Components/Booking/BookingDialog.vue';
-import CapacityWindowDialog from '@/Components/Booking/CapacityWindowDialog.vue';
-import AdminBookingCreateDialog from '@/Components/Booking/AdminBookingCreateDialog.vue';
+
+import CalendarCreateChoiceDialog from '@/Components/Booking/CalendarCreateChoiceDialog.vue';
+import BookingCreateDialog from '@/Components/Booking/BookingCreateDialog.vue';
+import BookingEditDialog from '@/Components/Booking/BookingEditDialog.vue';
+import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityRuleCreateEditDialog.vue';
+import GroupEventCreateEditDialog from '@/Components/Booking/GroupEventCreateEditDialog.vue';
+import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenceDialog.vue';
+
 import { useBookingCalendar } from '@/Composables/useBookingCalendar';
 
 import FullCalendar from '@fullcalendar/vue3';
@@ -47,19 +51,23 @@ const {
     showAvailabilityRules,
     showReservations,
 
-    ruleDialogVisible,
-    bookingDialogVisible,
-    capacityWindowDialogVisible,
+    createChoiceDialogVisible,
+
     createBookingDialogVisible,
+    bookingDialogVisible,
+
+    availabilityRuleDialogVisible,
+    groupEventDialogVisible,
+    groupEventOccurrenceDialogVisible,
 
     selectedBooking,
     selectedCapacityWindow,
     selectedRuleOccurrence,
+    pendingCalendarSelection,
 
     ruleForm,
     currentRule,
 
-    slotModeOptions,
     repeatUnitOptions,
 
     bookingNotes,
@@ -72,8 +80,10 @@ const {
     openCreateBookingDialog,
     closeCreateBookingDialog,
 
+    closeCreateChoiceDialog,
+    continueFromCreateChoice,
+
     closeRuleDialog,
-    deleteCurrentRule,
     saveRules,
 
     createAdminBooking,
@@ -162,12 +172,36 @@ const {
                 </div>
             </FormSection>
 
-            <BookingRuleDialog
-                v-model:visible="ruleDialogVisible"
+            <CalendarCreateChoiceDialog
+                v-model:visible="createChoiceDialogVisible"
+                :selection="pendingCalendarSelection"
+                @close="closeCreateChoiceDialog"
+                @continue="continueFromCreateChoice"
+            />
+
+            <BookingCreateDialog
+                v-model:visible="createBookingDialogVisible"
+                :services="services"
+                :selection="pendingCalendarSelection"
+                @close="closeCreateBookingDialog"
+                @create-booking="createAdminBooking"
+            />
+
+            <BookingEditDialog
+                v-model:visible="bookingDialogVisible"
+                :booking="selectedBooking"
+                :booking-notes="bookingNotes"
+                :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
+                @update-booking="updateBooking"
+                @cancel-booking="cancelBooking"
+                @reschedule-booking="rescheduleBooking"
+            />
+
+            <AvailabilityRuleCreateEditDialog
+                v-model:visible="availabilityRuleDialogVisible"
                 :current-rule="currentRule"
                 :selected-rule-occurrence="selectedRuleOccurrence"
                 :services="services"
-                :slot-mode-options="slotModeOptions"
                 :repeat-unit-options="repeatUnitOptions"
                 :loading="ruleForm.processing"
                 :get-rule-title="getRuleTitle"
@@ -179,18 +213,24 @@ const {
                 @delete-all="deleteCurrentRuleEverywhere"
             />
 
-            <BookingDialog
-                v-model:visible="bookingDialogVisible"
-                :booking="selectedBooking"
-                :booking-notes="bookingNotes"
-                :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
-                @update-booking="updateBooking"
-                @cancel-booking="cancelBooking"
-                @reschedule-booking="rescheduleBooking"
+            <GroupEventCreateEditDialog
+                v-model:visible="groupEventDialogVisible"
+                :current-rule="currentRule"
+                :selected-rule-occurrence="selectedRuleOccurrence"
+                :services="services"
+                :repeat-unit-options="repeatUnitOptions"
+                :loading="ruleForm.processing"
+                :get-rule-title="getRuleTitle"
+                :get-repeat-label="getRepeatLabel"
+                @close="closeRuleDialog"
+                @save="saveRules"
+                @delete-occurrence="deleteCurrentRuleOccurrence"
+                @delete-from-now-on="deleteCurrentRuleFromNowOn"
+                @delete-all="deleteCurrentRuleEverywhere"
             />
 
-            <<CapacityWindowDialog
-                v-model:visible="capacityWindowDialogVisible"
+            <GroupEventOccurrenceDialog
+                v-model:visible="groupEventOccurrenceDialogVisible"
                 :capacity-window="selectedCapacityWindow"
                 :booking-notes="bookingNotes"
                 :available-slots="availableRescheduleSlots"
@@ -202,14 +242,6 @@ const {
                 @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
                 @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
                 @delete-capacity-window-series="deleteCapacityWindowSeries"
-            />
-
-            <AdminBookingCreateDialog
-                v-model:visible="createBookingDialogVisible"
-                :services="services"
-                :available-slots="availableRescheduleSlots"
-                @close="closeCreateBookingDialog"
-                @create-booking="createAdminBooking"
             />
         </div>
     </AdminLayout>
@@ -260,11 +292,15 @@ const {
 }
 
 .booking-calendar :deep(.booking-rule-free-time) {
-    border: 1px solid #a75a5a;
+    border: 1px dashed #a75a5a;
     background: #fff4f4;
     color: #2f172a;
     border-radius: 8px;
     padding: 2px 4px;
+    opacity: 0.75;
+    overflow: hidden;
+    z-index: 1;
+    cursor: pointer;
 }
 
 .booking-calendar :deep(.booking-reservation-event) {
@@ -273,6 +309,8 @@ const {
     color: #ffffff;
     border-radius: 8px;
     padding: 2px 4px;
+    z-index: 30;
+    cursor: pointer;
 }
 
 .booking-calendar :deep(.booking-capacity-window-event) {
@@ -281,6 +319,8 @@ const {
     color: #ffffff;
     border-radius: 8px;
     padding: 2px 4px;
+    z-index: 20;
+    cursor: pointer;
 }
 
 .booking-calendar :deep(.booking-capacity-window-full) {
@@ -298,19 +338,5 @@ const {
 
 .booking-calendar :deep(.fc-event-time) {
     font-size: 11px;
-}
-
-.booking-calendar :deep(.booking-rule-free-time) {
-    z-index: 1;
-}
-
-.booking-calendar :deep(.booking-capacity-window-event) {
-    z-index: 20;
-    cursor: pointer;
-}
-
-.booking-calendar :deep(.booking-reservation-event) {
-    z-index: 30;
-    cursor: pointer;
 }
 </style>

@@ -8,31 +8,26 @@ export function useBookingCalendar(props) {
     const showAvailabilityRules = ref(true);
     const showReservations = ref(true);
 
-    const ruleDialogVisible = ref(false);
-    const bookingDialogVisible = ref(false);
-    const capacityWindowDialogVisible = ref(false);
+    const createChoiceDialogVisible = ref(false);
+
     const createBookingDialogVisible = ref(false);
+    const bookingDialogVisible = ref(false);
+
+    const availabilityRuleDialogVisible = ref(false);
+    const groupEventDialogVisible = ref(false);
+    const groupEventOccurrenceDialogVisible = ref(false);
+
     const deleteRuleDialogVisible = ref(false);
 
     const selectedRuleIndex = ref(null);
     const selectedBooking = ref(null);
     const selectedCapacityWindow = ref(null);
     const selectedRuleOccurrence = ref(null);
+    const pendingCalendarSelection = ref(null);
 
     const hiddenStatuses = [
         'cancelled',
         'rejected',
-    ];
-
-    const slotModeOptions = [
-        {
-            label: 'Slot pre jednu službu s viacerými klientmi',
-            value: 'single_service_many_clients',
-        },
-        {
-            label: 'Voľný rezervovateľný čas',
-            value: 'free_bookable_time',
-        },
     ];
 
     const repeatUnitOptions = [
@@ -526,29 +521,111 @@ export function useBookingCalendar(props) {
         };
     };
 
-    const openCreateRuleDialog = (selectInfo) => {
-        if (!isSelectionInsideOpeningHours(selectInfo)) {
+    const getSelectionFromDateClick = (clickInfo) => {
+        const start = clickInfo.date;
+        const end = new Date(start);
+
+        end.setMinutes(end.getMinutes() + 30);
+
+        return {
+            start,
+            end,
+            startStr: start.toISOString(),
+            endStr: end.toISOString(),
+            allDay: false,
+        };
+    };
+
+    const getSelectionFromCreateChoiceData = (data) => {
+        return {
+            start: new Date(`${data.date}T${data.starts_at}:00`),
+            end: new Date(`${data.date}T${data.ends_at}:00`),
+            date: data.date,
+            starts_at: data.starts_at,
+            ends_at: data.ends_at,
+        };
+    };
+
+    const openCreateChoiceDialog = (selectionInfo) => {
+        if (!isSelectionInsideOpeningHours(selectionInfo)) {
             return;
         }
 
-        ruleForm.rules.push({
-            ...emptyRule(),
-            date: getDateFromDate(selectInfo.start),
-            starts_at: getTimeFromDate(selectInfo.start),
-            ends_at: getTimeFromDate(selectInfo.end),
-        });
+        pendingCalendarSelection.value = selectionInfo;
+        createChoiceDialogVisible.value = true;
+    };
 
-        selectedRuleIndex.value = ruleForm.rules.length - 1;
-        selectedRuleOccurrence.value = {
-            ruleIndex: selectedRuleIndex.value,
-            occurrenceDate: getDateFromDate(selectInfo.start),
-            isRepeatedOccurrence: false,
+    const closeCreateChoiceDialog = () => {
+        pendingCalendarSelection.value = null;
+        createChoiceDialogVisible.value = false;
+    };
+
+    const continueFromCreateChoice = (data) => {
+        const selectionInfo = getSelectionFromCreateChoiceData(data);
+
+        if (!isSelectionInsideOpeningHours(selectionInfo)) {
+            return;
+        }
+
+        pendingCalendarSelection.value = {
+            ...selectionInfo,
+            date: data.date,
+            starts_at: data.starts_at,
+            ends_at: data.ends_at,
         };
 
-        ruleDialogVisible.value = true;
+        createChoiceDialogVisible.value = false;
+
+        if (data.create_type === 'booking') {
+            createBookingDialogVisible.value = true;
+
+            return;
+        }
+
+        if (data.create_type === 'rule') {
+            ruleForm.rules.push({
+                ...emptyRule(),
+                date: data.date,
+                starts_at: data.starts_at,
+                ends_at: data.ends_at,
+                slot_mode: 'free_bookable_time',
+            });
+
+            selectedRuleIndex.value = ruleForm.rules.length - 1;
+            selectedRuleOccurrence.value = {
+                ruleIndex: selectedRuleIndex.value,
+                occurrenceDate: data.date,
+                isRepeatedOccurrence: false,
+            };
+
+            availabilityRuleDialogVisible.value = true;
+
+            return;
+        }
+
+        if (data.create_type === 'group_event') {
+            ruleForm.rules.push({
+                ...emptyRule(),
+                date: data.date,
+                starts_at: data.starts_at,
+                ends_at: data.ends_at,
+                slot_mode: 'single_service_many_clients',
+                bookable_places: 5,
+            });
+
+            selectedRuleIndex.value = ruleForm.rules.length - 1;
+            selectedRuleOccurrence.value = {
+                ruleIndex: selectedRuleIndex.value,
+                occurrenceDate: data.date,
+                isRepeatedOccurrence: false,
+            };
+
+            groupEventDialogVisible.value = true;
+        }
     };
 
     const openCreateBookingDialog = () => {
+        pendingCalendarSelection.value = null;
         createBookingDialogVisible.value = true;
     };
 
@@ -568,14 +645,22 @@ export function useBookingCalendar(props) {
                 isRepeatedOccurrence: clickInfo.event.extendedProps.isRepeatedOccurrence,
             };
 
-            ruleDialogVisible.value = true;
+            const rule = ruleForm.rules[selectedRuleIndex.value];
+
+            if (rule?.slot_mode === 'single_service_many_clients') {
+                groupEventDialogVisible.value = true;
+
+                return;
+            }
+
+            availabilityRuleDialogVisible.value = true;
 
             return;
         }
 
         if (type === 'capacity_window') {
             selectedCapacityWindow.value = clickInfo.event.extendedProps.capacityWindow;
-            capacityWindowDialogVisible.value = true;
+            groupEventOccurrenceDialogVisible.value = true;
 
             return;
         }
@@ -686,6 +771,13 @@ export function useBookingCalendar(props) {
         }
     };
 
+    const closeRuleDialog = () => {
+        selectedRuleIndex.value = null;
+        selectedRuleOccurrence.value = null;
+        availabilityRuleDialogVisible.value = false;
+        groupEventDialogVisible.value = false;
+    };
+
     const deleteCurrentRule = () => {
         if (selectedRuleIndex.value === null) {
             return;
@@ -695,13 +787,8 @@ export function useBookingCalendar(props) {
 
         selectedRuleIndex.value = null;
         selectedRuleOccurrence.value = null;
-        ruleDialogVisible.value = false;
-    };
-
-    const closeRuleDialog = () => {
-        selectedRuleIndex.value = null;
-        selectedRuleOccurrence.value = null;
-        ruleDialogVisible.value = false;
+        availabilityRuleDialogVisible.value = false;
+        groupEventDialogVisible.value = false;
     };
 
     const saveRules = () => {
@@ -740,6 +827,7 @@ export function useBookingCalendar(props) {
                 preserveState: false,
                 onSuccess: () => {
                     closeRuleDialog();
+                    pendingCalendarSelection.value = null;
                 },
             });
     };
@@ -767,7 +855,7 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 bookingDialogVisible.value = false;
-                capacityWindowDialogVisible.value = false;
+                groupEventOccurrenceDialogVisible.value = false;
             },
         });
     };
@@ -782,7 +870,7 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 bookingDialogVisible.value = false;
-                capacityWindowDialogVisible.value = false;
+                groupEventOccurrenceDialogVisible.value = false;
             },
         });
     };
@@ -801,7 +889,7 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 bookingDialogVisible.value = false;
-                capacityWindowDialogVisible.value = false;
+                groupEventOccurrenceDialogVisible.value = false;
             },
         });
     };
@@ -815,7 +903,7 @@ export function useBookingCalendar(props) {
             preserveScroll: true,
             preserveState: false,
             onSuccess: () => {
-                capacityWindowDialogVisible.value = false;
+                groupEventOccurrenceDialogVisible.value = false;
                 selectedCapacityWindow.value = null;
             },
         });
@@ -832,18 +920,22 @@ export function useBookingCalendar(props) {
             preserveScroll: true,
             preserveState: false,
             onSuccess: () => {
-                capacityWindowDialogVisible.value = false;
+                groupEventOccurrenceDialogVisible.value = false;
                 selectedCapacityWindow.value = null;
             },
         });
     };
 
     const createAdminBooking = (data = {}) => {
+        const selectionInfo = pendingCalendarSelection.value;
+
         router.post(route('branches.booking.bookings.store', props.branch.id), {
             booking_slot_id: data.booking_slot_id ?? null,
             service_id: data.service_id ?? null,
-            starts_at: data.starts_at ?? null,
-            ends_at: data.ends_at ?? null,
+            starts_at: data.starts_at
+                ?? (selectionInfo ? toLocalDateTimeString(selectionInfo.start) : null),
+            ends_at: data.ends_at
+                ?? (selectionInfo ? toLocalDateTimeString(selectionInfo.end) : null),
             patient_name: data.patient_name,
             patient_email: data.patient_email,
             patient_phone: data.patient_phone,
@@ -855,6 +947,7 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 closeCreateBookingDialog();
+                pendingCalendarSelection.value = null;
             },
         });
     };
@@ -885,8 +978,14 @@ export function useBookingCalendar(props) {
 
         if (type === 'rule') {
             harness.style.zIndex = '1';
+            harness.style.width = '22%';
+            harness.style.right = '0';
+            harness.style.left = 'auto';
+
             mountInfo.el.style.zIndex = '1';
             mountInfo.el.style.cursor = 'pointer';
+
+            return;
         }
     };
 
@@ -910,7 +1009,8 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 deleteRuleDialogVisible.value = false;
-                ruleDialogVisible.value = false;
+                availabilityRuleDialogVisible.value = false;
+                groupEventDialogVisible.value = false;
                 selectedRuleOccurrence.value = null;
                 selectedRuleIndex.value = null;
             },
@@ -937,7 +1037,8 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 deleteRuleDialogVisible.value = false;
-                ruleDialogVisible.value = false;
+                availabilityRuleDialogVisible.value = false;
+                groupEventDialogVisible.value = false;
                 selectedRuleOccurrence.value = null;
                 selectedRuleIndex.value = null;
             },
@@ -962,7 +1063,8 @@ export function useBookingCalendar(props) {
             preserveState: false,
             onSuccess: () => {
                 deleteRuleDialogVisible.value = false;
-                ruleDialogVisible.value = false;
+                availabilityRuleDialogVisible.value = false;
+                groupEventDialogVisible.value = false;
                 selectedRuleOccurrence.value = null;
                 selectedRuleIndex.value = null;
             },
@@ -975,6 +1077,52 @@ export function useBookingCalendar(props) {
 
     const closeDeleteRuleDialog = () => {
         deleteRuleDialogVisible.value = false;
+    };
+
+    const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
+        router.post(route('branches.booking.capacity-windows.delete-occurrence', [props.branch.id, capacityWindow.rule_id]), {
+            date: options.date ?? capacityWindow.date,
+            notify_patient: Boolean(options.notify_patient ?? true),
+            notification_reason: options.notification_reason ?? null,
+        }, {
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => {
+                groupEventOccurrenceDialogVisible.value = false;
+                selectedCapacityWindow.value = null;
+            },
+        });
+    };
+
+    const deleteCapacityWindowFromDate = (capacityWindow, options = {}) => {
+        router.post(route('branches.booking.capacity-windows.delete-from-date', [props.branch.id, capacityWindow.rule_id]), {
+            date: options.date ?? capacityWindow.date,
+            notify_patient: Boolean(options.notify_patient ?? true),
+            notification_reason: options.notification_reason ?? null,
+        }, {
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => {
+                groupEventOccurrenceDialogVisible.value = false;
+                selectedCapacityWindow.value = null;
+            },
+        });
+    };
+
+    const deleteCapacityWindowSeries = (capacityWindow, options = {}) => {
+        router.delete(route('branches.booking.capacity-windows.delete-series', [props.branch.id, capacityWindow.rule_id]), {
+            data: {
+                date: options.date ?? capacityWindow.date,
+                notify_patient: Boolean(options.notify_patient ?? true),
+                notification_reason: options.notification_reason ?? null,
+            },
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => {
+                groupEventOccurrenceDialogVisible.value = false;
+                selectedCapacityWindow.value = null;
+            },
+        });
     };
 
     const calendarOptions = computed(() => {
@@ -1037,77 +1185,40 @@ export function useBookingCalendar(props) {
             },
 
             events: calendarEvents.value,
-            select: openCreateRuleDialog,
+
+            select: openCreateChoiceDialog,
+            dateClick: (clickInfo) => {
+                openCreateChoiceDialog(getSelectionFromDateClick(clickInfo));
+            },
             eventClick: openEventDialog,
             eventDrop: handleEventDropOrResize,
             eventResize: handleEventDropOrResize,
         };
     });
 
-    const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
-    router.post(route('branches.booking.capacity-windows.delete-occurrence', [props.branch.id, capacityWindow.rule_id]), {
-        date: options.date ?? capacityWindow.date,
-        notify_patient: Boolean(options.notify_patient ?? true),
-        notification_reason: options.notification_reason ?? null,
-    }, {
-        preserveScroll: true,
-        preserveState: false,
-        onSuccess: () => {
-            capacityWindowDialogVisible.value = false;
-            selectedCapacityWindow.value = null;
-        },
-    });
-};
-
-const deleteCapacityWindowFromDate = (capacityWindow, options = {}) => {
-    router.post(route('branches.booking.capacity-windows.delete-from-date', [props.branch.id, capacityWindow.rule_id]), {
-        date: options.date ?? capacityWindow.date,
-        notify_patient: Boolean(options.notify_patient ?? true),
-        notification_reason: options.notification_reason ?? null,
-    }, {
-        preserveScroll: true,
-        preserveState: false,
-        onSuccess: () => {
-            capacityWindowDialogVisible.value = false;
-            selectedCapacityWindow.value = null;
-        },
-    });
-};
-
-const deleteCapacityWindowSeries = (capacityWindow, options = {}) => {
-    router.delete(route('branches.booking.capacity-windows.delete-series', [props.branch.id, capacityWindow.rule_id]), {
-        data: {
-            date: options.date ?? capacityWindow.date,
-            notify_patient: Boolean(options.notify_patient ?? true),
-            notification_reason: options.notification_reason ?? null,
-        },
-        preserveScroll: true,
-        preserveState: false,
-        onSuccess: () => {
-            capacityWindowDialogVisible.value = false;
-            selectedCapacityWindow.value = null;
-        },
-    });
-};
-
     return {
         showAvailabilityRules,
         showReservations,
 
-        ruleDialogVisible,
-        bookingDialogVisible,
-        capacityWindowDialogVisible,
+        createChoiceDialogVisible,
+
         createBookingDialogVisible,
+        bookingDialogVisible,
+
+        availabilityRuleDialogVisible,
+        groupEventDialogVisible,
+        groupEventOccurrenceDialogVisible,
+
         deleteRuleDialogVisible,
 
         selectedBooking,
         selectedCapacityWindow,
         selectedRuleOccurrence,
+        pendingCalendarSelection,
 
         ruleForm,
         currentRule,
 
-        slotModeOptions,
         repeatUnitOptions,
 
         bookingNotes,
@@ -1119,6 +1230,9 @@ const deleteCapacityWindowSeries = (capacityWindow, options = {}) => {
 
         openCreateBookingDialog,
         closeCreateBookingDialog,
+
+        closeCreateChoiceDialog,
+        continueFromCreateChoice,
 
         closeRuleDialog,
         deleteCurrentRule,

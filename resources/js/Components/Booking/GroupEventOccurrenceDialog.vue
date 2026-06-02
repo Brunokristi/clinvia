@@ -241,7 +241,7 @@ const deleteCapacityWindowSeries = () => {
     <Dialog
         v-model:visible="dialogVisible"
         modal
-        header="Kapacitné okno"
+        header="Skupinový termín"
         :style="{ width: '980px', maxWidth: '95vw' }"
     >
         <div
@@ -267,11 +267,11 @@ const deleteCapacityWindowSeries = () => {
 
             <div class="rounded-md border border-soft bg-white p-4">
                 <p class="text-base font-semibold text-dark">
-                    Hromadné akcie pre celé kapacitné okno
+                    Hromadné akcie pre celý skupinový termín
                 </p>
 
                 <p class="mt-1 text-sm text-accent">
-                    Tieto akcie sa použijú na všetkých pacientov v tomto kapacitnom okne.
+                    Tieto akcie sa použijú na všetkých pacientov v tomto skupinovom termíne.
                 </p>
 
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
@@ -337,7 +337,7 @@ const deleteCapacityWindowSeries = () => {
                 <div class="mt-4 flex flex-wrap gap-3">
                     <Button
                         type="button"
-                        label="Presunúť celé okno"
+                        label="Presunúť celý termín"
                         icon="pi pi-calendar"
                         :disabled="!groupForm.starts_at || !groupForm.ends_at || !bookings.length"
                         @click="rescheduleCapacityWindow"
@@ -345,7 +345,7 @@ const deleteCapacityWindowSeries = () => {
 
                     <Button
                         type="button"
-                        label="Zrušiť celé okno"
+                        label="Zrušiť celý termín"
                         icon="pi pi-times"
                         severity="danger"
                         outlined
@@ -533,7 +533,7 @@ const deleteCapacityWindowSeries = () => {
                 v-else
                 class="rounded-md bg-soft p-4 text-sm text-accent"
             >
-                V tomto kapacitnom okne zatiaľ nie sú žiadne rezervácie.
+                V tomto skupinovom termíne zatiaľ nie sú žiadne rezervácie.
             </div>
         </div>
 
@@ -541,7 +541,7 @@ const deleteCapacityWindowSeries = () => {
             v-else
             class="rounded-md bg-soft p-4 text-sm text-accent"
         >
-            Kapacitné okno sa nepodarilo načítať.
+            Skupinový termín sa nepodarilo načítať.
         </div>
     </Dialog>
 </template>

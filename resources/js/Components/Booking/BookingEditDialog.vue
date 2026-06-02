@@ -121,7 +121,7 @@ const rescheduleBooking = () => {
     <Dialog
         v-model:visible="dialogVisible"
         modal
-        header="Rezervácia"
+        header="Upraviť rezerváciu"
         :style="{ width: '760px', maxWidth: '95vw' }"
     >
         <div

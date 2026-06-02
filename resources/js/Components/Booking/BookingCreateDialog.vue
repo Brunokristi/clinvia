@@ -16,9 +16,9 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    availableSlots: {
-        type: Array,
-        default: () => [],
+    selection: {
+        type: Object,
+        default: null,
     },
 });
 
@@ -35,7 +35,8 @@ const dialogVisible = computed({
 
 const form = reactive({
     service_id: null,
-    booking_slot_id: null,
+    date: '',
+    starts_at: '',
     patient_name: '',
     patient_email: '',
     patient_phone: '',
@@ -53,34 +54,91 @@ const serviceOptions = computed(() => {
         }));
 });
 
-const slotOptions = computed(() => {
-    return props.availableSlots
-        .filter((slot) => Number(slot.service_id) === Number(form.service_id))
-        .map((slot) => ({
-            label: slot.label ?? formatSlotLabel(slot),
-            value: slot.id,
-        }));
+const selectedService = computed(() => {
+    return props.services.find((service) => {
+        return Number(service.id) === Number(form.service_id);
+    }) ?? null;
+});
+
+const selectedServiceDuration = computed(() => {
+    const service = selectedService.value;
+
+    if (!service) {
+        return null;
+    }
+
+    return Number(
+        service.duration_minutes
+            ?? service.duration
+            ?? service.length_minutes
+            ?? service.minutes
+            ?? 0,
+    );
+});
+
+const calculatedEndsAt = computed(() => {
+    if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+        return '';
+    }
+
+    const start = new Date(`${form.date}T${form.starts_at}:00`);
+
+    start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
+
+    const hours = String(start.getHours()).padStart(2, '0');
+    const minutes = String(start.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
+});
+
+const startsAtForBackend = computed(() => {
+    if (!form.date || !form.starts_at) {
+        return null;
+    }
+
+    return `${form.date} ${form.starts_at}:00`;
+});
+
+const endsAtForBackend = computed(() => {
+    if (!form.date || !calculatedEndsAt.value) {
+        return null;
+    }
+
+    return `${form.date} ${calculatedEndsAt.value}:00`;
 });
 
 const canSubmit = computed(() => {
     return Boolean(form.service_id)
-        && Boolean(form.booking_slot_id)
+        && Boolean(form.date)
+        && Boolean(form.starts_at)
+        && Boolean(calculatedEndsAt.value)
         && Boolean(form.patient_name.trim());
 });
 
-watch(() => form.service_id, () => {
-    form.booking_slot_id = null;
-});
+const getDateFromDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
 
-watch(() => props.visible, (visible) => {
-    if (visible) {
-        resetForm();
-    }
-});
+    return `${year}-${month}-${day}`;
+};
+
+const getTimeFromDate = (date) => {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
+};
 
 const resetForm = () => {
     form.service_id = null;
-    form.booking_slot_id = null;
+
+    form.date = props.selection?.date
+        ?? (props.selection?.start ? getDateFromDate(props.selection.start) : '');
+
+    form.starts_at = props.selection?.starts_at
+        ?? (props.selection?.start ? getTimeFromDate(props.selection.start) : '');
+
     form.patient_name = '';
     form.patient_email = '';
     form.patient_phone = '';
@@ -88,6 +146,18 @@ const resetForm = () => {
     form.admin_note = '';
     form.notify_patient = true;
 };
+
+watch(() => props.visible, (visible) => {
+    if (visible) {
+        resetForm();
+    }
+});
+
+watch(() => props.selection, () => {
+    if (props.visible) {
+        resetForm();
+    }
+});
 
 const closeDialog = () => {
     emit('update:visible', false);
@@ -100,7 +170,10 @@ const submit = () => {
     }
 
     emit('create-booking', {
-        booking_slot_id: form.booking_slot_id,
+        service_id: form.service_id,
+        booking_slot_id: null,
+        starts_at: startsAtForBackend.value,
+        ends_at: endsAtForBackend.value,
         patient_name: form.patient_name,
         patient_email: form.patient_email,
         patient_phone: form.patient_phone,
@@ -108,30 +181,6 @@ const submit = () => {
         admin_note: form.admin_note,
         notify_patient: form.notify_patient,
     });
-};
-
-const formatDateTime = (value) => {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleString('sk-SK', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
-
-const formatSlotLabel = (slot) => {
-    const start = formatDateTime(slot.starts_at);
-    const end = new Date(slot.ends_at).toLocaleTimeString('sk-SK', {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-
-    return `${start} - ${end}`;
 };
 </script>
 
@@ -160,20 +209,52 @@ const formatSlotLabel = (slot) => {
                     />
                 </div>
 
-                <div class="md:col-span-2">
+                <div>
                     <label class="mb-2 block text-sm font-medium text-dark">
-                        Termín
+                        Dátum
                     </label>
 
-                    <Select
-                        v-model="form.booking_slot_id"
-                        :options="slotOptions"
-                        option-label="label"
-                        option-value="value"
-                        placeholder="Vyberte dostupný termín"
+                    <InputText
+                        v-model="form.date"
+                        type="date"
                         class="w-full"
-                        :disabled="!form.service_id"
                     />
+                </div>
+
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-dark">
+                        Začiatok
+                    </label>
+
+                    <InputText
+                        v-model="form.starts_at"
+                        type="time"
+                        class="w-full"
+                    />
+                </div>
+
+                <div class="md:col-span-2">
+                    <label class="mb-2 block text-sm font-medium text-dark">
+                        Koniec
+                    </label>
+
+                    <InputText
+                        :model-value="calculatedEndsAt"
+                        type="time"
+                        class="w-full"
+                        readonly
+                    />
+
+                    <p class="mt-2 text-sm text-accent">
+                        Koniec sa vypočíta automaticky podľa trvania vybranej služby.
+                    </p>
+
+                    <p
+                        v-if="selectedService && !selectedServiceDuration"
+                        class="mt-2 text-sm text-red-600"
+                    >
+                        Vybraná služba nemá nastavené trvanie. Skontrolujte pole duration_minutes, duration, length_minutes alebo minutes.
+                    </p>
                 </div>
 
                 <div>
