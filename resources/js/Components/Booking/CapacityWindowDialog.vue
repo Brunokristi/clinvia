@@ -33,6 +33,9 @@ const emit = defineEmits([
     'reschedule-booking',
     'cancel-capacity-window',
     'reschedule-capacity-window',
+    'delete-capacity-window-occurrence',
+    'delete-capacity-window-from-date',
+    'delete-capacity-window-series',
 ]);
 
 const dialogVisible = computed({
@@ -196,6 +199,42 @@ const rescheduleCapacityWindow = () => {
         notification_reason: groupForm.notification_reason,
     });
 };
+
+const deleteCapacityWindowOccurrence = () => {
+    if (!props.capacityWindow || !capacityWindowDate.value) {
+        return;
+    }
+
+    emit('delete-capacity-window-occurrence', props.capacityWindow, {
+        date: capacityWindowDate.value,
+        notify_patient: groupForm.notify_patient,
+        notification_reason: groupForm.notification_reason,
+    });
+};
+
+const deleteCapacityWindowFromDate = () => {
+    if (!props.capacityWindow || !capacityWindowDate.value) {
+        return;
+    }
+
+    emit('delete-capacity-window-from-date', props.capacityWindow, {
+        date: capacityWindowDate.value,
+        notify_patient: groupForm.notify_patient,
+        notification_reason: groupForm.notification_reason,
+    });
+};
+
+const deleteCapacityWindowSeries = () => {
+    if (!props.capacityWindow || !capacityWindowDate.value) {
+        return;
+    }
+
+    emit('delete-capacity-window-series', props.capacityWindow, {
+        date: capacityWindowDate.value,
+        notify_patient: groupForm.notify_patient,
+        notification_reason: groupForm.notification_reason,
+    });
+};
 </script>
 
 <template>
@@ -312,6 +351,44 @@ const rescheduleCapacityWindow = () => {
                         outlined
                         :disabled="!bookings.length"
                         @click="cancelCapacityWindow"
+                    />
+                </div>
+            </div>
+
+            <div class="rounded-md border border-red-100 bg-red-50 p-4">
+                <p class="text-base font-semibold text-dark">
+                    Vymazať skupinový termín
+                </p>
+
+                <p class="mt-1 text-sm text-accent">
+                    Ak sú v tomto termíne pacienti, rezervácie sa zrušia a podľa nastavenia dostanú email.
+                </p>
+
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <Button
+                        type="button"
+                        label="Vymazať iba tento termín"
+                        icon="pi pi-calendar-times"
+                        severity="warn"
+                        outlined
+                        @click="deleteCapacityWindowOccurrence"
+                    />
+
+                    <Button
+                        type="button"
+                        label="Vymazať od tohto termínu ďalej"
+                        icon="pi pi-forward"
+                        severity="danger"
+                        outlined
+                        @click="deleteCapacityWindowFromDate"
+                    />
+
+                    <Button
+                        type="button"
+                        label="Vymazať celú sériu"
+                        icon="pi pi-trash"
+                        severity="danger"
+                        @click="deleteCapacityWindowSeries"
                     />
                 </div>
             </div>

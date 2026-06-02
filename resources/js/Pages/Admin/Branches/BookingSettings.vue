@@ -87,6 +87,10 @@ const {
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
+
+    deleteCapacityWindowOccurrence,
+    deleteCapacityWindowFromDate,
+    deleteCapacityWindowSeries,
 } = useBookingCalendar(props);
 </script>
 
@@ -185,7 +189,7 @@ const {
                 @reschedule-booking="rescheduleBooking"
             />
 
-            <CapacityWindowDialog
+            <<CapacityWindowDialog
                 v-model:visible="capacityWindowDialogVisible"
                 :capacity-window="selectedCapacityWindow"
                 :booking-notes="bookingNotes"
@@ -195,6 +199,9 @@ const {
                 @reschedule-booking="rescheduleBooking"
                 @cancel-capacity-window="cancelCapacityWindow"
                 @reschedule-capacity-window="rescheduleCapacityWindow"
+                @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
+                @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
+                @delete-capacity-window-series="deleteCapacityWindowSeries"
             />
 
             <AdminBookingCreateDialog

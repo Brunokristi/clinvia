@@ -737,6 +737,7 @@ export function useBookingCalendar(props) {
             }))
             .put(route('branches.booking.rules.update', props.branch.id), {
                 preserveScroll: true,
+                preserveState: false,
                 onSuccess: () => {
                     closeRuleDialog();
                 },
@@ -1043,6 +1044,52 @@ export function useBookingCalendar(props) {
         };
     });
 
+    const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
+    router.post(route('branches.booking.capacity-windows.delete-occurrence', [props.branch.id, capacityWindow.rule_id]), {
+        date: options.date ?? capacityWindow.date,
+        notify_patient: Boolean(options.notify_patient ?? true),
+        notification_reason: options.notification_reason ?? null,
+    }, {
+        preserveScroll: true,
+        preserveState: false,
+        onSuccess: () => {
+            capacityWindowDialogVisible.value = false;
+            selectedCapacityWindow.value = null;
+        },
+    });
+};
+
+const deleteCapacityWindowFromDate = (capacityWindow, options = {}) => {
+    router.post(route('branches.booking.capacity-windows.delete-from-date', [props.branch.id, capacityWindow.rule_id]), {
+        date: options.date ?? capacityWindow.date,
+        notify_patient: Boolean(options.notify_patient ?? true),
+        notification_reason: options.notification_reason ?? null,
+    }, {
+        preserveScroll: true,
+        preserveState: false,
+        onSuccess: () => {
+            capacityWindowDialogVisible.value = false;
+            selectedCapacityWindow.value = null;
+        },
+    });
+};
+
+const deleteCapacityWindowSeries = (capacityWindow, options = {}) => {
+    router.delete(route('branches.booking.capacity-windows.delete-series', [props.branch.id, capacityWindow.rule_id]), {
+        data: {
+            date: options.date ?? capacityWindow.date,
+            notify_patient: Boolean(options.notify_patient ?? true),
+            notification_reason: options.notification_reason ?? null,
+        },
+        preserveScroll: true,
+        preserveState: false,
+        onSuccess: () => {
+            capacityWindowDialogVisible.value = false;
+            selectedCapacityWindow.value = null;
+        },
+    });
+};
+
     return {
         showAvailabilityRules,
         showReservations,
@@ -1089,5 +1136,9 @@ export function useBookingCalendar(props) {
         deleteCurrentRuleOccurrence,
         deleteCurrentRuleFromNowOn,
         deleteCurrentRuleEverywhere,
+
+        deleteCapacityWindowOccurrence,
+        deleteCapacityWindowFromDate,
+        deleteCapacityWindowSeries,
     };
 }

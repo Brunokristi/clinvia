@@ -200,6 +200,15 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/booking/capacity-windows/{rule}/reschedule', [BranchBookingController::class, 'rescheduleCapacityWindow'])
                     ->name('booking.capacity-windows.reschedule');
 
+                Route::post('/booking/capacity-windows/{rule}/delete-occurrence', [BranchBookingController::class, 'deleteCapacityWindowOccurrence'])
+                    ->name('booking.capacity-windows.delete-occurrence');
+
+                Route::post('/booking/capacity-windows/{rule}/delete-from-date', [BranchBookingController::class, 'deleteCapacityWindowFromDate'])
+                    ->name('booking.capacity-windows.delete-from-date');
+
+                Route::delete('/booking/capacity-windows/{rule}', [BranchBookingController::class, 'deleteCapacityWindowSeries'])
+                    ->name('booking.capacity-windows.delete-series');
+
                 Route::put('/booking/messages/{message}/read', [BranchBookingController::class, 'markMessageRead'])
                     ->name('booking.messages.read');
 
