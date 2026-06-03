@@ -74,21 +74,27 @@ class BranchBookingCalendarController extends Controller
             'services.*.buffer_before_minutes' => ['nullable', 'integer', 'min:0'],
             'services.*.buffer_after_minutes' => ['nullable', 'integer', 'min:0'],
             'services.*.booking_type' => ['required', 'in:individual,group'],
+            'services.*.public_booking_type' => ['nullable', 'in:appointment_request,immediate_booking'],
         ]);
 
         DB::transaction(function () use ($branch, $validated): void {
             foreach ($validated['services'] as $item) {
-                Service::query()
+                $service = Service::query()
                     ->where('branch_id', $branch->id)
                     ->whereKey($item['id'])
-                    ->update([
-                        'is_bookable' => $item['is_bookable'],
-                        'duration_minutes' => $item['duration_minutes'] ?? null,
-                        'capacity' => $item['capacity'] ?? 1,
-                        'buffer_before_minutes' => $item['buffer_before_minutes'] ?? 0,
-                        'buffer_after_minutes' => $item['buffer_after_minutes'] ?? 0,
-                        'booking_type' => $item['booking_type'],
-                    ]);
+                    ->firstOrFail();
+
+                $service->update([
+                    'is_bookable' => $item['is_bookable'],
+                    'duration_minutes' => $item['duration_minutes'] ?? null,
+                    'capacity' => $item['capacity'] ?? 1,
+                    'buffer_before_minutes' => $item['buffer_before_minutes'] ?? 0,
+                    'buffer_after_minutes' => $item['buffer_after_minutes'] ?? 0,
+                    'booking_type' => $item['booking_type'],
+                    'public_booking_type' => $item['public_booking_type']
+                        ?? $service->public_booking_type
+                        ?? 'appointment_request',
+                ]);
             }
         });
 

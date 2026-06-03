@@ -98,11 +98,7 @@ const dialogTitle = computed(() => {
 const isCapacityWindowRepeatable = computed(() => {
     return Boolean(
         props.capacityWindow?.repeats
-            ?? props.capacityWindow?.is_recurring
-            ?? props.capacityWindow?.repeat_unit
-            ?? props.capacityWindow?.series_id
-            ?? props.capacityWindow?.rule_id
-            ?? false,
+            || props.capacityWindow?.is_recurring
     );
 });
 
@@ -270,6 +266,12 @@ const deleteCapacityWindowOccurrence = () => {
         return;
     }
 
+    if (!isCapacityWindowRepeatable.value) {
+        deleteCapacityWindowSeries();
+
+        return;
+    }
+
     emit('delete-capacity-window-occurrence', props.capacityWindow, {
         date: selectedDateForBackend.value,
         notify_patient: groupForm.notify_patient,
@@ -279,6 +281,12 @@ const deleteCapacityWindowOccurrence = () => {
 
 const deleteCapacityWindowFromDate = () => {
     if (!props.capacityWindow || !selectedDateForBackend.value) {
+        return;
+    }
+
+    if (!isCapacityWindowRepeatable.value) {
+        deleteCapacityWindowSeries();
+
         return;
     }
 

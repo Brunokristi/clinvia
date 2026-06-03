@@ -26,6 +26,7 @@ class Service extends Model
         'buffer_before_minutes',
         'buffer_after_minutes',
         'booking_type',
+        'public_booking_type',
         'insurance_amount',
         'insurance_note',
         'self_pay_amount',
@@ -64,6 +65,7 @@ class Service extends Model
     {
         return $this->belongsTo(Category::class);
     }
+
     public function information(): HasMany
     {
         return $this->hasMany(ServiceInformation::class)->orderBy('sort_order');
@@ -98,5 +100,15 @@ class Service extends Model
     public function bookingSlots(): HasMany
     {
         return $this->hasMany(BookingSlot::class);
+    }
+
+    public function appointmentRequests(): BelongsToMany
+    {
+        return $this->belongsToMany(AppointmentRequest::class)
+            ->withPivot([
+                'duration_minutes_snapshot',
+                'price_snapshot',
+            ])
+            ->withTimestamps();
     }
 }

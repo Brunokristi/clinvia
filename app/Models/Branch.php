@@ -113,4 +113,9 @@ class Branch extends Model
     {
         return $this->hasOne(BranchPublicSite::class);
     }
+
+    public function appointmentRequests(): HasMany
+    {
+        return $this->hasMany(AppointmentRequest::class);
+    }
 }

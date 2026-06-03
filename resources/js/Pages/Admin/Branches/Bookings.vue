@@ -101,8 +101,7 @@ const {
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
     deleteCapacityWindowSeries,
-
-    addPatientToCapacityWindow,
+    
 } = useBookingCalendar(props);
 </script>
 

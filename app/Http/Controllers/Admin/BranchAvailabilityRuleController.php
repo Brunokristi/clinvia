@@ -109,11 +109,12 @@ class BranchAvailabilityRuleController extends Controller
         abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
 
         $ruleStartDate = $rule->date
-            ? Carbon::parse($rule->date)
-            : now();
+            ? Carbon::parse($rule->date)->startOfDay()
+            : now()->startOfDay();
 
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $ruleStartDate);
 
+        $rule->services()->detach();
         $rule->delete();
 
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
@@ -130,20 +131,33 @@ class BranchAvailabilityRuleController extends Controller
             'date' => ['required', 'date'],
         ]);
 
-        $date = Carbon::parse($validated['date'])->toDateString();
-        $excludedDates = $rule->excluded_dates ?? [];
+        $date = Carbon::parse($validated['date'])->startOfDay();
 
-        if (! in_array($date, $excludedDates, true)) {
-            $excludedDates[] = $date;
+        if (! $rule->repeats) {
+            app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
+
+            $rule->services()->detach();
+            $rule->delete();
+
+            app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+            return back()->with('success', 'Pravidlo bolo vymazané.');
         }
 
-        sort($excludedDates);
+        $dateString = $date->toDateString();
+
+        $excludedDates = collect($rule->excluded_dates ?? [])
+            ->push($dateString)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
 
         $rule->update([
             'excluded_dates' => $excludedDates,
         ]);
 
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, Carbon::parse($date));
+        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
         return back()->with('success', 'Tento deň bol vymazaný z opakovania.');
@@ -159,6 +173,17 @@ class BranchAvailabilityRuleController extends Controller
         ]);
 
         $date = Carbon::parse($validated['date'])->startOfDay();
+
+        if (! $rule->repeats) {
+            app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
+
+            $rule->services()->detach();
+            $rule->delete();
+
+            app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+            return back()->with('success', 'Pravidlo bolo vymazané.');
+        }
 
         $rule->update([
             'repeat_ends_on' => $date->copy()->subDay()->toDateString(),
