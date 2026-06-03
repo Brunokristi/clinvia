@@ -1,14 +1,11 @@
 <script setup>
-import Avatar from 'primevue/avatar';
-import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import DatePicker from 'primevue/datepicker';
 import Select from 'primevue/select';
-import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
 
-import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
@@ -75,6 +72,36 @@ const calculatedEndPreview = computed(() => {
     const end = new Date(form.starts_at);
     end.setMinutes(end.getMinutes() + selectedServiceDuration.value);
     return end;
+});
+
+const bookingDateModel = computed({
+    get: () => form.starts_at ? new Date(form.starts_at) : null,
+    set: (value) => {
+        if (!value) {
+            form.starts_at = null;
+
+            return;
+        }
+
+        const current = form.starts_at ? new Date(form.starts_at) : new Date(value);
+        current.setFullYear(value.getFullYear(), value.getMonth(), value.getDate());
+        form.starts_at = current;
+    },
+});
+
+const bookingStartTimeModel = computed({
+    get: () => form.starts_at ? new Date(form.starts_at) : null,
+    set: (value) => {
+        if (!value) {
+            form.starts_at = null;
+
+            return;
+        }
+
+        const current = form.starts_at ? new Date(form.starts_at) : new Date();
+        current.setHours(value.getHours(), value.getMinutes(), 0, 0);
+        form.starts_at = current;
+    },
 });
 
 const hasPatientEmail = computed(() => Boolean(props.booking?.patient_email));
@@ -171,68 +198,47 @@ const updateStatus = (status) => {
 </script>
 
 <template>
-    <AppDialog
+    <EventDialog
         :visible="visible"
-        title="Detail rezervácie"
-        width="max-w-3xl"
-        show-footer
-        close-label="Zavrieť"
+        v-model:date="bookingDateModel"
+        v-model:starts-at="bookingStartTimeModel"
+        :ends-at="calculatedEndPreview"
+        date-id="booking_edit_date"
+        starts-at-id="booking_edit_starts_at"
+        ends-at-id="booking_edit_ends_at"
+        starts-at-label="Začiatok"
+        ends-at-label="Koniec"
+        ends-at-placeholder="Dopočíta sa zo služby"
+        readonly-ends-at
+        disabled-ends-at
+        save-label="Uložiť"
+        :show-save="hasBookingChanges"
+        :save-disabled="!canSaveChanges"
+        show-delete
+        delete-label="Odstrániť"
+        delete-dialog-title="Zrušiť rezerváciu"
+        delete-dialog-description="Táto rezervácia je jednorazová, preto je dostupná iba jedna možnosť."
+        delete-one-label="Zrušiť túto rezerváciu"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
+        @save="rescheduleBooking"
+        @delete-occurrence="cancelBooking"
     >
         <div v-if="booking" class="space-y-6">
-            
-            <FormSection title="Termín" description="Upravte dátum a čas začiatku rezervácie.">
-                <FormField label="Dátum a čas rezervácie" for="reschedule_starts_at" required>
-                    <DatePicker
-                        input-id="reschedule_starts_at"
-                        v-model="form.starts_at"
-                        show-time
-                        hour-format="24"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte nový začiatok"
-                    />
-                </FormField>
-            </FormSection>
+            <FormSection title="Pacient a rezervácia" columns="md:grid-cols-2">
+                <PatientCard
+                    class="md:col-span-2"
+                    :patient="booking"
+                    :status="bookingStatusLabel"
+                    :service-name="selectedService?.name"
+                >
+                    <p v-if="booking.patient_note" class="mt-4 whitespace-pre-line rounded-lg border border-soft/60 bg-soft/40 p-3 text-sm leading-6 text-dark">
+                        <span class="mb-1 block text-xs font-medium text-accent">Poznámka od pacienta:</span>
+                        {{ booking.patient_note }}
+                    </p>
+                </PatientCard>
 
-            <div class="rounded-xl border border-soft bg-white p-5 shadow-sm">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs uppercase tracking-wider font-semibold text-accent">Pacient</span>
-                    <Tag :severity="bookingStatusSeverity">{{ bookingStatusLabel }}</Tag>
-                </div>
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div class="flex min-w-0 items-start gap-4">
-                        <Avatar
-                            :label="patientInitials"
-                            shape="circle"
-                            size="large"
-                            class="shrink-0 bg-soft text-dark font-semibold"
-                        />
-                        <div class="min-w-0">
-                            <h3 class="text-xl font-semibold text-dark">
-                                {{ booking.patient_name ?? 'Bez mena' }}
-                            </h3>
-                            <div class="mt-2 flex flex-wrap gap-2">
-                                <Tag v-if="booking.patient_email" severity="secondary" icon="pi pi-envelope">
-                                    {{ booking.patient_email }}
-                                </Tag>
-                                <Tag v-if="booking.patient_phone" severity="secondary" icon="pi pi-phone">
-                                    {{ booking.patient_phone }}
-                                </Tag>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <p v-if="booking.patient_note" class="mt-4 whitespace-pre-line rounded-lg bg-soft/40 p-3 text-sm leading-6 text-dark border border-soft/60">
-                    <span class="block font-medium text-xs text-accent mb-1">Poznámka od pacienta:</span>
-                    "{{ booking.patient_note }}"
-                </p>
-            </div>
-
-            <FormSection title="Služba" description="Vyberte typ poskytovanej služby.">
-                <FormField label="Názov služby" for="reschedule_service_id" required>
+                <FormField label="Názov služby" for="reschedule_service_id" required span="md:col-span-2">
                     <Select
                         id="reschedule_service_id"
                         v-model="form.service_id"
@@ -242,14 +248,9 @@ const updateStatus = (status) => {
                         placeholder="Vyberte službu"
                         class="w-full"
                     />
-                    <div v-if="calculatedEndPreview" class="mt-2 text-xs text-muted-color">
-                        Predpokladaný koniec: <span class="font-medium text-dark">{{ formatTime(calculatedEndPreview) }}</span> ({{ selectedServiceDuration }} min.)
-                    </div>
                 </FormField>
-            </FormSection>
 
-            <FormSection title="Interná poznámka" description="Poznámky prístupné iba pre personál.">
-                <FormField label="Poznámka" :for="`booking_admin_note_${booking.id}`">
+                <FormField label="Poznámka" :for="`booking_admin_note_${booking.id}`" span="md:col-span-2">
                     <Textarea
                         :id="`booking_admin_note_${booking.id}`"
                         v-model="bookingNotes[booking.id]"
@@ -258,25 +259,25 @@ const updateStatus = (status) => {
                         placeholder="Zadajte internú poznámku..."
                     />
                 </FormField>
-            </FormSection>
 
-            <div v-if="hasBookingChanges" class="rounded-xl border border-primary/20 bg-primary/5 p-5 space-y-4">
-                <div class="flex items-center gap-2">
+                <div v-if="hasBookingChanges" class="col-span-2 flex items-center gap-2">
                     <Checkbox
                         v-model="form.notify_patient"
                         binary
                         input-id="notify_patient_reschedule"
                         :disabled="!canNotifyPatient"
                     />
+
                     <label for="notify_patient_reschedule" class="cursor-pointer text-sm font-medium text-dark" :class="{ 'opacity-50': !canNotifyPatient }">
                         Poslať pacientovi email o zmene termínu
                     </label>
-                    <span v-if="!canNotifyPatient" class="ml-auto text-xs text-red-500 font-medium">
+
+                    <span v-if="!canNotifyPatient" class="ml-auto text-xs font-medium text-red-500">
                         Pacient nemá priradený email
                     </span>
                 </div>
 
-                <FormField v-if="form.notify_patient" label="Dôvod zmeny pre pacienta" for="notification_reason" required>
+                <FormField v-if="form.notify_patient" label="Dôvod zmeny pre pacienta" for="notification_reason" required span="md:col-span-2">
                     <Textarea
                         id="notification_reason"
                         v-model="form.notification_reason"
@@ -285,47 +286,11 @@ const updateStatus = (status) => {
                         placeholder="Napríklad: Termín presúvame z organizačných dôvodov."
                     />
                 </FormField>
-
-                <div class="flex items-center justify-between pt-2 border-t border-soft">
-                    <span class="text-xs text-accent">Máte neuložené zmeny v rezervácii</span>
-                    <Button
-                        type="button"
-                        label="Uložiť zmeny"
-                        icon="pi pi-save"
-                        :disabled="!canSaveChanges"
-                        @click="rescheduleBooking"
-                    />
-                </div>
-            </div>
-
-            <div class="pt-4 border-t border-soft flex flex-wrap items-center justify-between gap-4">
-                <details class="group rounded-xl border border-soft bg-white p-3 w-full md:w-auto md:min-w-[250px]">
-                    <summary class="cursor-pointer text-sm font-semibold text-dark flex items-center justify-between list-none">
-                        <span>Ďalšie rýchle akcie</span>
-                        <i class="pi pi-chevron-down text-xs transition-transform group-open:rotate-180"></i>
-                    </summary>
-                    <div class="mt-3 flex flex-col gap-2">
-                        <Button type="button" label="Označiť ako Potvrdené" severity="success" text size="small" icon="pi pi-check" @click="updateStatus('confirmed')" />
-                        <Button type="button" label="Označiť ako Dokončené" severity="secondary" text size="small" icon="pi pi-check-square" @click="updateStatus('completed')" />
-                        <Button type="button" label="Označiť ako No-show" severity="warn" text size="small" icon="pi pi-eye-slash" @click="updateStatus('no_show')" />
-                    </div>
-                </details>
-
-                <Button
-                    type="button"
-                    label="Zrušiť rezerváciu"
-                    icon="pi pi-trash"
-                    severity="danger"
-                    outlined
-                    class="w-full md:w-auto ml-auto"
-                    @click="cancelBooking"
-                />
-            </div>
-
+            </FormSection>
         </div>
 
-        <div v-else class="rounded-md bg-red-50 p-4 text-sm text-red-600 border border-red-200">
+        <div v-else class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">
             Rezerváciu sa nepodarilo načítať.
         </div>
-    </AppDialog>
+    </EventDialog>
 </template>

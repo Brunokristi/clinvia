@@ -9,7 +9,7 @@ import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityR
 import GroupEventCreateEditDialog from '@/Components/Booking/GroupEventCreateEditDialog.vue';
 import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenceDialog.vue';
 
-import { useBookingCalendar } from '@/Composables/useBookingCalendar';
+import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 
 import FullCalendar from '@fullcalendar/vue3';
 

@@ -34,9 +34,9 @@ class BookingRescheduledNotification extends Notification
         $branch = $this->booking->branch;
 
         $mail = (new MailMessage)
-            ->subject('Rezervácia bola presunutá')
+            ->subject('Rezervácia bola upravená')
             ->greeting('Dobrý deň, ' . $this->booking->patient_name . ',')
-            ->line('Vaša rezervácia bola presunutá.')
+            ->line('Vaša rezervácia bola upravená.')
             ->line('Služba: ' . ($service?->name ?? '—'))
             ->line('Pobočka: ' . ($branch?->name ?? '—'));
 

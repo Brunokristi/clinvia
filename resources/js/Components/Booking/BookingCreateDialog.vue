@@ -1,13 +1,11 @@
 <script setup>
-import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import DatePicker from 'primevue/datepicker';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
 
-import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -258,62 +256,35 @@ const submit = () => {
 </script>
 
 <template>
-    <AppDialog
+    <EventDialog
         :visible="visible"
-        title="Vytvoriť rezerváciu"
+        v-model:date="form.date"
+        v-model:starts-at="form.starts_at"
+        :ends-at="calculatedEndsAtDate"
         width="max-w-3xl"
-        show-footer
-        close-label="Zavrieť"
+        date-id="booking_date"
+        starts-at-id="booking_starts_at"
+        ends-at-id="booking_ends_at"
+        starts-at-label="Začiatok"
+        ends-at-label="Koniec"
+        starts-at-placeholder="Vyberte čas"
+        ends-at-placeholder="Dopočíta sa zo služby"
+        readonly-ends-at
+        disabled-ends-at
+        save-label="Uložiť"
+        :save-disabled="!canSubmit"
+        :show-delete="false"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
+        @save="submit"
     >
         <FormPage
             submit-label="Vytvoriť rezerváciu"
             :loading="false"
             :show-submit="false"
         >
-            <FormSection
-                title="Rezervácia"
-                columns="md:grid-cols-2"
-            >
-                <FormField
-                    label="Dátum"
-                    for="booking_date"
-                    required
-                >
-                    <DatePicker
-                        input-id="booking_date"
-                        v-model="form.date"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte dátum"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Začiatok"
-                    for="booking_starts_at"
-                    required
-                >
-                    <DatePicker
-                        input-id="booking_starts_at"
-                        v-model="form.starts_at"
-                        time-only
-                        hour-format="24"
-                        icon-display="input"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte čas"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Služba"
-                    for="service_id"
-                    required
-                    span="md:col-span-2"
-                >
+            <FormSection title="Služba" columns="md:grid-cols-2">
+                <FormField label="Služba" for="service_id" required span="md:col-span-2">
                     <Select
                         id="service_id"
                         v-model="form.service_id"
@@ -321,9 +292,16 @@ const submit = () => {
                         option-label="label"
                         option-value="value"
                         placeholder="Vyberte službu"
-                        class="w-full"  
+                        class="w-full"
                     />
                 </FormField>
+
+                <div
+                    v-if="calculatedEndsAtLabel"
+                    class="md:col-span-2 rounded-md bg-soft p-4 text-sm text-accent"
+                >
+                    Koniec rezervácie bude o <strong class="text-dark">{{ calculatedEndsAtLabel }}</strong>.
+                </div>
 
                 <div
                     v-if="selectedService && !selectedServiceDuration"
@@ -333,17 +311,8 @@ const submit = () => {
                 </div>
             </FormSection>
 
-            <FormSection
-                title="Pacient"
-                description="Vyplňte kontaktné údaje pacienta."
-                columns="md:grid-cols-2"
-            >
-                <FormField
-                    label="Meno pacienta"
-                    for="patient_name"
-                    required
-                    span="md:col-span-2"
-                >
+            <FormSection title="Pacient" description="Vyplňte kontaktné údaje pacienta." columns="md:grid-cols-2">
+                <FormField label="Meno pacienta" for="patient_name" required span="md:col-span-2">
                     <InputText
                         id="patient_name"
                         v-model="form.patient_name"
@@ -352,10 +321,7 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField
-                    label="Email"
-                    for="patient_email"
-                >
+                <FormField label="Email" for="patient_email">
                     <InputText
                         id="patient_email"
                         v-model="form.patient_email"
@@ -365,10 +331,7 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField
-                    label="Telefón"
-                    for="patient_phone"
-                >
+                <FormField label="Telefón" for="patient_phone">
                     <PhoneInput
                         v-model="form.patient_phone"
                         v-model:country-code="form.patient_phone_country"
@@ -393,11 +356,7 @@ const submit = () => {
                     </label>
                 </div>
 
-                <FormField
-                    label="Správa pre pacienta"
-                    for="patient_note"
-                    span="md:col-span-2"
-                >
+                <FormField label="Správa pre pacienta" for="patient_note" span="md:col-span-2">
                     <Textarea
                         id="patient_note"
                         v-model="form.patient_note"
@@ -407,11 +366,7 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField
-                    label="Poznámka"
-                    for="admin_note"
-                    span="md:col-span-2"
-                >
+                <FormField label="Poznámka" for="admin_note" span="md:col-span-2">
                     <Textarea
                         id="admin_note"
                         v-model="form.admin_note"
@@ -422,14 +377,5 @@ const submit = () => {
                 </FormField>
             </FormSection>
         </FormPage>
-
-        <template #footer>
-            <Button
-                type="button"
-                label="Vytvoriť rezerváciu"
-                :disabled="!canSubmit"
-                @click="submit"
-            />
-        </template>
-    </AppDialog>
+    </EventDialog>
 </template>

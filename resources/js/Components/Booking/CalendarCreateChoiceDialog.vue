@@ -1,10 +1,8 @@
 <script setup>
-import Button from 'primevue/button';
-import DatePicker from 'primevue/datepicker';
 import Select from 'primevue/select';
 import { computed, reactive, ref, watch } from 'vue';
 
-import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -213,82 +211,30 @@ const submit = () => {
 </script>
 
 <template>
-    <AppDialog
+    <EventDialog
         :visible="visible"
-        title="Vytvoriť novú udalosť"
+        v-model:date="form.date"
+        v-model:starts-at="form.starts_at"
+        v-model:ends-at="form.ends_at"
         width="max-w-xl"
-        show-footer
-        close-label="Zrušiť"
+        date-id="create_choice_date"
+        starts-at-id="create_choice_starts_at"
+        ends-at-id="create_choice_ends_at"
+        starts-at-placeholder="Vyberte čas"
+        ends-at-placeholder="Vyberte čas"
+        save-label="Uložiť"
+        :save-disabled="!canContinue"
+        :show-delete="false"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
+        @save="submit"
     >
         <FormPage
             :loading="false"
             :show-submit="false"
         >
-            <FormSection
-                title="Dátum a čas"
-                columns="md:grid-cols-3"
-            >
-                <FormField
-                    label="Dátum"
-                    for="create_choice_date"
-                    required
-                >
-                    <DatePicker
-                        input-id="create_choice_date"
-                        v-model="form.date"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte dátum"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Od"
-                    for="create_choice_starts_at"
-                    required
-                >
-                    <DatePicker
-                        input-id="create_choice_starts_at"
-                        v-model="form.starts_at"
-                        time-only
-                        hour-format="24"
-                        icon-display="input"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte čas"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Do"
-                    for="create_choice_ends_at"
-                    required
-                >
-                    <DatePicker
-                        input-id="create_choice_ends_at"
-                        v-model="form.ends_at"
-                        time-only
-                        hour-format="24"
-                        icon-display="input"
-                        class="w-full"
-                        input-class="w-full"
-                        placeholder="Vyberte čas"
-                    />
-                </FormField>
-            </FormSection>
-
-            <FormSection
-                title="Vytvorte udalosť"
-                columns="md:grid-cols-1"
-            >
-                <FormField
-                    label="Typ"
-                    for="create_choice_type"
-                    required
-                >
+            <FormSection title="Vytvorte udalosť" columns="md:grid-cols-1">
+                <FormField label="Typ" for="create_choice_type" required>
                     <Select
                         id="create_choice_type"
                         v-model="form.create_type"
@@ -301,14 +247,5 @@ const submit = () => {
                 </FormField>
             </FormSection>
         </FormPage>
-
-        <template #footer>
-            <Button
-                type="button"
-                label="Pokračovať"
-                :disabled="!canContinue"
-                @click="submit"
-            />
-        </template>
-    </AppDialog>
+    </EventDialog>
 </template>

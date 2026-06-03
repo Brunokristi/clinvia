@@ -1,13 +1,9 @@
 <script setup>
-import Button from 'primevue/button';
-import Checkbox from 'primevue/checkbox';
-import InputNumber from 'primevue/inputnumber';
-import InputText from 'primevue/inputtext';
 import MultiSelect from 'primevue/multiselect';
-import Select from 'primevue/select';
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 
-import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import RepeatingSection from '@/Components/Calendar/Dialogs/RepeatingSection.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
@@ -60,103 +56,156 @@ const dialogVisible = computed({
     set: (value) => emit('update:visible', value),
 });
 
-const deleteRuleDialogVisible = ref(false);
+const createTimeDate = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value;
+    }
+
+    const [hours, minutes] = String(value).slice(0, 5).split(':');
+
+    const date = new Date();
+
+    date.setHours(Number(hours), Number(minutes), 0, 0);
+
+    return date;
+};
+
+const formatDateForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const formatTimeForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
+};
+
+const datePickerModel = computed({
+    get: () => {
+        if (!props.currentRule?.date) {
+            return null;
+        }
+
+        if (props.currentRule.date instanceof Date) {
+            return props.currentRule.date;
+        }
+
+        return new Date(`${props.currentRule.date}T00:00:00`);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.date = formatDateForBackend(value);
+    },
+});
+
+const startsAtPickerModel = computed({
+    get: () => {
+        return createTimeDate(props.currentRule?.starts_at);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.starts_at = formatTimeForBackend(value);
+    },
+});
+
+const endsAtPickerModel = computed({
+    get: () => {
+        return createTimeDate(props.currentRule?.ends_at);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.ends_at = formatTimeForBackend(value);
+    },
+});
 
 const closeDialog = () => {
     emit('update:visible', false);
     emit('close');
 };
 
-const openDeleteRuleDialog = () => {
-    deleteRuleDialogVisible.value = true;
-};
-
-const closeDeleteRuleDialog = () => {
-    deleteRuleDialogVisible.value = false;
-};
-
 const deleteCurrentRuleOccurrence = () => {
-    emit('delete-occurrence');
-    closeDeleteRuleDialog();
+    if (props.currentRule?.repeats) {
+        emit('delete-occurrence');
+
+        return;
+    }
+
+    emit('delete-all');
 };
 
 const deleteCurrentRuleFromNowOn = () => {
     emit('delete-from-now-on');
-    closeDeleteRuleDialog();
 };
 
 const deleteCurrentRuleEverywhere = () => {
     emit('delete-all');
-    closeDeleteRuleDialog();
 };
 </script>
 
 <template>
-    <AppDialog
+    <EventDialog
         v-model:visible="dialogVisible"
-        title="Pravidlo dostupnosti"
+        v-model:date="datePickerModel"
+        v-model:starts-at="startsAtPickerModel"
+        v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
+        date-id="availability_rule_date"
+        starts-at-id="availability_rule_starts_at"
+        ends-at-id="availability_rule_ends_at"
+        starts-at-label="Začiatok"
+        ends-at-label="Koniec"
+        save-label="Uložiť"
+        :loading="loading"
+        :save-disabled="loading"
+        show-delete
+        :is-repeatable="Boolean(currentRule?.repeats)"
+        :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
+        delete-dialog-title="Vymazať pravidlo dostupnosti"
+        delete-dialog-description="Vyberte, ako chcete odstrániť toto pravidlo dostupnosti."
+        delete-all-label="Odstrániť celé pravidlo dostupnosti"
         @close="closeDialog"
+        @save="emit('save')"
+        @delete-occurrence="deleteCurrentRuleOccurrence"
+        @delete-from-now-on="deleteCurrentRuleFromNowOn"
+        @delete-all="deleteCurrentRuleEverywhere"
     >
-        <div
-            v-if="currentRule"
-            class="space-y-8"
-        >
-            <FormSection
-                title="Čas dostupnosti"
-                description="Nastavte deň a časový interval, počas ktorého budú služby dostupné na rezervovanie."
-                columns="md:grid-cols-3"
-            >
-                <FormField
-                    label="Dátum"
-                    for="availability_rule_date"
-                    required
-                >
-                    <InputText
-                        id="availability_rule_date"
-                        v-model="currentRule.date"
-                        type="date"
-                        class="w-full"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Od"
-                    for="availability_rule_starts_at"
-                    required
-                >
-                    <InputText
-                        id="availability_rule_starts_at"
-                        v-model="currentRule.starts_at"
-                        type="time"
-                        class="w-full"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Do"
-                    for="availability_rule_ends_at"
-                    required
-                >
-                    <InputText
-                        id="availability_rule_ends_at"
-                        v-model="currentRule.ends_at"
-                        type="time"
-                        class="w-full"
-                    />
-                </FormField>
-            </FormSection>
-
-            <FormSection
-                title="Rezervovateľné služby"
-                description="Klient si vyberie jednu z povolených služieb a systém obsadí potrebný čas podľa trvania služby."
-                columns="md:grid-cols-1"
-            >
-                <FormField
-                    label="Služby"
-                    for="availability_service_ids"
-                    required
-                >
+        <div v-if="currentRule" class="space-y-6">
+            <FormSection title="Služby" columns="md:grid-cols-2">
+                <FormField label="Priradené rezervovateľné služby" for="availability_service_ids" required span="md:col-span-2">
                     <MultiSelect
                         id="availability_service_ids"
                         v-model="currentRule.service_ids"
@@ -164,187 +213,28 @@ const deleteCurrentRuleEverywhere = () => {
                         option-label="name"
                         option-value="id"
                         display="chip"
-                        placeholder="Vyberte služby"
+                        placeholder="Vyberte jednu alebo viac služieb"
                         class="w-full"
                     />
                 </FormField>
             </FormSection>
 
-            <FormSection
+            <RepeatingSection
+                :model="currentRule"
+                :repeat-unit-options="repeatUnitOptions"
                 title="Opakovanie"
-                description="Nastavte, či sa má toto pravidlo dostupnosti opakovať."
-                columns="md:grid-cols-3"
-            >
-                <div class="md:col-span-3">
-                    <label class="flex items-center gap-2 text-sm font-medium text-dark">
-                        <Checkbox
-                            v-model="currentRule.repeats"
-                            binary
-                            input-id="availability_rule_repeats"
-                        />
-
-                        Opakovať
-                    </label>
-                </div>
-
-                <template v-if="currentRule.repeats">
-                    <FormField
-                        label="Opakovať každých"
-                        for="availability_repeat_every"
-                    >
-                        <InputNumber
-                            id="availability_repeat_every"
-                            v-model="currentRule.repeat_every"
-                            :min="1"
-                            class="w-full"
-                            input-class="w-full"
-                        />
-                    </FormField>
-
-                    <FormField
-                        label="Obdobie"
-                        for="availability_repeat_unit"
-                        span="md:col-span-2"
-                    >
-                        <Select
-                            id="availability_repeat_unit"
-                            v-model="currentRule.repeat_unit"
-                            :options="repeatUnitOptions"
-                            option-label="label"
-                            option-value="value"
-                            class="w-full"
-                        />
-                    </FormField>
-                </template>
-            </FormSection>
-
-            <FormSection
-                title="Stav pravidla"
-                columns="md:grid-cols-1"
-            >
-                <label class="flex items-center gap-2 text-sm text-dark">
-                    <Checkbox
-                        v-model="currentRule.is_enabled"
-                        binary
-                        input-id="availability_rule_is_enabled"
-                    />
-
-                    Pravidlo je aktívne
-                </label>
-            </FormSection>
-
-            <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent">
-                <strong>Ukážka:</strong>
-                {{ currentRule.date }},
-                {{ currentRule.starts_at }} – {{ currentRule.ends_at }}.
-                {{ getRuleTitle(currentRule) }}.
-                {{ getRepeatLabel(currentRule) }}.
-
-                <span v-if="selectedRuleOccurrence?.occurrenceDate">
-                    Vybraný výskyt:
-                    {{ selectedRuleOccurrence.occurrenceDate }}.
-                </span>
-            </div>
-
-            <div class="flex flex-wrap justify-between gap-3 border-t border-soft pt-5">
-                <Button
-                    type="button"
-                    label="Odstrániť"
-                    icon="pi pi-trash"
-                    severity="danger"
-                    outlined
-                    @click="openDeleteRuleDialog"
-                />
-
-                <div class="flex flex-wrap gap-3">
-                    <Button
-                        type="button"
-                        label="Zrušiť"
-                        severity="secondary"
-                        outlined
-                        @click="closeDialog"
-                    />
-
-                    <Button
-                        type="button"
-                        label="Uložiť pravidlo"
-                        icon="pi pi-save"
-                        :loading="loading"
-                        :disabled="loading"
-                        @click="emit('save')"
-                    />
-                </div>
-            </div>
+                description="Nastavte, či sa má dostupnosť opakovať."
+                enabled-id="availability_rule_is_enabled"
+                repeats-id="availability_rule_repeats"
+                repeat-every-id="availability_repeat_every"
+                repeat-unit-id="availability_repeat_unit"
+                enabled-label="Pravidlo dostupnosti je aktívne"
+                repeats-label="Toto pravidlo sa opakuje periodicky"
+            />
         </div>
 
-        <div
-            v-else
-            class="rounded-md bg-soft p-4 text-sm text-accent"
-        >
-            Pravidlo dostupnosti sa nepodarilo načítať.
+        <div v-else class="rounded-md bg-soft p-4 text-sm text-accent">
+            Pravidlo sa nepodarilo načítať.
         </div>
-    </AppDialog>
-
-    <AppDialog
-        v-model:visible="deleteRuleDialogVisible"
-        title="Vymazať pravidlo"
-        width="max-w-xl"
-        @close="closeDeleteRuleDialog"
-    >
-        <div class="space-y-5">
-            <p class="text-sm text-accent">
-                Čo chcete vymazať?
-            </p>
-
-            <div
-                v-if="selectedRuleOccurrence?.occurrenceDate"
-                class="rounded-md bg-soft p-4 text-sm text-accent"
-            >
-                Vybraný deň:
-                <strong class="text-dark">
-                    {{ selectedRuleOccurrence.occurrenceDate }}
-                </strong>
-            </div>
-
-            <div class="flex flex-col gap-3">
-                <Button
-                    type="button"
-                    label="Vymazať iba tento deň"
-                    icon="pi pi-calendar-times"
-                    severity="warn"
-                    outlined
-                    :disabled="!selectedRuleOccurrence?.occurrenceDate"
-                    @click="deleteCurrentRuleOccurrence"
-                />
-
-                <Button
-                    type="button"
-                    label="Vymazať od tohto dňa ďalej"
-                    icon="pi pi-forward"
-                    severity="danger"
-                    outlined
-                    :disabled="!selectedRuleOccurrence?.occurrenceDate"
-                    @click="deleteCurrentRuleFromNowOn"
-                />
-
-                <Button
-                    type="button"
-                    label="Vymazať celé pravidlo"
-                    icon="pi pi-trash"
-                    severity="danger"
-                    @click="deleteCurrentRuleEverywhere"
-                />
-            </div>
-
-            <div class="flex justify-end">
-                <Button
-                    type="button"
-                    label="Zavrieť"
-                    severity="secondary"
-                    outlined
-                    @click="closeDeleteRuleDialog"
-                />
-            </div>
-        </div>
-    </AppDialog>
+    </EventDialog>
 </template>

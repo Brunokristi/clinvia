@@ -1,7 +1,10 @@
 <?php
 
 use App\Http\Controllers\Admin\ApiClientController;
+use App\Http\Controllers\Admin\BranchAvailabilityRuleController;
+use App\Http\Controllers\Admin\BranchBookingCalendarController;
 use App\Http\Controllers\Admin\BranchBookingController;
+use App\Http\Controllers\Admin\BranchCapacityWindowController;
 use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
@@ -152,68 +155,62 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::prefix('branches/{branch}')
             ->name('branches.')
             ->group(function () {
-                Route::get('/booking', [BranchBookingController::class, 'index'])
+                Route::get('/booking', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.dashboard.page');
 
-                Route::get('/booking/settings', [BranchBookingController::class, 'index'])
+                Route::get('/booking/settings', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.settings.page');
 
-                Route::get('/booking/agenda', [BranchBookingController::class, 'index'])
+                Route::get('/booking/agenda', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.agenda.page');
 
-                Route::get('/booking/inbox', [BranchBookingController::class, 'index'])
+                Route::get('/booking/inbox', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.inbox.page');
 
-                Route::put('/booking/services', [BranchBookingController::class, 'updateServices'])
+                Route::put('/booking/services', [BranchBookingCalendarController::class, 'updateServices'])
                     ->name('booking.services.update');
 
-                Route::put('/booking/rules', [BranchBookingController::class, 'updateRules'])
+                Route::put('/booking/rules', [BranchAvailabilityRuleController::class, 'sync'])
                     ->name('booking.rules.update');
 
-                Route::put('/booking/slots/{slot}', [BranchBookingController::class, 'updateSlot'])
-                    ->name('booking.slots.update');
-
-                Route::put('/booking/bookings/{booking}', [BranchBookingController::class, 'updateBooking'])
-                    ->name('booking.bookings.update');
-
-                Route::post('/booking/bookings/{booking}/cancel', [BranchBookingController::class, 'cancelBooking'])
-                    ->name('booking.bookings.cancel');
-
-                Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingController::class, 'rescheduleBooking'])
-                    ->name('booking.bookings.reschedule');
-
-                Route::post('/booking/bookings', [BranchBookingController::class, 'storeAdminBooking'])
+                Route::post('/booking/bookings', [BranchBookingController::class, 'store'])
                     ->name('booking.bookings.store');
 
-                Route::delete('/booking/rules/{rule}', [BranchBookingController::class, 'destroy'])
+                Route::put('/booking/bookings/{booking}', [BranchBookingController::class, 'update'])
+                    ->name('booking.bookings.update');
+
+                Route::post('/booking/bookings/{booking}/cancel', [BranchBookingController::class, 'cancel'])
+                    ->name('booking.bookings.cancel');
+
+                Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingController::class, 'reschedule'])
+                    ->name('booking.bookings.reschedule');
+
+                Route::delete('/booking/rules/{rule}', [BranchAvailabilityRuleController::class, 'deleteSeries'])
                     ->name('booking.rules.destroy');
 
-                Route::post('/booking/rules/{rule}/exclude-date', [BranchBookingController::class, 'excludeDate'])
+                Route::post('/booking/rules/{rule}/exclude-date', [BranchAvailabilityRuleController::class, 'deleteOccurrence'])
                     ->name('booking.rules.exclude-date');
 
-                Route::post('/booking/rules/{rule}/end-before-date', [BranchBookingController::class, 'endBeforeDate'])
+                Route::post('/booking/rules/{rule}/end-before-date', [BranchAvailabilityRuleController::class, 'deleteFutureOccurrences'])
                     ->name('booking.rules.end-before-date');
 
-                Route::post('/booking/capacity-windows/{rule}/cancel', [BranchBookingController::class, 'cancelCapacityWindow'])
+                Route::post('/booking/capacity-windows/{rule}/cancel', [BranchCapacityWindowController::class, 'cancel'])
                     ->name('booking.capacity-windows.cancel');
 
-                Route::post('/booking/capacity-windows/{rule}/reschedule', [BranchBookingController::class, 'rescheduleCapacityWindow'])
+                Route::post('/booking/capacity-windows/{rule}/reschedule', [BranchCapacityWindowController::class, 'reschedule'])
                     ->name('booking.capacity-windows.reschedule');
 
-                Route::post('/booking/capacity-windows/{rule}/delete-occurrence', [BranchBookingController::class, 'deleteCapacityWindowOccurrence'])
+                Route::post('/booking/capacity-windows/{rule}/delete-occurrence', [BranchCapacityWindowController::class, 'deleteOccurrence'])
                     ->name('booking.capacity-windows.delete-occurrence');
 
-                Route::post('/booking/capacity-windows/{rule}/delete-from-date', [BranchBookingController::class, 'deleteCapacityWindowFromDate'])
+                Route::post('/booking/capacity-windows/{rule}/delete-from-date', [BranchCapacityWindowController::class, 'deleteFutureOccurrences'])
                     ->name('booking.capacity-windows.delete-from-date');
 
-                Route::delete('/booking/capacity-windows/{rule}', [BranchBookingController::class, 'deleteCapacityWindowSeries'])
+                Route::delete('/booking/capacity-windows/{rule}', [BranchCapacityWindowController::class, 'deleteSeries'])
                     ->name('booking.capacity-windows.delete-series');
 
-                Route::put('/booking/messages/{message}/read', [BranchBookingController::class, 'markMessageRead'])
+                Route::put('/booking/messages/{message}/read', [BranchBookingCalendarController::class, 'markMessageRead'])
                     ->name('booking.messages.read');
-
-                Route::post('/booking/generate-slots', [BranchBookingController::class, 'regenerateSlots'])
-                    ->name('booking.generate-slots');
 
                 Route::get('/contacts', [BranchController::class, 'contacts'])
                     ->name('contacts.page');

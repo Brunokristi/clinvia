@@ -669,6 +669,23 @@ export const primevuePt = {
             },
         },
 
+        dropdown: {
+            class: [
+                '!text-accent',
+                '!bg-soft',
+                '!border-soft',
+                'hover:!bg-accent',
+                'hover:!text-white',
+            ],
+        },
+
+        dropdownIcon: {
+            class: [
+                '!text-accent',
+                '!text-sm',
+            ],
+        },
+
         overlay: {
             class: [
                 '!mt-1',
@@ -698,7 +715,7 @@ export const primevuePt = {
             class: [
                 '!rounded-md',
                 '!px-3 !py-2',
-                '!text-accent',
+                '!text-accent !text-normal',
                 'transition-all duration-150',
                 'hover:!bg-soft',
                 'hover:!text-accent',
@@ -847,14 +864,6 @@ export const primevuePt = {
         },
     },
 
-    autoComplete: {
-        dropdownIcon: {
-            class: [
-                '!text-accent',
-            ],
-        },
-    },
-
     menu: {
         root: {
             class: [
@@ -973,6 +982,187 @@ export const primevuePt = {
                 'peer-checked:!bg-accent',
                 'peer-checked:before:translate-x-full',
                 'peer-checked:before:!bg-white',
+            ],
+        },
+    },
+
+    multiselect: {
+        root: {
+            class: [
+                '!w-full',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-soft',
+                '!shadow-none',
+                'transition-all duration-200',
+                'hover:!border-accent',
+                'focus-within:!border-accent',
+                'focus-within:!bg-white',
+                'focus-within:!ring-0',
+            ],
+        },
+
+        label: {
+            class: [
+                '!px-4 !py-2 flex flex-wrap gap-1 items-center',
+                '!text-normal',
+                '!text-accent',
+                '!shadow-none',
+            ],
+        },
+
+        chipItem: {
+            class: [
+                '!bg-accent !text-white',
+                '!rounded-md !px-2 !py-0.5',
+                'flex items-center gap-1.5',
+                '!text-xs !font-medium',
+            ],
+        },
+
+        chipIcon: {
+            class: [
+                '!text-white/80 hover:!text-white',
+                '!text-[10px] cursor-pointer',
+            ],
+        },
+
+        dropdown: {
+            class: [
+                '!w-10',
+                '!text-accent',
+                '!bg-transparent',
+                '!rounded-r-md',
+            ],
+        },
+
+        dropdownIcon: {
+            class: [
+                '!text-sm',
+                '!text-accent',
+            ],
+        },
+
+        overlay: {
+            class: [
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-white',
+                '!shadow-lg',
+                '!overflow-hidden',
+            ],
+        },
+
+        header: {
+            class: [
+                '!p-2 !border-b !border-soft',
+                'flex items-center justify-between gap-2',
+                '!bg-soft/30',
+            ],
+        },
+
+        pcFilter: {
+            root: {
+                class: [
+                    '!w-full !rounded-md',
+                    '!bg-white px-3 py-1.5 !border-soft shadow-0',
+                    '!text-sm !text-accent',
+                    'hover:!border-accent',
+                    'focus:!border-accent',
+                ],
+            }
+        },
+
+        listContainer: {
+            class: [
+                '!bg-white',
+            ],
+        },
+
+        list: {
+            class: [
+                '!p-1',
+                '!space-y-1',
+                '!bg-white',
+            ],
+        },
+
+        option: {
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                'flex items-center gap-2',
+                '!text-normal',
+                '!text-accent',
+                'transition-all duration-150',
+                'hover:!bg-soft',
+                'data-[p-selected=true]:!bg-soft',
+                'data-[p-selected=true]:!text-dark',
+                'data-[p-focused=true]:!bg-soft',
+            ],
+        },
+
+        optionLabel: {
+            class: [
+                '!font-medium',
+            ],
+        },
+
+        checkbox: {
+            root: {
+                class: 'inline-flex items-center',
+            },
+            box: {
+                class: [
+                    'h-4 w-4 rounded',
+                    '!bg-soft !border-soft border',
+                    'transition-all duration-200',
+                    'data-[p-checked=true]:!border-accent',
+                    'data-[p-checked=true]:!bg-accent',
+                ],
+            },
+            icon: {
+                class: 'text-white text-[10px]',
+            },
+        },
+
+        emptyMessage: {
+            class: [
+                '!px-3 !py-2',
+                '!text-sm',
+                '!text-accent/70',
+            ],
+        },
+    },
+
+    chip: {
+        root: {
+            class: [
+                'inline-flex items-center gap-2',
+                '!bg-accent',
+                '!rounded-md !px-2.5 !py-1',
+                '!text-normal !text-soft !font-medium',
+            ],
+        },
+
+        label: {
+            class: [
+                'leading-none',
+            ],
+        },
+
+        icon: {
+            class: [
+                '!text-soft',
+                '!text-xs',
+            ],
+        },
+
+        removeIcon: {
+            class: [
+                '!text-soft hover:!text-dark',
+                '!text-[11px] cursor-pointer',
+                'transition-colors duration-150',
             ],
         },
     },
