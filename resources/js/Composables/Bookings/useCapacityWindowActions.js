@@ -74,6 +74,54 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
         });
     };
 
+    const findUpdatedCapacityWindow = (capacityWindow) => {
+        const capacityWindows = props.calendarCapacityWindows ?? [];
+
+        return capacityWindows.find((window) => {
+            const sameId = Number(window.id) === Number(capacityWindow.id);
+            const sameRuleId = Number(window.rule_id) === Number(capacityWindow.rule_id);
+            const sameDate = String(window.date ?? window.starts_at).slice(0, 10)
+                === String(capacityWindow.date ?? capacityWindow.starts_at).slice(0, 10);
+
+            return sameId || (sameRuleId && sameDate);
+        }) ?? null;
+    };
+
+    const refreshSelectedCapacityWindow = (capacityWindow) => {
+        const updatedCapacityWindow = findUpdatedCapacityWindow(capacityWindow);
+
+        if (!updatedCapacityWindow) {
+            return;
+        }
+
+        dialogs.selectedCapacityWindow.value = updatedCapacityWindow;
+    };
+
+    const addPatientToCapacityWindow = (capacityWindow, payload) => {
+        if (!capacityWindow?.rule_id && !capacityWindow?.id) {
+            return;
+        }
+
+        router.post(
+            route('branches.booking.capacity-windows.bookings.store', {
+                branch: props.branch.id,
+                rule: capacityWindow.rule_id ?? capacityWindow.id,
+            }),
+            payload,
+            {
+                preserveScroll: true,
+                preserveState: true,
+                only: [
+                    'calendarCapacityWindows',
+                    'calendarBookings',
+                ],
+                onSuccess: () => {
+                    refreshSelectedCapacityWindow(capacityWindow);
+                },
+            },
+        );
+    };
+
     const deleteCapacityWindowFromDate = (capacityWindow, options = {}) => {
         router.post(route('branches.booking.capacity-windows.delete-from-date', [props.branch.id, capacityWindow.rule_id]), {
             date: options.date ?? capacityWindow.date,
@@ -106,5 +154,6 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
         deleteCapacityWindowSeries,
         rescheduleCapacityWindow,
         rescheduleCapacityWindowByCalendarChange,
+        addPatientToCapacityWindow,
     };
 }

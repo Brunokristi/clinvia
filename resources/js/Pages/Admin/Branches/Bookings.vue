@@ -101,6 +101,8 @@ const {
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
     deleteCapacityWindowSeries,
+
+    addPatientToCapacityWindow,
 } = useBookingCalendar(props);
 </script>
 
@@ -200,9 +202,8 @@ const {
                 :capacity-window="selectedCapacityWindow"
                 :booking-notes="bookingNotes"
                 :available-slots="availableRescheduleSlots"
-                @update-booking="updateBooking"
+                @add-patient-to-capacity-window="addPatientToCapacityWindow"
                 @cancel-booking="cancelBooking"
-                @reschedule-booking="rescheduleBooking"
                 @cancel-capacity-window="cancelCapacityWindow"
                 @reschedule-capacity-window="rescheduleCapacityWindow"
                 @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"

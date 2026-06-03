@@ -342,5 +342,6 @@ export function useBookingCalendar(props) {
         deleteCapacityWindowOccurrence: capacityWindowActions.deleteCapacityWindowOccurrence,
         deleteCapacityWindowFromDate: capacityWindowActions.deleteCapacityWindowFromDate,
         deleteCapacityWindowSeries: capacityWindowActions.deleteCapacityWindowSeries,
+        addPatientToCapacityWindow: capacityWindowActions.addPatientToCapacityWindow,
     };
 }

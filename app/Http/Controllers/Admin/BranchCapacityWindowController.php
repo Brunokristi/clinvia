@@ -238,6 +238,97 @@ class BranchCapacityWindowController extends Controller
         return back()->with('success', 'Celá skupinová séria bola vymazaná.');
     }
 
+    public function storeBooking(
+        Request $request,
+        Branch $branch,
+        BookingAvailabilityRule $rule,
+        AdminBookingCalendarService $calendarService,
+        AdminBookingNotificationService $notificationService,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'starts_at' => ['required', 'date'],
+            'ends_at' => ['required', 'date', 'after:starts_at'],
+            'patient_name' => ['required', 'string', 'max:255'],
+            'patient_email' => ['nullable', 'email', 'max:255'],
+            'patient_phone' => ['nullable', 'string', 'max:255'],
+            'patient_note' => ['nullable', 'string', 'max:2000'],
+            'admin_note' => ['nullable', 'string', 'max:2000'],
+            'notify_patient' => ['nullable', 'boolean'],
+        ]);
+
+        $date = Carbon::parse($validated['date'])->startOfDay();
+        $startsAt = Carbon::parse($validated['starts_at']);
+        $endsAt = Carbon::parse($validated['ends_at']);
+
+        $service = $rule->services->first();
+
+        if (! $service && $rule->service_id) {
+            $service = Service::query()
+                ->where('branch_id', $branch->id)
+                ->whereKey($rule->service_id)
+                ->first();
+        }
+
+        if (! $service) {
+            throw ValidationException::withMessages([
+                'service_id' => 'Služba pre toto kapacitné okno neexistuje.',
+            ]);
+        }
+
+        $capacity = max(1, (int) ($rule->bookable_places ?? $service->capacity ?? 1));
+
+        $currentBookingsCount = $calendarService
+            ->getCapacityWindowBookingsForDate($branch, $rule, $date)
+            ->filter(function (Booking $booking) {
+                return $booking->status !== 'cancelled';
+            })
+            ->count();
+
+        if ($currentBookingsCount >= $capacity) {
+            throw ValidationException::withMessages([
+                'capacity_window' => 'Skupinový termín je už naplnený.',
+            ]);
+        }
+
+        $slot = $calendarService->createOrEnableCapacitySlot(
+            branch: $branch,
+            service: $service,
+            startsAt: $startsAt,
+            endsAt: $endsAt,
+            capacity: $capacity,
+        );
+
+        $booking = Booking::query()->create([
+            'branch_id' => $branch->id,
+            'service_id' => $service->id,
+            'booking_slot_id' => $slot->id,
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+            'patient_name' => $validated['patient_name'],
+            'patient_email' => $validated['patient_email'] ?? null,
+            'patient_phone' => $validated['patient_phone'] ?? null,
+            'patient_note' => $validated['patient_note'] ?? null,
+            'admin_note' => $validated['admin_note'] ?? null,
+            'status' => 'confirmed',
+        ]);
+
+        if (
+            ($validated['notify_patient'] ?? false)
+            && filled($booking->patient_email)
+            && method_exists($notificationService, 'sendCreatedNotification')
+        ) {
+            $booking->load(['branch', 'service', 'bookingSlot']);
+
+            $notificationService->sendCreatedNotification($booking);
+        }
+
+        return back()->with('success', 'Pacient bol pridaný do skupinového termínu.');
+    }
+
     private function cancelBookings(
         iterable $bookings,
         bool $notifyPatient,

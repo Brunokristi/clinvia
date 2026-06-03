@@ -4,24 +4,26 @@ import Tag from 'primevue/tag';
 import { computed } from 'vue';
 
 const props = defineProps({
-    patient: {
-        type: Object,
-        default: null,
-    },
-    status: {
+    patientName: {
         type: String,
         default: '',
     },
-    serviceName: {
+    patientPhone: {
+        type: String,
+        default: '',
+    },
+    patientEmail: {
         type: String,
         default: '',
     },
 });
 
-const initials = computed(() => {
-    const name = props.patient?.name ?? props.patient?.patient_name ?? '';
+const displayName = computed(() => {
+    return props.patientName || 'Bez mena';
+});
 
-    return name
+const initials = computed(() => {
+    return displayName.value
         .split(' ')
         .filter(Boolean)
         .slice(0, 2)
@@ -29,65 +31,76 @@ const initials = computed(() => {
         .join('') || '?';
 });
 
-const patientName = computed(() => {
-    return props.patient?.name ?? props.patient?.patient_name ?? 'Bez mena';
+const hasContact = computed(() => {
+    return Boolean(props.patientPhone || props.patientEmail);
 });
 
-const patientEmail = computed(() => {
-    return props.patient?.email ?? props.patient?.patient_email ?? '';
+const emailHref = computed(() => {
+    if (!props.patientEmail) {
+        return '';
+    }
+
+    return `mailto:${props.patientEmail}`;
 });
 
-const patientPhone = computed(() => {
-    return props.patient?.phone ?? props.patient?.patient_phone ?? props.patient?.patient_phone_full ?? '';
+const phoneHref = computed(() => {
+    if (!props.patientPhone) {
+        return '';
+    }
+
+    return `tel:${props.patientPhone.replace(/\s+/g, '')}`;
 });
 </script>
 
 <template>
-    <div class="rounded-xl border border-soft bg-white p-4">
-        <div class="flex flex-wrap items-start gap-4">
+    <div class="rounded-md border border-soft bg-white p-4">
+        <div class="flex items-center gap-3">
             <Avatar
                 :label="initials"
                 shape="circle"
-                size="large"
+                size="small"
             />
 
-            <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                    <h3 class="text-base font-semibold text-dark">
-                        {{ patientName }}
-                    </h3>
-
-                    <Tag
-                        v-if="status"
-                        :value="status"
-                        severity="secondary"
-                    />
-                </div>
-
-                <p
-                    v-if="serviceName"
-                    class="mt-1 text-sm text-accent"
-                >
-                    {{ serviceName }}
-                </p>
-
-                <div class="mt-3 grid gap-2 text-sm text-accent md:grid-cols-2">
-                    <div v-if="patientEmail" class="flex items-center gap-2">
-                        <i class="pi pi-envelope text-xs"></i>
-                        <span class="truncate">{{ patientEmail }}</span>
-                    </div>
-
-                    <div v-if="patientPhone" class="flex items-center gap-2">
-                        <i class="pi pi-phone text-xs"></i>
-                        <span>{{ patientPhone }}</span>
-                    </div>
-
-                    <div v-if="!patientEmail && !patientPhone" class="text-sm text-accent">
-                        Kontakt pacienta nie je vyplnený.
-                    </div>
-                </div>
-            </div>
+            <h3 class="min-w-0 truncate text-base font-semibold text-dark">
+                {{ displayName }}
+            </h3>
         </div>
+
+        <div
+            v-if="hasContact"
+            class="mt-4 flex flex-wrap gap-2"
+        >
+            <a
+                v-if="patientEmail"
+                :href="emailHref"
+                class="inline-flex"
+            >
+                <Tag
+                    icon="pi pi-envelope"
+                    :value="patientEmail"
+                    class="cursor-pointer"
+                />
+            </a>
+
+            <a
+                v-if="patientPhone"
+                :href="phoneHref"
+                class="inline-flex"
+            >
+                <Tag
+                    icon="pi pi-phone"
+                    :value="patientPhone"
+                    class="cursor-pointer"
+                />
+            </a>
+        </div>
+
+        <p
+            v-else
+            class="mt-4 text-sm text-accent"
+        >
+            Kontakt pacienta nie je vyplnený.
+        </p>
 
         <slot />
     </div>

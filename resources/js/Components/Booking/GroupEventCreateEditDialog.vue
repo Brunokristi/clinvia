@@ -4,8 +4,9 @@ import Select from 'primevue/select';
 import { computed } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
-import RepeatingSection from '@/Components/Calendar/Dialogs/RepeatingSection.vue';
+import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
 import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
@@ -57,6 +58,109 @@ const dialogVisible = computed({
     set: (value) => emit('update:visible', value),
 });
 
+const createTimeDate = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value;
+    }
+
+    const [hours, minutes] = String(value).slice(0, 5).split(':');
+    const date = new Date();
+
+    date.setHours(Number(hours), Number(minutes), 0, 0);
+
+    return date;
+};
+
+const formatDateForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const formatTimeForBackend = (value) => {
+    if (!value) {
+        return '';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
+};
+
+const datePickerModel = computed({
+    get: () => {
+        if (!props.currentRule?.date) {
+            return null;
+        }
+
+        if (props.currentRule.date instanceof Date) {
+            return props.currentRule.date;
+        }
+
+        return new Date(`${props.currentRule.date}T00:00:00`);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.date = formatDateForBackend(value);
+    },
+});
+
+const startsAtPickerModel = computed({
+    get: () => {
+        return createTimeDate(props.currentRule?.starts_at);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.starts_at = formatTimeForBackend(value);
+    },
+});
+
+const endsAtPickerModel = computed({
+    get: () => {
+        return createTimeDate(props.currentRule?.ends_at);
+    },
+    set: (value) => {
+        if (!props.currentRule) {
+            return;
+        }
+
+        props.currentRule.ends_at = formatTimeForBackend(value);
+    },
+});
+
+const dialogTitle = computed(() => {
+    if (!props.currentRule) {
+        return 'Skupinová rezervácia';
+    }
+
+    return props.getRuleTitle(props.currentRule) || 'Skupinová rezervácia';
+});
+
 const closeDialog = () => {
     emit('update:visible', false);
     emit('close');
@@ -83,38 +187,41 @@ const deleteCurrentRuleEverywhere = () => {
 
 <template>
     <EventDialog
-        v-if="currentRule"
         v-model:visible="dialogVisible"
-        v-model:date="currentRule.date"
-        v-model:starts-at="currentRule.starts_at"
-        v-model:ends-at="currentRule.ends_at"
+        :title="dialogTitle"
+        v-model:date="datePickerModel"
+        v-model:starts-at="startsAtPickerModel"
+        v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
-        date-id="group_rule_date"
-        starts-at-id="group_rule_starts_at"
-        ends-at-id="group_rule_ends_at"
-        ends-at-placeholder="12:00"
         save-label="Uložiť"
         :loading="loading"
         :save-disabled="loading || !currentRule"
+        :show-save="Boolean(currentRule)"
         show-delete
         :is-repeatable="Boolean(currentRule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
-        delete-dialog-title="Vymazať skupinovú rezerváciu"
-        delete-dialog-description="Vyberte rozsah odstránenia skupinovej rezervácie."
-        delete-all-label="Odstrániť celú skupinovú rezerváciu"
         @close="closeDialog"
         @save="emit('save')"
         @delete-occurrence="deleteCurrentRuleOccurrence"
         @delete-from-now-on="deleteCurrentRuleFromNowOn"
         @delete-all="deleteCurrentRuleEverywhere"
     >
-        <div class="space-y-6">
+        <FormPage
+            v-if="currentRule"
+            submit-label="Uložiť"
+            :loading="loading"
+            :show-submit="false"
+        >
             <FormSection
                 title="Kapacita a služba"
                 description="Pacienti sa budú prihlasovať do rovnakého času až do naplnenia kapacity."
                 columns="md:grid-cols-1"
             >
-                <FormField label="Služba" for="group_service_id" required>
+                <FormField
+                    label="Služba"
+                    for="group_service_id"
+                    required
+                >
                     <Select
                         id="group_service_id"
                         v-model="currentRule.service_id"
@@ -126,7 +233,11 @@ const deleteCurrentRuleEverywhere = () => {
                     />
                 </FormField>
 
-                <FormField label="Počet rezervovateľných miest" for="group_bookable_places" required>
+                <FormField
+                    label="Počet rezervovateľných miest"
+                    for="group_bookable_places"
+                    required
+                >
                     <InputNumber
                         id="group_bookable_places"
                         v-model="currentRule.bookable_places"
@@ -150,18 +261,13 @@ const deleteCurrentRuleEverywhere = () => {
                 enabled-label="Skupinová rezervácia je aktívna a viditeľná pre pacientov"
                 repeats-label="Opakovať túto skupinovú rezerváciu periodicky"
             />
-        </div>
-    </EventDialog>
+        </FormPage>
 
-    <EventDialog
-        v-else
-        v-model:visible="dialogVisible"
-        :show-save="false"
-        :show-delete="false"
-        @close="closeDialog"
-    >
-        <div class="rounded-xl border border-soft bg-white p-6 text-center text-sm text-accent">
-            <i class="pi pi-exclamation-circle text-2xl block mb-2 text-red-400"></i>
+        <div
+            v-else
+            class="rounded-xl border border-soft bg-white p-6 text-center text-sm text-accent"
+        >
+            <i class="pi pi-exclamation-circle mb-2 block text-2xl text-red-400"></i>
             Skupinovú rezerváciu sa nepodarilo úspešne načítať.
         </div>
     </EventDialog>

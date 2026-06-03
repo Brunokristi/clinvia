@@ -200,6 +200,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/booking/capacity-windows/{rule}/reschedule', [BranchCapacityWindowController::class, 'reschedule'])
                     ->name('booking.capacity-windows.reschedule');
 
+                Route::post('/booking/capacity-windows/{rule}/bookings', [BranchCapacityWindowController::class, 'storeBooking'])
+                    ->name('booking.capacity-windows.bookings.store');
+
                 Route::post('/booking/capacity-windows/{rule}/delete-occurrence', [BranchCapacityWindowController::class, 'deleteOccurrence'])
                     ->name('booking.capacity-windows.delete-occurrence');
 

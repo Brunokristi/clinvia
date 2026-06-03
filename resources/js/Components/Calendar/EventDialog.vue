@@ -1,14 +1,17 @@
 <script setup>
 import Button from 'primevue/button';
-import DatePicker from 'primevue/datepicker';
 import { computed, ref } from 'vue';
 
 import AppDialog from '@/Components/Dialogs/FormDialog.vue';
-import FormField from '@/Components/Forms/FormField.vue';
+import EventDateTimeFields from '@/Components/Calendar/EventDateTime.vue';
 
 const props = defineProps({
     visible: {
         type: Boolean,
+        required: true,
+    },
+    title: {
+        type: String,
         required: true,
     },
     width: {
@@ -26,70 +29,6 @@ const props = defineProps({
     endsAt: {
         type: [Date, String],
         default: null,
-    },
-    showDate: {
-        type: Boolean,
-        default: true,
-    },
-    showStartsAt: {
-        type: Boolean,
-        default: true,
-    },
-    showEndsAt: {
-        type: Boolean,
-        default: true,
-    },
-    showDateTime: {
-        type: Boolean,
-        default: false,
-    },
-    endsAtShowDateTime: {
-        type: Boolean,
-        default: false,
-    },
-    readonlyEndsAt: {
-        type: Boolean,
-        default: false,
-    },
-    disabledEndsAt: {
-        type: Boolean,
-        default: false,
-    },
-    dateId: {
-        type: String,
-        default: 'event_date',
-    },
-    startsAtId: {
-        type: String,
-        default: 'event_starts_at',
-    },
-    endsAtId: {
-        type: String,
-        default: 'event_ends_at',
-    },
-    dateLabel: {
-        type: String,
-        default: 'Dátum',
-    },
-    startsAtLabel: {
-        type: String,
-        default: 'Začiatok',
-    },
-    endsAtLabel: {
-        type: String,
-        default: 'Koniec',
-    },
-    datePlaceholder: {
-        type: String,
-        default: 'Vyberte dátum',
-    },
-    startsAtPlaceholder: {
-        type: String,
-        default: '08:00',
-    },
-    endsAtPlaceholder: {
-        type: String,
-        default: '09:00',
     },
     showSave: {
         type: Boolean,
@@ -134,26 +73,6 @@ const props = defineProps({
     occurrenceDate: {
         type: String,
         default: '',
-    },
-    deleteDialogTitle: {
-        type: String,
-        default: 'Odstrániť termín',
-    },
-    deleteDialogDescription: {
-        type: String,
-        default: 'Vyberte, ako chcete tento termín odstrániť.',
-    },
-    deleteOneLabel: {
-        type: String,
-        default: 'Odstrániť iba tento termín',
-    },
-    deleteFutureLabel: {
-        type: String,
-        default: 'Odstrániť tento a všetky budúce termíny',
-    },
-    deleteAllLabel: {
-        type: String,
-        default: 'Odstrániť celú sériu',
     },
 });
 
@@ -223,84 +142,25 @@ const deleteAll = () => {
 <template>
     <AppDialog
         v-model:visible="dialogVisible"
-        title=""
+        :title="title"
         :width="width"
-        show-footer
-        :close-label="cancelLabel"
         @close="closeDialog"
     >
         <div class="space-y-6">
-            <div class="grid grid-cols-1 gap-4 rounded-xl border border-soft bg-white p-4 md:grid-cols-3">
-                <FormField
-                    v-if="showDate"
-                    :label="dateLabel"
-                    :for="dateId"
-                    required
-                >
-                    <DatePicker
-                        :input-id="dateId"
-                        v-model="dateModel"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        :placeholder="datePlaceholder"
-                    />
-                </FormField>
-
-                <FormField
-                    v-if="showStartsAt"
-                    :label="startsAtLabel"
-                    :for="startsAtId"
-                    required
-                >
-                    <DatePicker
-                        :input-id="startsAtId"
-                        v-model="startsAtModel"
-                        :show-time="showDateTime"
-                        :time-only="!showDateTime"
-                        hour-format="24"
-                        icon-display="input"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        :placeholder="startsAtPlaceholder"
-                    />
-                </FormField>
-
-                <FormField
-                    v-if="showEndsAt"
-                    :label="endsAtLabel"
-                    :for="endsAtId"
-                    required
-                >
-                    <DatePicker
-                        :input-id="endsAtId"
-                        v-model="endsAtModel"
-                        :show-time="endsAtShowDateTime"
-                        :time-only="!endsAtShowDateTime"
-                        hour-format="24"
-                        icon-display="input"
-                        date-format="dd.mm.yy"
-                        class="w-full"
-                        input-class="w-full"
-                        :placeholder="endsAtPlaceholder"
-                        :readonly="readonlyEndsAt"
-                        :disabled="disabledEndsAt"
-                    />
-                </FormField>
-            </div>
+            <EventDateTimeFields
+                v-model:date="dateModel"
+                v-model:starts-at="startsAtModel"
+                v-model:ends-at="endsAtModel"
+            />
 
             <slot />
-        </div>
 
-        <template #footer>
-            <div class="flex w-full flex-col-reverse gap-3 border-t border-soft pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex w-full flex-col-reverse gap-3 border-t border-accent pt-4 sm:flex-row sm:items-center sm:justify-end">
                 <div>
                     <Button
                         v-if="showDelete"
                         type="button"
                         :label="deleteLabel"
-                        icon="pi pi-trash"
                         severity="danger"
                         outlined
                         :disabled="deleteDisabled"
@@ -328,25 +188,25 @@ const deleteAll = () => {
                     />
                 </div>
             </div>
-        </template>
+        </div>
     </AppDialog>
 
     <AppDialog
         v-model:visible="deleteDialogVisible"
-        :title="deleteDialogTitle"
+        title="Odstrániť termín"
         width="max-w-xl"
         @close="closeDeleteDialog"
     >
         <div class="space-y-5">
             <p class="text-sm text-dark">
-                {{ deleteDialogDescription }}
+                Vyberte, ako chcete tento termín odstrániť.
             </p>
 
             <div
                 v-if="occurrenceDate"
-                class="rounded-xl border border-warning/30 bg-warning/5 p-3 text-sm flex items-center gap-3"
+                class="flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-sm"
             >
-                <i class="pi pi-exclamation-triangle text-amber-500 text-lg"></i>
+                <i class="pi pi-exclamation-triangle text-lg text-amber-500"></i>
 
                 <div>
                     <span class="block text-xs font-medium text-accent">
@@ -362,7 +222,7 @@ const deleteAll = () => {
             <div class="flex flex-col gap-2.5 pt-2">
                 <Button
                     type="button"
-                    :label="deleteOneLabel"
+                    label="Odstrániť iba tento termín"
                     icon="pi pi-calendar-times"
                     severity="warn"
                     outlined
@@ -373,7 +233,7 @@ const deleteAll = () => {
                 <template v-if="isRepeatable">
                     <Button
                         type="button"
-                        :label="deleteFutureLabel"
+                        label="Odstrániť tento a všetky budúce termíny"
                         icon="pi pi-forward"
                         severity="danger"
                         outlined
@@ -383,7 +243,7 @@ const deleteAll = () => {
 
                     <Button
                         type="button"
-                        :label="deleteAllLabel"
+                        label="Odstrániť celú sériu"
                         icon="pi pi-trash"
                         severity="danger"
                         class="justify-start text-left"

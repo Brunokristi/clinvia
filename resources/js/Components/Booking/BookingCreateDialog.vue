@@ -6,6 +6,7 @@ import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -36,6 +37,7 @@ const form = reactive({
     service_id: null,
     date: null,
     starts_at: null,
+    ends_at: null,
     patient_name: '',
     patient_email: '',
     patient_phone: '',
@@ -151,11 +153,11 @@ const calculatedEndsAtDate = computed(() => {
 });
 
 const calculatedEndsAtLabel = computed(() => {
-    if (!calculatedEndsAtDate.value) {
+    if (!form.ends_at) {
         return '';
     }
 
-    return formatTimeForBackend(calculatedEndsAtDate.value);
+    return formatTimeForBackend(form.ends_at);
 });
 
 const startsAtForBackend = computed(() => {
@@ -167,23 +169,24 @@ const startsAtForBackend = computed(() => {
 });
 
 const endsAtForBackend = computed(() => {
-    if (!form.date || !calculatedEndsAtDate.value) {
+    if (!form.date || !form.ends_at) {
         return null;
     }
 
-    return `${formatDateForBackend(form.date)} ${formatTimeForBackend(calculatedEndsAtDate.value)}:00`;
+    return `${formatDateForBackend(form.date)} ${formatTimeForBackend(form.ends_at)}:00`;
 });
 
 const canSubmit = computed(() => {
     return Boolean(form.service_id)
         && Boolean(form.date)
         && Boolean(form.starts_at)
-        && Boolean(calculatedEndsAtDate.value)
+        && Boolean(form.ends_at)
         && Boolean(form.patient_name.trim());
 });
 
 const resetForm = () => {
     form.service_id = null;
+    form.ends_at = null;
 
     if (props.selection?.start) {
         const start = props.selection.start instanceof Date
@@ -230,6 +233,10 @@ watch(() => form.patient_email, (email) => {
     }
 });
 
+watch(calculatedEndsAtDate, (endsAt) => {
+    form.ends_at = endsAt;
+});
+
 const closeDialog = () => {
     emit('update:visible', false);
     emit('close');
@@ -253,6 +260,29 @@ const submit = () => {
         notify_patient: form.notify_patient,
     });
 };
+
+watch(
+    () => [
+        form.service_id,
+        form.date,
+        form.starts_at,
+    ],
+    () => {
+        if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+            return;
+        }
+
+        const start = createDateFromDateAndTime(form.date, form.starts_at);
+
+        if (!start) {
+            return;
+        }
+
+        start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
+
+        form.ends_at = start;
+    },
+);
 </script>
 
 <template>
@@ -260,31 +290,31 @@ const submit = () => {
         :visible="visible"
         v-model:date="form.date"
         v-model:starts-at="form.starts_at"
-        :ends-at="calculatedEndsAtDate"
+        v-model:ends-at="form.ends_at"
         width="max-w-3xl"
-        date-id="booking_date"
-        starts-at-id="booking_starts_at"
-        ends-at-id="booking_ends_at"
-        starts-at-label="Začiatok"
-        ends-at-label="Koniec"
-        starts-at-placeholder="Vyberte čas"
-        ends-at-placeholder="Dopočíta sa zo služby"
-        readonly-ends-at
-        disabled-ends-at
         save-label="Uložiť"
         :save-disabled="!canSubmit"
         :show-delete="false"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
         @save="submit"
+        title="Vytvoriť rezerváciu"
     >
         <FormPage
             submit-label="Vytvoriť rezerváciu"
             :loading="false"
             :show-submit="false"
         >
-            <FormSection title="Služba" columns="md:grid-cols-2">
-                <FormField label="Služba" for="service_id" required span="md:col-span-2">
+            <FormSection
+                title="Služba"
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Služba"
+                    for="service_id"
+                    required
+                    span="md:col-span-2"
+                >
                     <Select
                         id="service_id"
                         v-model="form.service_id"
@@ -294,25 +324,27 @@ const submit = () => {
                         placeholder="Vyberte službu"
                         class="w-full"
                     />
-                </FormField>
-
-                <div
-                    v-if="calculatedEndsAtLabel"
-                    class="md:col-span-2 rounded-md bg-soft p-4 text-sm text-accent"
-                >
-                    Koniec rezervácie bude o <strong class="text-dark">{{ calculatedEndsAtLabel }}</strong>.
-                </div>
+                </FormField>    
 
                 <div
                     v-if="selectedService && !selectedServiceDuration"
-                    class="md:col-span-2 rounded-md bg-red-50 p-4 text-sm text-red-600"
+                    class="rounded-md bg-red-50 p-4 text-sm text-red-600 md:col-span-2"
                 >
                     Vybraná služba nemá nastavené trvanie. Skontrolujte pole duration_minutes, duration, length_minutes alebo minutes.
                 </div>
             </FormSection>
 
-            <FormSection title="Pacient" description="Vyplňte kontaktné údaje pacienta." columns="md:grid-cols-2">
-                <FormField label="Meno pacienta" for="patient_name" required span="md:col-span-2">
+            <FormSection
+                title="Pacient"
+                description="Vyplňte kontaktné údaje pacienta."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Meno pacienta"
+                    for="patient_name"
+                    required
+                    span="md:col-span-2"
+                >
                     <InputText
                         id="patient_name"
                         v-model="form.patient_name"
@@ -321,7 +353,10 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField label="Email" for="patient_email">
+                <FormField
+                    label="Email"
+                    for="patient_email"
+                >
                     <InputText
                         id="patient_email"
                         v-model="form.patient_email"
@@ -331,7 +366,10 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField label="Telefón" for="patient_phone">
+                <FormField
+                    label="Telefón"
+                    for="patient_phone"
+                >
                     <PhoneInput
                         v-model="form.patient_phone"
                         v-model:country-code="form.patient_phone_country"
@@ -339,7 +377,15 @@ const submit = () => {
                     />
                 </FormField>
 
-                <div class="md:col-span-2 flex items-center gap-2">
+                <div class="md:col-span-2">
+                    <PatientCard
+                        :patient-name="form.patient_name"
+                        :patient-phone="form.patient_phone_full || form.patient_phone"
+                        :patient-email="form.patient_email"
+                    />
+                </div>
+
+                <div class="flex items-center gap-2 md:col-span-2">
                     <Checkbox
                         v-model="form.notify_patient"
                         binary
@@ -356,7 +402,11 @@ const submit = () => {
                     </label>
                 </div>
 
-                <FormField label="Správa pre pacienta" for="patient_note" span="md:col-span-2">
+                <FormField
+                    label="Správa pre pacienta"
+                    for="patient_note"
+                    span="md:col-span-2"
+                >
                     <Textarea
                         id="patient_note"
                         v-model="form.patient_note"
@@ -366,7 +416,11 @@ const submit = () => {
                     />
                 </FormField>
 
-                <FormField label="Poznámka" for="admin_note" span="md:col-span-2">
+                <FormField
+                    label="Poznámka"
+                    for="admin_note"
+                    span="md:col-span-2"
+                >
                     <Textarea
                         id="admin_note"
                         v-model="form.admin_note"

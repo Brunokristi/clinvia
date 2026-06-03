@@ -228,6 +228,7 @@ const submit = () => {
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
         @save="submit"
+        title="Vytvoriť udalosť"
     >
         <FormPage
             :loading="false"

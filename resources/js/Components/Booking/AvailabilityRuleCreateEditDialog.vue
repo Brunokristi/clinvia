@@ -3,8 +3,9 @@ import MultiSelect from 'primevue/multiselect';
 import { computed } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
-import RepeatingSection from '@/Components/Calendar/Dialogs/RepeatingSection.vue';
+import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
 import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
@@ -152,6 +153,14 @@ const endsAtPickerModel = computed({
     },
 });
 
+const dialogTitle = computed(() => {
+    if (!props.currentRule) {
+        return 'Pravidlo dostupnosti';
+    }
+
+    return props.getRuleTitle(props.currentRule) || 'Pravidlo dostupnosti';
+});
+
 const closeDialog = () => {
     emit('update:visible', false);
     emit('close');
@@ -179,33 +188,39 @@ const deleteCurrentRuleEverywhere = () => {
 <template>
     <EventDialog
         v-model:visible="dialogVisible"
+        :title="dialogTitle"
         v-model:date="datePickerModel"
         v-model:starts-at="startsAtPickerModel"
         v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
-        date-id="availability_rule_date"
-        starts-at-id="availability_rule_starts_at"
-        ends-at-id="availability_rule_ends_at"
-        starts-at-label="Začiatok"
-        ends-at-label="Koniec"
         save-label="Uložiť"
         :loading="loading"
         :save-disabled="loading"
         show-delete
         :is-repeatable="Boolean(currentRule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
-        delete-dialog-title="Vymazať pravidlo dostupnosti"
-        delete-dialog-description="Vyberte, ako chcete odstrániť toto pravidlo dostupnosti."
-        delete-all-label="Odstrániť celé pravidlo dostupnosti"
         @close="closeDialog"
         @save="emit('save')"
         @delete-occurrence="deleteCurrentRuleOccurrence"
         @delete-from-now-on="deleteCurrentRuleFromNowOn"
         @delete-all="deleteCurrentRuleEverywhere"
     >
-        <div v-if="currentRule" class="space-y-6">
-            <FormSection title="Služby" columns="md:grid-cols-2">
-                <FormField label="Priradené rezervovateľné služby" for="availability_service_ids" required span="md:col-span-2">
+        <FormPage
+            v-if="currentRule"
+            submit-label="Uložiť"
+            :loading="loading"
+            :show-submit="false"
+        >
+            <FormSection
+                title="Služby"
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Priradené rezervovateľné služby"
+                    for="availability_service_ids"
+                    required
+                    span="md:col-span-2"
+                >
                     <MultiSelect
                         id="availability_service_ids"
                         v-model="currentRule.service_ids"
@@ -231,9 +246,12 @@ const deleteCurrentRuleEverywhere = () => {
                 enabled-label="Pravidlo dostupnosti je aktívne"
                 repeats-label="Toto pravidlo sa opakuje periodicky"
             />
-        </div>
+        </FormPage>
 
-        <div v-else class="rounded-md bg-soft p-4 text-sm text-accent">
+        <div
+            v-else
+            class="rounded-md bg-soft p-4 text-sm text-accent"
+        >
             Pravidlo sa nepodarilo načítať.
         </div>
     </EventDialog>
