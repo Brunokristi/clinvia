@@ -38,4 +38,20 @@ class BranchInboxMessage extends Model
     {
         return $this->belongsTo(Booking::class);
     }
+
+    public function markAsRead(): void
+    {
+        if ($this->read_at) {
+            return;
+        }
+
+        $this->update([
+            'read_at' => now(),
+        ]);
+    }
+
+    public function isRead(): bool
+    {
+        return $this->read_at !== null;
+    }
 }

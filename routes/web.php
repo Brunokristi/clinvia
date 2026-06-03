@@ -29,6 +29,8 @@ use App\Http\Controllers\PublicBranchSiteController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\BranchOpeningHoursPdfController;
 use App\Http\Controllers\BranchServicesPdfController;
+use App\Http\Controllers\Admin\BranchInboxMessageController;
+
 
 Route::redirect('/', '/dashboard');
 
@@ -171,6 +173,18 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::get('/booking/inbox', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.inbox.page');
+                
+                Route::get('/inbox', [BranchInboxMessageController::class, 'index'])
+                    ->name('inbox.index');
+
+                Route::get('/inbox/{message}', [BranchInboxMessageController::class, 'show'])
+                    ->name('inbox.show');
+
+                Route::patch('/inbox/{message}/read', [BranchInboxMessageController::class, 'markAsRead'])
+                    ->name('inbox.read');
+
+                Route::delete('/inbox/{message}', [BranchInboxMessageController::class, 'destroy'])
+                    ->name('inbox.destroy');
 
                 Route::put('/booking/services', [BranchBookingCalendarController::class, 'updateServices'])
                     ->name('booking.services.update');

@@ -118,4 +118,9 @@ class Branch extends Model
     {
         return $this->hasMany(AppointmentRequest::class);
     }
+
+    public function inboxMessages(): HasMany
+    {
+        return $this->hasMany(BranchInboxMessage::class);
+    }
 }
