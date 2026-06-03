@@ -87,6 +87,10 @@ export function useBookingOpeningHours({ props, dateTime }) {
             return true;
         }
 
+        if (type === 'appointment_request') {
+            return isDateRangeInsideOpeningHours(dropInfo.start, dropInfo.end);
+        }
+
         if (type === 'rule') {
             return isDateRangeInsideOpeningHours(dropInfo.start, dropInfo.end);
         }

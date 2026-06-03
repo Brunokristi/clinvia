@@ -12,9 +12,12 @@ import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenc
 import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 
 import FullCalendar from '@fullcalendar/vue3';
+import { Draggable } from '@fullcalendar/interaction';
 
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
+
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const props = defineProps({
     branch: {
@@ -34,6 +37,10 @@ const props = defineProps({
         default: () => [],
     },
     calendarCapacityWindows: {
+        type: Array,
+        default: () => [],
+    },
+    pendingAppointmentRequests: {
         type: Array,
         default: () => [],
     },
@@ -101,8 +108,81 @@ const {
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
     deleteCapacityWindowSeries,
-    
+    addPatientToCapacityWindow,
 } = useBookingCalendar(props);
+
+const requestSidebar = ref(null);
+
+let requestDraggable = null;
+
+const periodLabels = {
+    morning: 'Ráno',
+    forenoon: 'Dopoludnia',
+    afternoon: 'Popoludní',
+    evening: 'Večer',
+    rano: 'Ráno',
+    dopoludnia: 'Dopoludnia',
+    popoludni: 'Popoludní',
+    vecer: 'Večer',
+};
+
+const pendingRequests = computed(() => props.pendingAppointmentRequests ?? []);
+
+const getRequestPeriodLabel = (request) => {
+    return periodLabels[request.preferred_period] ?? request.preferred_period;
+};
+
+const getRequestServicesLabel = (request) => {
+    const services = request.services ?? [];
+
+    if (!services.length) {
+        return 'Bez služby';
+    }
+
+    return services
+        .map((service) => service.name)
+        .join(', ');
+};
+
+onMounted(() => {
+    if (!requestSidebar.value) {
+        return;
+    }
+
+    requestDraggable = new Draggable(requestSidebar.value, {
+        itemSelector: '.appointment-request-card',
+        eventData: (eventElement) => {
+            const requestId = Number(eventElement.dataset.requestId);
+
+            const appointmentRequest = pendingRequests.value.find((request) => {
+                return Number(request.id) === requestId;
+            });
+
+            if (!appointmentRequest) {
+                return null;
+            }
+
+            return {
+                id: `appointment-request-${appointmentRequest.id}`,
+                title: `${appointmentRequest.patient_name} · ${appointmentRequest.total_duration_minutes} min`,
+                duration: {
+                    minutes: Number(appointmentRequest.total_duration_minutes || 30),
+                },
+                classNames: [
+                    'booking-request-preview-event',
+                ],
+                extendedProps: {
+                    type: 'appointment_request',
+                    appointmentRequest,
+                },
+            };
+        },
+    });
+});
+
+onBeforeUnmount(() => {
+    requestDraggable?.destroy();
+});
 </script>
 
 <template>
@@ -112,7 +192,7 @@ const {
                 columns="grid-cols-1"
             >
                 <div class="space-y-4">
-                    <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex flex-wrap items-center justify-end gap-4">
                         <div class="flex flex-wrap gap-6">
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showAvailabilityRules" />
@@ -127,13 +207,88 @@ const {
 
                         <Button
                             type="button"
-                            label="Pridať do kalendára"
+                            label="Vytvoriť udalosť"
                             @click="openCreateChoiceFromButton"
                         />
                     </div>
 
-                    <div class="booking-calendar">
-                        <FullCalendar :options="calendarOptions" />
+                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                        <aside
+                            ref="requestSidebar"
+                            class="space-y-3 rounded-xl border border-soft bg-white p-4"
+                        >
+                            <div>
+                                <h2 class="text-base font-semibold text-dark">
+                                    Čakajúce žiadosti
+                                </h2>
+
+                                <p class="text-sm text-normal">
+                                    Presuňte žiadosť do kalendára.
+                                </p>
+                            </div>
+
+                            <div
+                                v-if="pendingRequests.length"
+                                class="space-y-3"
+                            >
+                                <article
+                                    v-for="request in pendingRequests"
+                                    :key="request.id"
+                                    :data-request-id="request.id"
+                                    class="appointment-request-card cursor-grab rounded-lg border border-soft bg-soft p-3 shadow-sm active:cursor-grabbing"
+                                >
+                                    <div class="space-y-2">
+                                        <div>
+                                            <h3 class="font-semibold text-dark">
+                                                {{ request.patient_name }}
+                                            </h3>
+
+                                            <p class="text-xs text-normal">
+                                                {{ getRequestServicesLabel(request) }}
+                                            </p>
+                                        </div>
+
+                                        <div class="text-sm text-normal">
+                                            <p>
+                                                {{ request.total_duration_minutes }} min
+                                            </p>
+
+                                            <p>
+                                                {{ request.preferred_date }} · {{ getRequestPeriodLabel(request) }}
+                                            </p>
+                                        </div>
+
+                                        <div class="space-y-1 text-xs text-normal">
+                                            <p v-if="request.patient_phone">
+                                                {{ request.patient_phone }}
+                                            </p>
+
+                                            <p v-if="request.patient_email">
+                                                {{ request.patient_email }}
+                                            </p>
+                                        </div>
+
+                                        <p
+                                            v-if="request.patient_note"
+                                            class="rounded-md bg-white p-2 text-xs text-normal"
+                                        >
+                                            {{ request.patient_note }}
+                                        </p>
+                                    </div>
+                                </article>
+                            </div>
+
+                            <div
+                                v-else
+                                class="rounded-lg bg-soft p-3 text-sm text-normal"
+                            >
+                                Žiadne čakajúce žiadosti.
+                            </div>
+                        </aside>
+
+                        <div class="booking-calendar min-w-0">
+                            <FullCalendar :options="calendarOptions" />
+                        </div>
                     </div>
                 </div>
             </FormSection>
@@ -216,6 +371,12 @@ const {
 <style scoped>
 .booking-calendar :deep(.fc) {
     font-family: inherit;
+}
+
+.booking-calendar :deep(.fc-scrollgrid) {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    border: 1px solid #FFE5E5 !important;
 }
 
 .booking-calendar :deep(.fc-toolbar-title) {
@@ -313,6 +474,22 @@ const {
 
 .booking-calendar :deep(.booking-capacity-window-event .fc-event-title) {
     font-weight: 800;
+}
+
+.booking-calendar :deep(.booking-request-preview-event) {
+    border: 1px solid #C17979;
+    background: #C17979;
+    border-radius: 8px;
+    padding: 2px 4px;
+    z-index: 40;
+    cursor: pointer;
+}
+
+.booking-calendar :deep(.booking-request-preview-event),
+.booking-calendar :deep(.booking-request-preview-event .fc-event-main),
+.booking-calendar :deep(.booking-request-preview-event .fc-event-time),
+.booking-calendar :deep(.booking-request-preview-event .fc-event-title) {
+    color: #ffffff !important;
 }
 
 .booking-calendar :deep(.fc-event-title) {

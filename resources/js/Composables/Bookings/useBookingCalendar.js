@@ -229,12 +229,13 @@ export function useBookingCalendar(props) {
             allDaySlot: false,
             selectable: true,
             editable: true,
+            droppable: true,
             eventResizableFromStart: true,
 
             slotMinTime: branchHours.min,
             slotMaxTime: branchHours.max,
             slotDuration: '00:30:00',
-            snapDuration: '00:15:00',
+            snapDuration: '00:05:00',
 
             businessHours: openingHours.getBusinessHours(),
             selectConstraint: 'businessHours',
@@ -281,6 +282,7 @@ export function useBookingCalendar(props) {
             eventClick: openEventDialog,
             eventDrop: handleEventDropOrResize,
             eventResize: handleEventDropOrResize,
+            eventReceive: bookingActions.convertAppointmentRequest,
         };
     });
 

@@ -147,50 +147,6 @@ const removeInterval = (day, intervalIndex) => {
     }));
 };
 
-const cloneIntervals = (intervals) => {
-    return intervals.map((interval, index) => ({
-        opens_at: createTimeDate(formatTimeForSubmit(interval.opens_at)),
-        closes_at: createTimeDate(formatTimeForSubmit(interval.closes_at)),
-        sort_order: index,
-    }));
-};
-
-const applyMondayToAllDays = () => {
-    const monday = openingHoursForm.opening_hours.find((day) => day.day_of_week === 1);
-
-    if (!monday) {
-        return;
-    }
-
-    openingHoursForm.opening_hours = openingHoursForm.opening_hours.map((day) => ({
-        ...day,
-        is_closed: monday.is_closed,
-        note: monday.note,
-        intervals: cloneIntervals(monday.intervals),
-    }));
-};
-
-const setWeekdaysFromMonday = () => {
-    const monday = openingHoursForm.opening_hours.find((day) => day.day_of_week === 1);
-
-    if (!monday) {
-        return;
-    }
-
-    openingHoursForm.opening_hours = openingHoursForm.opening_hours.map((day) => {
-        if (day.day_of_week >= 6) {
-            return day;
-        }
-
-        return {
-            ...day,
-            is_closed: monday.is_closed,
-            note: monday.note,
-            intervals: cloneIntervals(monday.intervals),
-        };
-    });
-};
-
 const fieldError = (dayIndex, intervalIndex, field) => {
     return openingHoursForm.errors[`opening_hours.${dayIndex}.intervals.${intervalIndex}.${field}`] ?? '';
 };
@@ -198,11 +154,36 @@ const fieldError = (dayIndex, intervalIndex, field) => {
 const noteError = (dayIndex) => {
     return openingHoursForm.errors[`opening_hours.${dayIndex}.note`] ?? '';
 };
+
+const printOpeningHoursPdf = () => {
+    window.open(route('branches.opening-hours.pdf.show', props.branch.id), '_blank');
+};
+
+const downloadOpeningHoursPdf = () => {
+    window.location.href = route('branches.opening-hours.pdf.download', props.branch.id);
+};
 </script>
 
 <template>
     <AdminLayout>
         <form @submit.prevent="saveOpeningHours">
+            <div class="mb-6 flex flex-wrap justify-end gap-3">
+                <Button
+                    type="button"
+                    label="Vytlačiť PDF"
+                    icon="pi pi-print"
+                    outlined
+                    @click="printOpeningHoursPdf"
+                />
+
+                <Button
+                    type="button"
+                    label="Stiahnuť PDF"
+                    icon="pi pi-download"
+                    @click="downloadOpeningHoursPdf"
+                />
+            </div>
+
             <FormPage
                 submit-label="Uložiť otváracie hodiny"
                 :loading="openingHoursForm.processing"
@@ -214,7 +195,6 @@ const noteError = (dayIndex) => {
                     columns="grid-cols-1"
                 >
                     <div :class="day.is_closed ? 'bg-soft/50' : 'bg-white'">
-
                         <div class="mb-5 flex items-center gap-2">
                             <Checkbox
                                 v-model="day.is_closed"

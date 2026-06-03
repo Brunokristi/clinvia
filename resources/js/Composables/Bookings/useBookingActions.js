@@ -134,6 +134,32 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         });
     };
 
+    const convertAppointmentRequest = (receiveInfo) => {
+        const appointmentRequest = receiveInfo.event.extendedProps.appointmentRequest;
+
+        if (!appointmentRequest?.id) {
+            receiveInfo.revert();
+
+            return;
+        }
+
+        router.post(route('branches.booking.appointment-requests.convert', [
+            props.branch.id,
+            appointmentRequest.id,
+        ]), {
+            starts_at: toLocalDateTimeString(receiveInfo.event.start),
+        }, {
+            preserveScroll: true,
+            preserveState: false,
+            onError: () => {
+                receiveInfo.revert();
+            },
+            onFinish: () => {
+                receiveInfo.event.remove();
+            },
+        });
+    };
+
     return {
         availableSlotsForBooking,
         bookingNotes,
@@ -142,5 +168,6 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         rescheduleBooking,
         rescheduleBookingByCalendarChange,
         updateBooking,
+        convertAppointmentRequest,
     };
 }

@@ -27,6 +27,8 @@ use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBranchSiteController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\BranchOpeningHoursPdfController;
+use App\Http\Controllers\BranchServicesPdfController;
 
 Route::redirect('/', '/dashboard');
 
@@ -158,6 +160,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::get('/booking', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.dashboard.page');
 
+                Route::post('/booking/appointment-requests/{appointmentRequest}/convert',[BranchBookingCalendarController::class, 'convertAppointmentRequest'])
+                    ->name('booking.appointment-requests.convert');
+
                 Route::get('/booking/settings', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.settings.page');
 
@@ -233,6 +238,12 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::put('/opening-hours', [BranchOpeningHoursController::class, 'update'])
                     ->name('opening-hours.update');
 
+                Route::get('/opening-hours/pdf', [BranchOpeningHoursPdfController::class, 'show'])
+                    ->name('opening-hours.pdf.show');
+
+                Route::get('/opening-hours/pdf/download', [BranchOpeningHoursPdfController::class, 'download'])
+                    ->name('opening-hours.pdf.download');
+
                 Route::get('/users', [BranchController::class, 'users'])
                     ->name('users.page');
 
@@ -271,6 +282,12 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::delete('/services/{branchService}', [BranchServiceController::class, 'destroy'])
                     ->name('services.destroy');
+
+                Route::get('/services/pdf', [BranchServicesPdfController::class, 'show'])
+                    ->name('services.pdf.show');
+
+                Route::get('/services/pdf/download', [BranchServicesPdfController::class, 'download'])
+                    ->name('services.pdf.download');
 
                 Route::get('/public-site', [BranchController::class, 'publicSite'])
                     ->name('public-site.page');

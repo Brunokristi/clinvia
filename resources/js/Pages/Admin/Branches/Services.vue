@@ -399,11 +399,20 @@ const removeService = (service) => {
         },
     });
 };
+
+const printServicesPdf = () => {
+    window.open(route('branches.services.pdf.show', props.branch.id), '_blank');
+};
+
+const downloadServicesPdf = () => {
+    window.location.href = route('branches.services.pdf.download', props.branch.id);
+};
 </script>
 
 <template>
     <AdminLayout>
         <div class="space-y-6">
+
             <TableCard
                 title="Služby pobočky"
                 description="Všetky služby priradené k tejto pobočke."
@@ -413,6 +422,22 @@ const removeService = (service) => {
                 show-row-actions
             >
                 <template #actions>
+                    <Button
+                        type="button"
+                        label="Vytlačiť PDF"
+                        icon="pi pi-print"
+                        outlined
+                        @click="printServicesPdf"
+                    />
+
+                    <Button
+                        type="button"
+                        label="Stiahnuť PDF"
+                        icon="pi pi-download"
+                        outlined
+                        @click="downloadServicesPdf"
+                    />
+
                     <Button
                         label="Pridať službu"
                         @click="openCreateDialog"
