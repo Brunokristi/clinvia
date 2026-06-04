@@ -14,7 +14,7 @@ defineProps({
     <div class="min-h-screen bg-white text-dark">
         <PublicNavbar :branch="branch" />
 
-        <main class="flex-1 p-6 max-w-6xl mx-auto">
+        <main class="flex-1 p-6 max-w-6xl mx-auto min-h-[500px]">
             <slot />
         </main>
 
