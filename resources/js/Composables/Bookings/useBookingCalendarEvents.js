@@ -76,6 +76,42 @@ export function useBookingCalendarEvents({
         });
     });
 
+    const getBookingDurationMinutes = (booking) => {
+        if (booking.services?.length) {
+            return booking.services.reduce((total, service) => {
+                return total + Number(service.duration_minutes || 0);
+            }, 0);
+        }
+
+        if (booking.duration_minutes) {
+            return Number(booking.duration_minutes);
+        }
+
+        return 30;
+    };
+
+    const addMinutesToDateTime = (dateTime, minutes) => {
+        if (!dateTime) {
+            return null;
+        }
+
+        const date = new Date(dateTime);
+        date.setMinutes(date.getMinutes() + minutes);
+
+        return date;
+    };
+
+    const getBookingEnd = (booking) => {
+        if (booking.ends_at) {
+            return booking.ends_at;
+        }
+
+        return addMinutesToDateTime(
+            booking.starts_at,
+            getBookingDurationMinutes(booking),
+        );
+    };
+
     const individualReservationEvents = computed(() => {
         if (!showReservations.value) {
             return [];
@@ -87,7 +123,7 @@ export function useBookingCalendarEvents({
                 id: `booking-${booking.id}`,
                 title: `${booking.service_name} · ${booking.patient_name}`,
                 start: booking.starts_at,
-                end: booking.ends_at,
+                end: getBookingEnd(booking),
                 editable: true,
                 durationEditable: true,
                 startEditable: true,
@@ -96,7 +132,10 @@ export function useBookingCalendarEvents({
                 ],
                 extendedProps: {
                     type: 'booking',
-                    booking,
+                    booking: {
+                        ...booking,
+                        ends_at: getBookingEnd(booking),
+                    },
                 },
             }));
     });

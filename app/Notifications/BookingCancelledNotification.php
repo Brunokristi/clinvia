@@ -27,29 +27,25 @@ class BookingCancelledNotification extends Notification
         $this->booking->loadMissing(['branch', 'service', 'bookingSlot']);
 
         $slot = $this->booking->bookingSlot;
-        $service = $this->booking->service;
-        $branch = $this->booking->branch;
 
-        $date = $slot?->starts_at?->format('d.m.Y');
-        $time = $slot?->starts_at?->format('H:i') . ' - ' . $slot?->ends_at?->format('H:i');
+        $appointmentLabel = null;
 
-        $mail = (new MailMessage)
+        if ($slot?->starts_at && $slot?->ends_at) {
+            $appointmentLabel = $slot->starts_at->format('d.m.Y')
+                . ' o '
+                . $slot->starts_at->format('H:i')
+                . ' – '
+                . $slot->ends_at->format('H:i');
+        }
+
+        return (new MailMessage)
             ->subject('Rezervácia bola zrušená')
-            ->greeting('Dobrý deň, ' . $this->booking->patient_name . ',')
-            ->line('Vaša rezervácia bola zrušená.')
-            ->line('Služba: ' . ($service?->name ?? '—'))
-            ->line('Pobočka: ' . ($branch?->name ?? '—'));
-
-        if ($date && $time) {
-            $mail->line('Pôvodný termín: ' . $date . ' o ' . $time);
-        }
-
-        if (filled($this->reason)) {
-            $mail->line('Dôvod: ' . $this->reason);
-        }
-
-        return $mail
-            ->line('V prípade otázok nás prosím kontaktujte.')
-            ->salutation('Ďakujeme');
+            ->view('emails.bookings.cancelled', [
+                'patientName' => $this->booking->patient_name,
+                'serviceName' => $this->booking->service?->name ?? '—',
+                'branchName' => $this->booking->branch?->name ?? '—',
+                'appointmentLabel' => $appointmentLabel,
+                'reason' => $this->reason,
+            ]);
     }
 }

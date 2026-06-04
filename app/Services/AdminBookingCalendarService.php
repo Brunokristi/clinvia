@@ -29,7 +29,11 @@ class AdminBookingCalendarService
                     'service_name' => $slot->service?->name,
                     'starts_at' => $slot->starts_at->toDateTimeString(),
                     'ends_at' => $slot->ends_at->toDateTimeString(),
-                    'label' => $slot->starts_at->format('d.m.Y H:i') . ' - ' . $slot->ends_at->format('H:i') . ' · ' . ($slot->service?->name ?? 'Služba'),
+                    'label' => $slot->starts_at->format('d.m.Y H:i')
+                        . ' - '
+                        . $slot->ends_at->format('H:i')
+                        . ' · '
+                        . ($slot->service?->name ?? 'Služba'),
                 ];
             })
             ->values();
@@ -38,7 +42,11 @@ class AdminBookingCalendarService
     public function getCalendarBookings(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): Collection
     {
         $allBookings = Booking::query()
-            ->with(['service', 'bookingSlot.service'])
+            ->with([
+                'service',
+                'services',
+                'bookingSlot.service',
+            ])
             ->where('branch_id', $branch->id)
             ->whereNotIn('status', ['cancelled', 'rejected'])
             ->whereHas('bookingSlot', function ($query) use ($rangeStart, $rangeEnd) {
@@ -60,7 +68,11 @@ class AdminBookingCalendarService
     public function getCalendarCapacityWindows(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): Collection
     {
         $allBookings = Booking::query()
-            ->with(['service', 'bookingSlot.service'])
+            ->with([
+                'service',
+                'services',
+                'bookingSlot.service',
+            ])
             ->where('branch_id', $branch->id)
             ->whereNotIn('status', ['cancelled', 'rejected'])
             ->whereHas('bookingSlot', function ($query) use ($rangeStart, $rangeEnd) {
@@ -94,7 +106,7 @@ class AdminBookingCalendarService
                                 return false;
                             }
 
-                            if (! $serviceIds->contains((int) $booking->service_id)) {
+                            if (! $this->bookingBelongsToAnyService($booking, $serviceIds)) {
                                 return false;
                             }
 
@@ -113,7 +125,10 @@ class AdminBookingCalendarService
                         'id' => $rule->id . '-' . $ruleDate->toDateString(),
                         'rule_id' => $rule->id,
                         'service_id' => $rule->service_id,
-                        'service_name' => $service?->name,
+                        'service_ids' => $serviceIds->values(),
+                        'service_name' => $rule->services->isNotEmpty()
+                            ? $rule->services->pluck('name')->join(', ')
+                            : $service?->name,
                         'date' => $ruleDate->toDateString(),
                         'starts_at' => $windowStart->toDateTimeString(),
                         'ends_at' => $windowEnd->toDateTimeString(),
@@ -203,16 +218,22 @@ class AdminBookingCalendarService
         $serviceIds = $this->getRuleServiceIds($rule);
 
         return Booking::query()
-            ->with(['branch', 'service', 'bookingSlot'])
+            ->with([
+                'branch',
+                'service',
+                'services',
+                'bookingSlot',
+            ])
             ->where('branch_id', $branch->id)
-            ->whereIn('service_id', $serviceIds)
             ->whereNotIn('status', ['cancelled', 'rejected'])
             ->whereHas('bookingSlot', function ($query) use ($windowStart, $windowEnd) {
                 $query
                     ->where('starts_at', '<', $windowEnd)
                     ->where('ends_at', '>', $windowStart);
             })
-            ->get();
+            ->get()
+            ->filter(fn (Booking $booking) => $this->bookingBelongsToAnyService($booking, $serviceIds))
+            ->values();
     }
 
     public function getCapacityWindowBookingsFromDate(Branch $branch, BookingAvailabilityRule $rule, Carbon $date): Collection
@@ -220,14 +241,20 @@ class AdminBookingCalendarService
         $serviceIds = $this->getRuleServiceIds($rule);
 
         return Booking::query()
-            ->with(['branch', 'service', 'bookingSlot'])
+            ->with([
+                'branch',
+                'service',
+                'services',
+                'bookingSlot',
+            ])
             ->where('branch_id', $branch->id)
-            ->whereIn('service_id', $serviceIds)
             ->whereNotIn('status', ['cancelled', 'rejected'])
             ->whereHas('bookingSlot', function ($query) use ($date) {
                 $query->where('starts_at', '>=', $date);
             })
-            ->get();
+            ->get()
+            ->filter(fn (Booking $booking) => $this->bookingBelongsToAnyService($booking, $serviceIds))
+            ->values();
     }
 
     public function moveCapacityWindowOccurrence(
@@ -304,16 +331,40 @@ class AdminBookingCalendarService
             return $slot;
         }
 
-        if (empty($data['service_id']) || empty($data['starts_at']) || empty($data['ends_at'])) {
+        $serviceIds = collect($data['service_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($serviceIds->isEmpty() && ! empty($data['service_id'])) {
+            $serviceIds = collect([
+                (int) $data['service_id'],
+            ]);
+        }
+
+        if ($serviceIds->isEmpty() || empty($data['starts_at']) || empty($data['ends_at'])) {
             throw ValidationException::withMessages([
                 'starts_at' => 'Vyberte službu, začiatok a koniec rezervácie.',
             ]);
         }
 
-        $service = Service::query()
+        $services = Service::query()
             ->where('branch_id', $branch->id)
-            ->whereKey($data['service_id'])
-            ->firstOrFail();
+            ->where('is_active', true)
+            ->where('is_bookable', true)
+            ->whereIn('id', $serviceIds)
+            ->get()
+            ->sortBy(fn (Service $service) => $serviceIds->search((int) $service->id))
+            ->values();
+
+        if ($services->isEmpty()) {
+            throw ValidationException::withMessages([
+                'service_ids' => 'Vybrané služby nie sú dostupné.',
+            ]);
+        }
+
+        $mainService = $services->first();
 
         $startsAt = Carbon::parse($data['starts_at']);
         $endsAt = Carbon::parse($data['ends_at']);
@@ -327,12 +378,12 @@ class AdminBookingCalendarService
         $slot = BookingSlot::firstOrCreate(
             [
                 'branch_id' => $branch->id,
-                'service_id' => $service->id,
+                'service_id' => $mainService->id,
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
             ],
             [
-                'capacity' => max(1, (int) ($service->capacity ?? 1)),
+                'capacity' => max(1, (int) ($mainService->capacity ?? 1)),
                 'is_enabled' => true,
             ],
         );
@@ -399,7 +450,7 @@ class AdminBookingCalendarService
                                     return false;
                                 }
 
-                                if (! $serviceIds->contains((int) $booking->service_id)) {
+                                if (! $this->bookingBelongsToAnyService($booking, $serviceIds)) {
                                     return false;
                                 }
 
@@ -415,11 +466,30 @@ class AdminBookingCalendarService
 
     private function mapBooking(Booking $booking): array
     {
+        $bookingServices = $booking->services->isNotEmpty()
+            ? $booking->services
+            : collect($booking->service ? [$booking->service] : []);
+
         return [
             'id' => $booking->id,
             'booking_slot_id' => $booking->booking_slot_id,
             'service_id' => $booking->service_id,
-            'service_name' => $booking->service?->name ?? $booking->bookingSlot?->service?->name,
+            'service_ids' => $bookingServices
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all(),
+            'service_name' => $bookingServices->isNotEmpty()
+                ? $bookingServices->pluck('name')->join(', ')
+                : ($booking->bookingSlot?->service?->name ?? '—'),
+            'services' => $bookingServices
+                ->map(fn (Service $service) => [
+                    'id' => $service->id,
+                    'name' => $service->name,
+                    'duration_minutes' => $service->duration_minutes,
+                ])
+                ->values()
+                ->all(),
             'patient_name' => $booking->patient_name,
             'patient_email' => $booking->patient_email,
             'patient_phone' => $booking->patient_phone,
@@ -443,5 +513,23 @@ class AdminBookingCalendarService
         }
 
         return $serviceIds;
+    }
+
+    private function bookingBelongsToAnyService(Booking $booking, Collection $serviceIds): bool
+    {
+        $bookingServiceIds = $booking->services
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        if ($bookingServiceIds->isEmpty() && $booking->service_id) {
+            $bookingServiceIds = collect([
+                (int) $booking->service_id,
+            ]);
+        }
+
+        return $bookingServiceIds
+            ->intersect($serviceIds->map(fn ($id) => (int) $id))
+            ->isNotEmpty();
     }
 }

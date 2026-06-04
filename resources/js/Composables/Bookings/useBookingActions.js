@@ -49,6 +49,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         router.post(route('branches.booking.bookings.store', props.branch.id), {
             booking_slot_id: data.booking_slot_id ?? null,
             service_id: data.service_id ?? null,
+            service_ids: data.service_ids ?? (data.service_id ? [data.service_id] : []),
             starts_at: data.starts_at
                 ?? (selectionInfo ? toLocalDateTimeString(selectionInfo.start) : null),
             ends_at: data.ends_at
@@ -94,11 +95,39 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         });
     };
 
+    const getBookingServiceIds = (booking, data = {}) => {
+        if (data.service_ids?.length) {
+            return data.service_ids;
+        }
+
+        if (booking.service_ids?.length) {
+            return booking.service_ids;
+        }
+
+        if (booking.services?.length) {
+            return booking.services.map((service) => service.id);
+        }
+
+        if (data.service_id) {
+            return [data.service_id];
+        }
+
+        if (booking.service_id) {
+            return [booking.service_id];
+        }
+
+        return [];
+    };
+
     const rescheduleBooking = (booking, data = {}) => {
+        const serviceIds = getBookingServiceIds(booking, data);
+
         router.post(route('branches.booking.bookings.reschedule', [props.branch.id, booking.id]), {
             booking_slot_id: data.booking_slot_id ?? null,
-            service_id: data.service_id ?? booking.service_id,
+            service_id: serviceIds[0] ?? data.service_id ?? booking.service_id,
+            service_ids: serviceIds,
             starts_at: data.starts_at ?? null,
+            ends_at: data.ends_at ?? null,
             admin_note: bookingNotes.value[booking.id] ?? '',
             notify_patient: Boolean(data.notify_patient ?? false),
             notification_reason: data.notification_reason ?? null,
@@ -118,8 +147,12 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             return;
         }
 
+        const serviceIds = getBookingServiceIds(booking);
+
         router.post(route('branches.booking.bookings.reschedule', [props.branch.id, booking.id]), {
-            service_id: booking.service_id,
+            booking_slot_id: null,
+            service_id: serviceIds[0] ?? booking.service_id,
+            service_ids: serviceIds,
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: toLocalDateTimeString(changeInfo.event.end),
             admin_note: bookingNotes.value[booking.id] ?? '',

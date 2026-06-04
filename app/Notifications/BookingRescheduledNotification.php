@@ -27,47 +27,55 @@ class BookingRescheduledNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $this->booking->loadMissing(['branch', 'service', 'bookingSlot']);
+        $this->booking->loadMissing([
+            'branch',
+            'service',
+            'services',
+            'bookingSlot',
+        ]);
 
         $slot = $this->booking->bookingSlot;
-        $service = $this->booking->service;
-        $branch = $this->booking->branch;
 
-        $mail = (new MailMessage)
-            ->subject('Rezervácia bola upravená')
-            ->greeting('Dobrý deň, ' . $this->booking->patient_name . ',')
-            ->line('Vaša rezervácia bola upravená.')
-            ->line('Služba: ' . ($service?->name ?? '—'))
-            ->line('Pobočka: ' . ($branch?->name ?? '—'));
+        $oldAppointmentLabel = null;
 
         if ($this->oldStartsAt && $this->oldEndsAt) {
-            $mail->line(
-                'Pôvodný termín: '
-                . $this->oldStartsAt->format('d.m.Y')
+            $oldAppointmentLabel = $this->oldStartsAt->format('d.m.Y')
                 . ' o '
                 . $this->oldStartsAt->format('H:i')
-                . ' - '
-                . $this->oldEndsAt->format('H:i')
-            );
+                . ' – '
+                . $this->oldEndsAt->format('H:i');
         }
 
-        if ($slot) {
-            $mail->line(
-                'Nový termín: '
-                . $slot->starts_at->format('d.m.Y')
+        $newAppointmentLabel = null;
+
+        if ($slot?->starts_at && $slot?->ends_at) {
+            $newAppointmentLabel = $slot->starts_at->format('d.m.Y')
                 . ' o '
                 . $slot->starts_at->format('H:i')
-                . ' - '
-                . $slot->ends_at->format('H:i')
-            );
+                . ' – '
+                . $slot->ends_at->format('H:i');
         }
 
-        if (filled($this->reason)) {
-            $mail->line('Dôvod: ' . $this->reason);
+        return (new MailMessage)
+            ->subject('Rezervácia bola upravená')
+            ->view('emails.bookings.rescheduled', [
+                'patientName' => $this->booking->patient_name,
+                'serviceName' => $this->serviceName(),
+                'branchName' => $this->booking->branch?->name ?? '—',
+                'oldAppointmentLabel' => $oldAppointmentLabel,
+                'newAppointmentLabel' => $newAppointmentLabel,
+                'reason' => $this->reason,
+            ]);
+    }
+
+    private function serviceName(): string
+    {
+        if ($this->booking->services->isNotEmpty()) {
+            return $this->booking->services
+                ->pluck('name')
+                ->join(', ');
         }
 
-        return $mail
-            ->line('V prípade otázok nás prosím kontaktujte.')
-            ->salutation('Ďakujeme');
+        return $this->booking->service?->name ?? '—';
     }
 }

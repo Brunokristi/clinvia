@@ -14,6 +14,8 @@ class BranchInboxMessageController extends Controller
 {
     public function index(Request $request, Branch $branch): Response
     {
+        $branch->loadMissing('company');
+
         $type = $request->string('type')->toString();
         $status = $request->string('status')->toString();
 
@@ -33,6 +35,7 @@ class BranchInboxMessageController extends Controller
             ->withQueryString();
 
         return Inertia::render('Admin/Branches/Inbox/Index', [
+            'company' => $branch->company,
             'branch' => $branch,
             'messages' => $messages,
             'filters' => [

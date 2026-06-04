@@ -19,6 +19,7 @@ class AppointmentRequest extends Model
         'patient_phone',
         'patient_note',
         'status',
+        'request_type',
     ];
 
     protected $casts = [

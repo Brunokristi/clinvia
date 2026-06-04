@@ -49,7 +49,9 @@ class BranchBookingController extends Controller
             'status' => 'confirmed',
         ]);
 
-        if (($validated['notify_patient'] ?? false) && filled($booking->patient_email)) {
+        if ($validated['notify_patient'] ?? true) {
+            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+
             $notificationService->sendCreatedNotification($booking);
         }
 
@@ -84,7 +86,12 @@ class BranchBookingController extends Controller
             && $validated['status'] === 'cancelled'
             && ($validated['notify_patient'] ?? true)
         ) {
-            $notificationService->sendCancelledNotification($booking, $validated['notification_reason'] ?? null);
+            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+
+            $notificationService->sendCancelledNotification(
+                booking: $booking,
+                reason: $validated['notification_reason'] ?? null,
+            );
         }
 
         return back()->with('success', 'Rezervácia bola upravená.');
@@ -105,13 +112,23 @@ class BranchBookingController extends Controller
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $oldStatus = $booking->status;
+
         $booking->update([
             'status' => 'cancelled',
             'admin_note' => $validated['admin_note'] ?? $booking->admin_note,
         ]);
 
-        if ($validated['notify_patient'] ?? true) {
-            $notificationService->sendCancelledNotification($booking, $validated['notification_reason'] ?? null);
+        if (
+            $oldStatus !== 'cancelled'
+            && ($validated['notify_patient'] ?? true)
+        ) {
+            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+
+            $notificationService->sendCancelledNotification(
+                booking: $booking,
+                reason: $validated['notification_reason'] ?? null,
+            );
         }
 
         return back()->with('success', 'Rezervácia bola zrušená.');
@@ -130,21 +147,66 @@ class BranchBookingController extends Controller
         $validated = $request->validate([
             'booking_slot_id' => ['nullable', 'integer', 'exists:booking_slots,id'],
             'service_id' => ['nullable', 'integer', 'exists:services,id'],
+            'service_ids' => ['nullable', 'array'],
+            'service_ids.*' => ['integer', 'exists:services,id'],
             'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'admin_note' => ['nullable', 'string'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $booking->loadMissing(['bookingSlot', 'services']);
+
         $oldSlot = $booking->bookingSlot;
         $oldStartsAt = $oldSlot?->starts_at?->copy();
         $oldEndsAt = $oldSlot?->ends_at?->copy();
-        $serviceId = $validated['service_id'] ?? $booking->service_id;
+
+        $serviceIds = collect($validated['service_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values();
+
+        if ($serviceIds->isEmpty()) {
+            $serviceIds = $booking->services
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        if ($serviceIds->isEmpty() && ! empty($validated['service_id'])) {
+            $serviceIds = collect([(int) $validated['service_id']]);
+        }
+
+        if ($serviceIds->isEmpty() && ! empty($booking->service_id)) {
+            $serviceIds = collect([(int) $booking->service_id]);
+        }
+
+        if ($serviceIds->isEmpty()) {
+            return back()->withErrors([
+                'service_ids' => 'Vyberte aspoň jednu službu.',
+            ]);
+        }
+
+        $serviceId = (int) ($validated['service_id'] ?? $serviceIds->first() ?? $booking->service_id);
+
+        $services = Service::query()
+            ->where('branch_id', $branch->id)
+            ->whereIn('id', $serviceIds)
+            ->get();
+
+        if ($services->isEmpty()) {
+            return back()->withErrors([
+                'service_ids' => 'Vybrané služby nepatria k tejto pobočke.',
+            ]);
+        }
+
+        $primaryService = $services->firstWhere('id', $serviceId) ?? $services->first();
 
         if (! empty($validated['booking_slot_id'])) {
             $newSlot = $calendarService->resolveSlotForAdminBooking($branch, [
                 ...$validated,
-                'service_id' => $serviceId,
+                'service_id' => $primaryService->id,
             ]);
         } else {
             if (empty($validated['starts_at'])) {
@@ -153,30 +215,29 @@ class BranchBookingController extends Controller
                 ]);
             }
 
-            $service = Service::query()
-                ->where('branch_id', $branch->id)
-                ->whereKey($serviceId)
-                ->firstOrFail();
-
-            $durationMinutes = (int) (
-                $service->duration_minutes
-                ?? $service->duration
-                ?? $service->length_minutes
-                ?? $service->minutes
-                ?? 0
-            );
+            $durationMinutes = $services->sum(function (Service $service) {
+                return (int) (
+                    $service->duration_minutes
+                    ?? $service->duration
+                    ?? $service->length_minutes
+                    ?? $service->minutes
+                    ?? 0
+                );
+            });
 
             if ($durationMinutes <= 0) {
                 return back()->withErrors([
-                    'service_id' => 'Vybraná služba nemá nastavené trvanie.',
+                    'service_ids' => 'Vybrané služby nemajú nastavené trvanie.',
                 ]);
             }
 
             $startsAt = Carbon::parse($validated['starts_at']);
-            $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
+            $endsAt = ! empty($validated['ends_at'])
+                ? Carbon::parse($validated['ends_at'])
+                : $startsAt->copy()->addMinutes($durationMinutes);
 
             $newSlot = $calendarService->resolveSlotForAdminBooking($branch, [
-                'service_id' => $service->id,
+                'service_id' => $primaryService->id,
                 'starts_at' => $startsAt->toDateTimeString(),
                 'ends_at' => $endsAt->toDateTimeString(),
             ]);
@@ -189,8 +250,10 @@ class BranchBookingController extends Controller
             'admin_note' => $validated['admin_note'] ?? $booking->admin_note,
         ]);
 
-        if ($validated['notify_patient'] ?? false) {
-            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+        $booking->services()->sync($serviceIds->all());
+
+        if ($validated['notify_patient'] ?? true) {
+            $booking->refresh()->load(['branch', 'service', 'services', 'bookingSlot']);
 
             $notificationService->sendRescheduledNotification(
                 booking: $booking,

@@ -1,7 +1,9 @@
 <script setup>
+import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
-import { computed } from 'vue';
+import Textarea from 'primevue/textarea';
+import { computed, reactive, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
@@ -56,6 +58,23 @@ const emit = defineEmits([
 const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value),
+});
+
+const notificationForm = reactive({
+    notify_patient: true,
+    notification_reason: '',
+});
+
+const notificationPayload = () => ({
+    notify_patient: notificationForm.notify_patient,
+    notification_reason: notificationForm.notification_reason,
+});
+
+watch(() => props.visible, (visible) => {
+    if (visible) {
+        notificationForm.notify_patient = true;
+        notificationForm.notification_reason = '';
+    }
 });
 
 const createTimeDate = (value) => {
@@ -168,20 +187,20 @@ const closeDialog = () => {
 
 const deleteCurrentRuleOccurrence = () => {
     if (props.currentRule?.repeats) {
-        emit('delete-occurrence');
+        emit('delete-occurrence', notificationPayload());
 
         return;
     }
 
-    emit('delete-all');
+    emit('delete-all', notificationPayload());
 };
 
 const deleteCurrentRuleFromNowOn = () => {
-    emit('delete-from-now-on');
+    emit('delete-from-now-on', notificationPayload());
 };
 
 const deleteCurrentRuleEverywhere = () => {
-    emit('delete-all');
+    emit('delete-all', notificationPayload());
 };
 </script>
 
@@ -193,7 +212,7 @@ const deleteCurrentRuleEverywhere = () => {
         v-model:starts-at="startsAtPickerModel"
         v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
-        save-label="Uložiť"
+        save-label="Pokračovať"
         :loading="loading"
         :save-disabled="loading || !currentRule"
         :show-save="Boolean(currentRule)"
@@ -201,7 +220,7 @@ const deleteCurrentRuleEverywhere = () => {
         :is-repeatable="Boolean(currentRule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
         @close="closeDialog"
-        @save="emit('save')"
+        @save="emit('save', notificationPayload())"
         @delete-occurrence="deleteCurrentRuleOccurrence"
         @delete-from-now-on="deleteCurrentRuleFromNowOn"
         @delete-all="deleteCurrentRuleEverywhere"
@@ -261,6 +280,41 @@ const deleteCurrentRuleEverywhere = () => {
                 enabled-label="Skupinová rezervácia je aktívna a viditeľná pre pacientov"
                 repeats-label="Opakovať túto skupinovú rezerváciu periodicky"
             />
+
+            <FormSection
+                title="Upozornenie pacientov"
+                description="Ak zmeníte alebo zrušíte skupinovú rezerváciu s pacientmi, pacientom sa odošle email."
+                columns="md:grid-cols-1"
+            >
+                <div class="flex items-center gap-2">
+                    <Checkbox
+                        v-model="notificationForm.notify_patient"
+                        binary
+                        input-id="group_notify_patient"
+                    />
+
+                    <label
+                        for="group_notify_patient"
+                        class="cursor-pointer text-sm font-medium text-dark"
+                    >
+                        Poslať pacientom email pri zmene alebo zrušení
+                    </label>
+                </div>
+
+                <FormField
+                    v-if="notificationForm.notify_patient"
+                    label="Dôvod správy pre pacientov"
+                    for="group_notification_reason"
+                >
+                    <Textarea
+                        id="group_notification_reason"
+                        v-model="notificationForm.notification_reason"
+                        rows="3"
+                        class="w-full"
+                        placeholder="Napríklad: Skupinový termín sa presúva z organizačných dôvodov."
+                    />
+                </FormField>
+            </FormSection>
         </FormPage>
 
         <div

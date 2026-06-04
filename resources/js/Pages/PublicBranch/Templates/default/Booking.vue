@@ -28,6 +28,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    canBookExactSlots: {
+        type: Boolean,
+        default: false,
+    },
+    canSubmitGeneralRequest: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const page = usePage();
@@ -44,6 +52,7 @@ const dateValue = ref(props.selectedDate || new Date().toISOString().slice(0, 10
 
 const bookingForm = useForm({
     mode: '',
+    request_type: '',
     service_ids: selectedServiceIds.value,
     booking_slot_id: '',
     preferred_option_id: '',
@@ -59,16 +68,19 @@ const selectedServices = computed(() => {
     return props.services.filter((service) => selectedServiceIds.value.includes(Number(service.id)));
 });
 
-const selectedSingleService = computed(() => {
-    if (selectedServices.value.length !== 1) {
-        return null;
-    }
-
-    return selectedServices.value[0];
+const canShowExactSlots = computed(() => {
+    return props.canBookExactSlots;
 });
 
-const canShowExactSlots = computed(() => {
-    return selectedSingleService.value?.booking_type === 'group';
+const canShowGeneralRequest = computed(() => {
+    return props.canSubmitGeneralRequest
+        && selectedServices.value.length > 0;
+});
+
+const shouldHighlightGeneralRequest = computed(() => {
+    return canShowGeneralRequest.value
+        && !props.availableSlots.length
+        && !props.availableOptions.length;
 });
 
 const totalDurationMinutes = computed(() => {
@@ -78,13 +90,13 @@ const totalDurationMinutes = computed(() => {
 });
 
 const selectedSlotLabel = computed(() => {
-    const slot = props.availableSlots.find((item) => item.id === bookingForm.booking_slot_id);
+    const slot = props.availableSlots.find((item) => Number(item.id) === Number(bookingForm.booking_slot_id));
 
     if (!slot) {
         return null;
     }
 
-    return `${slot.starts_at.slice(11, 16)} – ${slot.ends_at.slice(11, 16)}`;
+    return `${slot.starts_at.slice(0, 10)} · ${slot.starts_at.slice(11, 16)} – ${slot.ends_at.slice(11, 16)}`;
 });
 
 const selectedOptionLabel = computed(() => {
@@ -97,12 +109,21 @@ const selectedOptionLabel = computed(() => {
     return `${option.date_label}, ${option.period_label}`;
 });
 
+const isGeneralRequestSelected = computed(() => {
+    return bookingForm.mode === 'appointment_request'
+        && bookingForm.request_type === 'general';
+});
+
 const canSubmit = computed(() => {
     if (bookingForm.processing) {
         return false;
     }
 
-    if (!bookingForm.patient_name) {
+    if (!bookingForm.patient_name.trim()) {
+        return false;
+    }
+
+    if (!bookingForm.patient_email.trim()) {
         return false;
     }
 
@@ -114,16 +135,33 @@ const canSubmit = computed(() => {
         return Boolean(bookingForm.booking_slot_id);
     }
 
-    if (bookingForm.mode === 'appointment_request') {
+    if (bookingForm.mode === 'appointment_request' && bookingForm.request_type === 'preferred_period') {
         return Boolean(bookingForm.preferred_option_id);
+    }
+
+    if (bookingForm.mode === 'appointment_request' && bookingForm.request_type === 'general') {
+        return true;
     }
 
     return false;
 });
 
+const submitButtonLabel = computed(() => {
+    if (bookingForm.mode === 'exact_slot') {
+        return 'Rezervovať termín';
+    }
+
+    if (bookingForm.request_type === 'general') {
+        return 'Odoslať všeobecnú požiadavku';
+    }
+
+    return 'Odoslať požiadavku na termín';
+});
+
 watch(selectedServiceIds, (value) => {
     bookingForm.service_ids = value;
     bookingForm.mode = '';
+    bookingForm.request_type = '';
     bookingForm.booking_slot_id = '';
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
@@ -135,6 +173,7 @@ const toggleService = (service) => {
 
     if (selectedServiceIds.value.includes(serviceId)) {
         selectedServiceIds.value = selectedServiceIds.value.filter((id) => id !== serviceId);
+
         return;
     }
 
@@ -156,6 +195,7 @@ const applyFilters = () => {
 
 const selectSlot = (slot) => {
     bookingForm.mode = 'exact_slot';
+    bookingForm.request_type = '';
     bookingForm.booking_slot_id = slot.id;
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
@@ -164,10 +204,20 @@ const selectSlot = (slot) => {
 
 const selectOption = (option) => {
     bookingForm.mode = 'appointment_request';
+    bookingForm.request_type = 'preferred_period';
     bookingForm.preferred_option_id = option.id;
     bookingForm.preferred_date = option.date;
     bookingForm.preferred_period = option.period;
     bookingForm.booking_slot_id = '';
+};
+
+const selectGeneralRequest = () => {
+    bookingForm.mode = 'appointment_request';
+    bookingForm.request_type = 'general';
+    bookingForm.booking_slot_id = '';
+    bookingForm.preferred_option_id = '';
+    bookingForm.preferred_date = '';
+    bookingForm.preferred_period = '';
 };
 
 const submitBooking = () => {
@@ -178,6 +228,7 @@ const submitBooking = () => {
         onSuccess: () => {
             bookingForm.reset(
                 'mode',
+                'request_type',
                 'booking_slot_id',
                 'preferred_option_id',
                 'preferred_date',
@@ -207,10 +258,13 @@ const primaryContact = computed(() => {
         <Head :title="`Booking | ${branch.name}`" />
 
         <section class="space-y-4">
-            <h1 class="text-heading font-semibold text-dark">Objednanie termínu</h1>
+            <h1 class="text-heading font-semibold text-dark">
+                Objednanie termínu
+            </h1>
 
             <p class="max-w-2xl text-normal leading-7 text-accent">
-                Vyberte službu. Ak existuje konkrétny voľný termín, môžete sa objednať hneď. Ak ide o voľnú kapacitu, odošlete požiadavku a presný čas vám potvrdí sestra.
+                Vyberte službu alebo služby. Ak je dostupný konkrétny skupinový termín, môžete sa objednať hneď.
+                Pri individuálnych alebo kombinovaných službách odošlete požiadavku a presný čas vám potvrdí sestra.
             </p>
 
             <div
@@ -225,7 +279,9 @@ const primaryContact = computed(() => {
             <div class="space-y-6">
                 <div class="space-y-5 rounded-md border border-soft bg-white p-5">
                     <div class="space-y-3">
-                        <h2 class="text-normal font-semibold text-dark">Vyberte službu alebo služby</h2>
+                        <h2 class="text-normal font-semibold text-dark">
+                            Vyberte službu alebo služby
+                        </h2>
 
                         <button
                             v-for="service in services"
@@ -293,16 +349,24 @@ const primaryContact = computed(() => {
                     </div>
                 </div>
 
-                <div v-if="canShowExactSlots" class="space-y-3">
-                    <h2 class="text-normal font-semibold text-dark">Skupinové termíny</h2>
+                <div
+                    v-if="canShowExactSlots"
+                    class="space-y-3"
+                >
+                    <h2 class="text-normal font-semibold text-dark">
+                        Skupinové termíny
+                    </h2>
 
-                    <div v-if="availableSlots.length" class="space-y-3">
+                    <div
+                        v-if="availableSlots.length"
+                        class="space-y-3"
+                    >
                         <button
                             v-for="slot in availableSlots"
                             :key="slot.id"
                             type="button"
                             class="flex w-full items-center justify-between rounded-md border px-4 py-3 text-left transition"
-                            :class="bookingForm.booking_slot_id === slot.id
+                            :class="Number(bookingForm.booking_slot_id) === Number(slot.id)
                                 ? 'border-accent bg-accent text-white'
                                 : 'border-soft bg-white text-dark hover:bg-soft'"
                             @click="selectSlot(slot)"
@@ -314,7 +378,7 @@ const primaryContact = computed(() => {
 
                                 <p
                                     class="text-xs"
-                                    :class="bookingForm.booking_slot_id === slot.id ? 'text-white/80' : 'text-accent'"
+                                    :class="Number(bookingForm.booking_slot_id) === Number(slot.id) ? 'text-white/80' : 'text-accent'"
                                 >
                                     {{ slot.free_capacity }} voľné miesta z {{ slot.capacity }}
                                 </p>
@@ -335,9 +399,14 @@ const primaryContact = computed(() => {
                 </div>
 
                 <div class="space-y-3">
-                    <h2 class="text-normal font-semibold text-dark">Požiadať o termín</h2>
+                    <h2 class="text-normal font-semibold text-dark">
+                        Požiadať o termín
+                    </h2>
 
-                    <div v-if="availableOptions.length" class="space-y-3">
+                    <div
+                        v-if="availableOptions.length"
+                        class="space-y-3"
+                    >
                         <button
                             v-for="option in availableOptions"
                             :key="option.id"
@@ -375,15 +444,50 @@ const primaryContact = computed(() => {
                         v-else
                         class="rounded-md border border-soft bg-white p-5 text-sm text-accent"
                     >
-                        Pre vybrané služby momentálne nemáme dostupnú online možnosť na požiadavku.
+                        Pre vybrané služby momentálne nemáme dostupnú online možnosť na výber konkrétneho dňa alebo časti dňa.
                     </div>
+                </div>
+
+                <div
+                    v-if="canShowGeneralRequest"
+                    class="space-y-3"
+                >
+                    <h2 class="text-normal font-semibold text-dark">
+                        Všeobecná požiadavka
+                    </h2>
+
+                    <button
+                        type="button"
+                        class="w-full rounded-md border px-4 py-4 text-left transition"
+                        :class="isGeneralRequestSelected
+                            ? 'border-accent bg-accent text-white'
+                            : shouldHighlightGeneralRequest
+                                ? 'border-accent bg-white text-dark hover:bg-soft'
+                                : 'border-soft bg-white text-dark hover:bg-soft'"
+                        @click="selectGeneralRequest"
+                    >
+                        <div class="space-y-1">
+                            <p class="font-semibold">
+                                Chcem, aby mi termín navrhla sestra
+                            </p>
+
+                            <p
+                                class="text-sm"
+                                :class="isGeneralRequestSelected ? 'text-white/80' : 'text-accent'"
+                            >
+                                Vhodné pri kombinácii viacerých služieb alebo keď sa nedá automaticky ponúknuť spoločný termín.
+                            </p>
+                        </div>
+                    </button>
                 </div>
 
                 <form
                     class="space-y-4 rounded-md border border-soft bg-white p-5"
                     @submit.prevent="submitBooking"
                 >
-                    <h2 class="text-normal font-semibold text-dark">Údaje pacienta</h2>
+                    <h2 class="text-normal font-semibold text-dark">
+                        Údaje pacienta
+                    </h2>
 
                     <div
                         v-if="selectedSlotLabel"
@@ -399,8 +503,17 @@ const primaryContact = computed(() => {
                         Vybraná možnosť: {{ selectedOptionLabel }}. Presný čas vám potvrdíme.
                     </div>
 
+                    <div
+                        v-if="isGeneralRequestSelected"
+                        class="rounded-md bg-soft px-4 py-3 text-sm text-accent"
+                    >
+                        Vybraná všeobecná požiadavka. Sestra vám navrhne vhodný termín.
+                    </div>
+
                     <label class="block">
-                        <span class="mb-1 block text-sm font-medium text-dark">Meno</span>
+                        <span class="mb-1 block text-sm font-medium text-dark">
+                            Meno <span class="text-red-500">*</span>
+                        </span>
 
                         <input
                             v-model="bookingForm.patient_name"
@@ -411,17 +524,22 @@ const primaryContact = computed(() => {
 
                     <div class="grid gap-4 md:grid-cols-2">
                         <label class="block">
-                            <span class="mb-1 block text-sm font-medium text-dark">Email</span>
+                            <span class="mb-1 block text-sm font-medium text-dark">
+                                Email <span class="text-red-500">*</span>
+                            </span>
 
                             <input
                                 v-model="bookingForm.patient_email"
                                 type="email"
                                 class="w-full rounded-md border border-soft px-3 py-2 text-sm"
+                                required
                             >
                         </label>
 
                         <label class="block">
-                            <span class="mb-1 block text-sm font-medium text-dark">Telefón</span>
+                            <span class="mb-1 block text-sm font-medium text-dark">
+                                Telefón
+                            </span>
 
                             <input
                                 v-model="bookingForm.patient_phone"
@@ -432,33 +550,65 @@ const primaryContact = computed(() => {
                     </div>
 
                     <label class="block">
-                        <span class="mb-1 block text-sm font-medium text-dark">Poznámka</span>
+                        <span class="mb-1 block text-sm font-medium text-dark">
+                            Poznámka
+                        </span>
 
                         <textarea
                             v-model="bookingForm.patient_note"
                             rows="4"
                             class="w-full rounded-md border border-soft px-3 py-2 text-sm"
+                            placeholder="Môžete doplniť preferované dni, čas alebo ďalšie informácie."
                         />
                     </label>
 
-                    <p v-if="bookingForm.errors.mode" class="text-xs text-red-600">
+                    <p
+                        v-if="bookingForm.errors.mode"
+                        class="text-xs text-red-600"
+                    >
                         {{ bookingForm.errors.mode }}
                     </p>
 
-                    <p v-if="bookingForm.errors.service_ids" class="text-xs text-red-600">
+                    <p
+                        v-if="bookingForm.errors.request_type"
+                        class="text-xs text-red-600"
+                    >
+                        {{ bookingForm.errors.request_type }}
+                    </p>
+
+                    <p
+                        v-if="bookingForm.errors.service_ids"
+                        class="text-xs text-red-600"
+                    >
                         {{ bookingForm.errors.service_ids }}
                     </p>
 
-                    <p v-if="bookingForm.errors.booking_slot_id" class="text-xs text-red-600">
+                    <p
+                        v-if="bookingForm.errors.booking_slot_id"
+                        class="text-xs text-red-600"
+                    >
                         {{ bookingForm.errors.booking_slot_id }}
                     </p>
 
-                    <p v-if="bookingForm.errors.preferred_option_id" class="text-xs text-red-600">
+                    <p
+                        v-if="bookingForm.errors.preferred_option_id"
+                        class="text-xs text-red-600"
+                    >
                         {{ bookingForm.errors.preferred_option_id }}
                     </p>
 
-                    <p v-if="bookingForm.errors.patient_name" class="text-xs text-red-600">
+                    <p
+                        v-if="bookingForm.errors.patient_name"
+                        class="text-xs text-red-600"
+                    >
                         {{ bookingForm.errors.patient_name }}
+                    </p>
+
+                    <p
+                        v-if="bookingForm.errors.patient_email"
+                        class="text-xs text-red-600"
+                    >
+                        {{ bookingForm.errors.patient_email }}
                     </p>
 
                     <button
@@ -466,20 +616,25 @@ const primaryContact = computed(() => {
                         class="rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                         :disabled="!canSubmit"
                     >
-                        {{ bookingForm.mode === 'exact_slot' ? 'Rezervovať termín' : 'Odoslať požiadavku na termín' }}
+                        {{ submitButtonLabel }}
                     </button>
                 </form>
             </div>
 
             <aside class="space-y-4">
                 <div class="rounded-md bg-accent p-5 text-white">
-                    <h2 class="text-lg font-semibold">Hlavný kontakt</h2>
+                    <h2 class="text-lg font-semibold">
+                        Hlavný kontakt
+                    </h2>
 
                     <p class="mt-2 text-sm text-white/80">
                         Konkrétny voľný termín je rezervovaný hneď. Pri požiadavke vám presný čas potvrdí sestra.
                     </p>
 
-                    <p v-if="primaryContact?.value" class="mt-4 text-sm font-semibold">
+                    <p
+                        v-if="primaryContact?.value"
+                        class="mt-4 text-sm font-semibold"
+                    >
                         {{ primaryContact.value }}
                     </p>
                 </div>

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppointmentRequest;
 use App\Models\Booking;
+use App\Models\BookingSlot;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
@@ -12,11 +14,10 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Models\AppointmentRequest;
-use App\Models\BookingSlot;
-use Illuminate\Validation\ValidationException;
+use App\Actions\CreateBookingAction;
 
 class BranchBookingCalendarController extends Controller
 {
@@ -117,19 +118,103 @@ class BranchBookingCalendarController extends Controller
         return back();
     }
 
+    public function convertAppointmentRequest(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        CreateBookingAction $createBookingAction,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        $validated = $request->validate([
+            'starts_at' => ['required', 'date'],
+        ]);
+
+        DB::transaction(function () use ($validated, $branch, $appointmentRequest, $createBookingAction): void {
+            $lockedAppointmentRequest = AppointmentRequest::query()
+                ->whereKey($appointmentRequest->id)
+                ->where('branch_id', $branch->id)
+                ->with('services')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedAppointmentRequest->status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
+                ]);
+            }
+
+            $services = $lockedAppointmentRequest->services;
+
+            if ($services->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'service_ids' => 'Žiadosť nemá vybrané služby.',
+                ]);
+            }
+
+            $primaryService = $services->first();
+
+            $startsAt = Carbon::parse($validated['starts_at']);
+
+            $durationMinutes = max(
+                15,
+                (int) $lockedAppointmentRequest->total_duration_minutes
+            );
+
+            $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
+
+            $bookingSlot = BookingSlot::query()
+                ->firstOrCreate(
+                    [
+                        'branch_id' => $branch->id,
+                        'service_id' => $primaryService->id,
+                        'starts_at' => $startsAt,
+                        'ends_at' => $endsAt,
+                    ],
+                    [
+                        'capacity' => 1,
+                        'is_enabled' => true,
+                    ],
+                );
+
+            $booking = $createBookingAction->execute($branch, $bookingSlot, [
+                'service_id' => $primaryService->id,
+                'service_ids' => $services
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->values()
+                    ->all(),
+                'patient_name' => $lockedAppointmentRequest->patient_name,
+                'patient_email' => $lockedAppointmentRequest->patient_email,
+                'patient_phone' => $lockedAppointmentRequest->patient_phone,
+                'patient_note' => $lockedAppointmentRequest->patient_note,
+                'notify_patient' => true,
+            ]);
+
+            $lockedAppointmentRequest->update([
+                'status' => 'converted',
+                'booking_id' => $booking->id,
+            ]);
+        });
+
+        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+    }
+
     private function getPendingAppointmentRequests(Branch $branch)
     {
         return AppointmentRequest::query()
             ->where('branch_id', $branch->id)
             ->where('status', 'pending')
             ->with('services')
+            ->orderByRaw('preferred_date is null')
             ->orderBy('preferred_date')
             ->orderBy('created_at')
             ->get()
             ->map(fn (AppointmentRequest $appointmentRequest) => [
                 'id' => $appointmentRequest->id,
-                'preferred_date' => optional($appointmentRequest->preferred_date)->toDateString()
-                    ?? (string) $appointmentRequest->preferred_date,
+                'request_type' => $appointmentRequest->request_type ?? 'preferred_period',
+                'preferred_date' => $appointmentRequest->preferred_date?->toDateString(),
                 'preferred_period' => $appointmentRequest->preferred_period,
                 'total_duration_minutes' => $appointmentRequest->total_duration_minutes,
                 'patient_name' => $appointmentRequest->patient_name,
@@ -140,83 +225,11 @@ class BranchBookingCalendarController extends Controller
                     ->map(fn (Service $service) => [
                         'id' => $service->id,
                         'name' => $service->name,
+                        'duration_minutes' => $service->duration_minutes,
                     ])
-                    ->values(),
+                    ->values()
+                    ->all(),
             ])
             ->values();
-    }
-
-    public function convertAppointmentRequest(
-        Request $request,
-        Branch $branch,
-        AppointmentRequest $appointmentRequest
-    ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
-
-        $validated = $request->validate([
-            'starts_at' => ['required', 'date'],
-        ]);
-
-        if ($appointmentRequest->status !== 'pending') {
-            throw ValidationException::withMessages([
-                'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
-            ]);
-        }
-
-        DB::transaction(function () use ($validated, $branch, $appointmentRequest): void {
-            $appointmentRequest->loadMissing('services');
-
-            $primaryService = $appointmentRequest->services->first();
-
-            if (! $primaryService) {
-                throw ValidationException::withMessages([
-                    'service_id' => 'Žiadosť nemá vybranú službu.',
-                ]);
-            }
-
-            $startsAt = Carbon::parse($validated['starts_at']);
-
-            $durationMinutes = max(
-                15,
-                (int) $appointmentRequest->total_duration_minutes
-            );
-
-            $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
-
-            $bookingSlot = BookingSlot::query()
-            ->firstOrCreate(
-                [
-                    'branch_id' => $branch->id,
-                    'service_id' => $primaryService->id,
-                    'starts_at' => $startsAt,
-                    'ends_at' => $endsAt,
-                ],
-                [
-                    'capacity' => 1,
-                    'is_enabled' => true,
-                ],
-            );
-
-            $booking = Booking::create([
-                'branch_id' => $branch->id,
-                'booking_slot_id' => $bookingSlot->id,
-                'service_id' => $primaryService->id,
-                'starts_at' => $startsAt,
-                'ends_at' => $endsAt,
-                'patient_name' => $appointmentRequest->patient_name,
-                'patient_email' => $appointmentRequest->patient_email,
-                'patient_phone' => $appointmentRequest->patient_phone,
-                'patient_note' => $appointmentRequest->patient_note,
-                'status' => 'confirmed',
-            ]);
-
-            $appointmentRequest->update([
-                'status' => 'converted',
-                'booking_id' => $booking->id,
-            ]);
-        });
-
-        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
     }
 }

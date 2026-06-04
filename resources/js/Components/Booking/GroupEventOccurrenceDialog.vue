@@ -59,7 +59,7 @@ const patientForm = reactive({
     patient_phone_full: '',
     patient_note: '',
     admin_note: '',
-    notify_patient: false,
+    notify_patient: true,
 });
 
 const bookings = computed(() => {
@@ -148,7 +148,7 @@ const resetPatientForm = () => {
     patientForm.patient_phone_full = '';
     patientForm.patient_note = '';
     patientForm.admin_note = '';
-    patientForm.notify_patient = false;
+    patientForm.notify_patient = true;
 };
 
 watch(
@@ -173,8 +173,8 @@ watch(
 watch(
     () => patientForm.patient_email,
     (email) => {
-        if (!email.trim()) {
-            patientForm.notify_patient = false;
+        if (email.trim()) {
+            patientForm.notify_patient = true;
         }
     },
 );
@@ -471,7 +471,7 @@ const addPatientToCapacityWindow = () => {
                         class="cursor-pointer text-sm text-accent"
                         :class="{ 'opacity-50': !canNotifyNewPatient || !hasFreeCapacity }"
                     >
-                        Poslať pacientovi email
+                        Upozorniť pacienta o rezervácií a zmenách v nej
                     </label>
                 </div>
 

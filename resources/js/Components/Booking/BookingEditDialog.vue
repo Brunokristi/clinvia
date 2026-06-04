@@ -1,6 +1,6 @@
 <script setup>
 import Checkbox from 'primevue/checkbox';
-import Select from 'primevue/select';
+import MultiSelect from 'primevue/multiselect';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
 
@@ -40,11 +40,11 @@ const emit = defineEmits([
 ]);
 
 const form = reactive({
-    service_id: null,
+    service_ids: [],
     date: null,
     starts_at: null,
     ends_at: null,
-    notify_patient: false,
+    notify_patient: true,
     notification_reason: '',
 });
 
@@ -57,26 +57,54 @@ const serviceOptions = computed(() => {
         }));
 });
 
-const selectedService = computed(() => {
-    return props.services.find((service) => {
-        return Number(service.id) === Number(form.service_id);
-    }) ?? null;
+const selectedServices = computed(() => {
+    return props.services.filter((service) => {
+        return form.service_ids.map(Number).includes(Number(service.id));
+    });
 });
 
-const selectedServiceDuration = computed(() => {
-    const service = selectedService.value;
+const selectedServicesDuration = computed(() => {
+    return selectedServices.value.reduce((total, service) => {
+        return total + Number(
+            service.duration_minutes
+                ?? service.duration
+                ?? service.length_minutes
+                ?? service.minutes
+                ?? 0,
+        );
+    }, 0);
+});
 
-    if (!service) {
-        return null;
+const selectedServicesLabel = computed(() => {
+    if (!selectedServices.value.length) {
+        return '';
     }
 
-    return Number(
-        service.duration_minutes
-            ?? service.duration
-            ?? service.length_minutes
-            ?? service.minutes
-            ?? 0,
-    );
+    return selectedServices.value
+        .map((service) => service.name)
+        .join(', ');
+});
+
+const originalServiceIds = computed(() => {
+    if (!props.booking) {
+        return [];
+    }
+
+    if (Array.isArray(props.booking.service_ids) && props.booking.service_ids.length) {
+        return props.booking.service_ids.map(Number);
+    }
+
+    if (Array.isArray(props.booking.services) && props.booking.services.length) {
+        return props.booking.services.map((service) => Number(service.id));
+    }
+
+    if (props.booking.service_id) {
+        return [
+            Number(props.booking.service_id),
+        ];
+    }
+
+    return [];
 });
 
 const hasPatientEmail = computed(() => {
@@ -146,13 +174,13 @@ const mergeDateAndTime = (dateValue, timeValue) => {
     return date;
 };
 
-const calculateEndFromService = () => {
-    if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+const calculateEndFromServices = () => {
+    if (!form.date || !form.starts_at || !selectedServicesDuration.value) {
         return;
     }
 
     const end = new Date(form.starts_at);
-    end.setMinutes(end.getMinutes() + selectedServiceDuration.value);
+    end.setMinutes(end.getMinutes() + selectedServicesDuration.value);
 
     form.ends_at = end;
 };
@@ -199,9 +227,20 @@ const currentEndsAtForBackend = computed(() => {
         : null;
 });
 
-const hasServiceChanged = computed(() => {
+const arraysAreSame = (firstArray, secondArray) => {
+    const first = [...firstArray].map(Number).sort((a, b) => a - b);
+    const second = [...secondArray].map(Number).sort((a, b) => a - b);
+
+    if (first.length !== second.length) {
+        return false;
+    }
+
+    return first.every((value, index) => value === second[index]);
+};
+
+const hasServicesChanged = computed(() => {
     return Boolean(props.booking)
-        && Number(form.service_id) !== Number(props.booking.service_id);
+        && !arraysAreSame(form.service_ids, originalServiceIds.value);
 });
 
 const hasStartChanged = computed(() => {
@@ -215,22 +254,23 @@ const hasEndChanged = computed(() => {
 });
 
 const hasBookingChanges = computed(() => {
-    return hasServiceChanged.value
+    return hasServicesChanged.value
         || hasStartChanged.value
         || hasEndChanged.value;
 });
 
 const canSaveChanges = computed(() => {
     return Boolean(props.booking)
-        && Boolean(form.service_id)
+        && Boolean(form.service_ids.length)
         && Boolean(form.date)
         && Boolean(form.starts_at)
         && Boolean(form.ends_at)
+        && selectedServicesDuration.value > 0
         && hasBookingChanges.value;
 });
 
 const resetForm = () => {
-    form.service_id = props.booking?.service_id ?? null;
+    form.service_ids = originalServiceIds.value;
 
     const startsAt = props.booking?.starts_at
         ? new Date(props.booking.starts_at)
@@ -243,7 +283,7 @@ const resetForm = () => {
     form.date = startsAt;
     form.starts_at = startsAt;
     form.ends_at = endsAt;
-    form.notify_patient = false;
+    form.notify_patient = true;
     form.notification_reason = '';
 };
 
@@ -258,29 +298,35 @@ watch(() => props.visible, (visible) => {
 });
 
 watch(() => props.booking?.patient_email, (email) => {
-    if (!email) {
-        form.notify_patient = false;
+    if (email) {
+        form.notify_patient = true;
     }
 });
 
 watch(hasBookingChanges, (changed) => {
     if (!changed) {
-        form.notify_patient = false;
         form.notification_reason = '';
+    }
+
+    if (changed && canNotifyPatient.value) {
+        form.notify_patient = true;
     }
 });
 
 watch(
     () => [
-        form.service_id,
+        form.service_ids,
         form.starts_at,
     ],
     () => {
-        if (!hasServiceChanged.value && !hasStartChanged.value) {
+        if (!hasServicesChanged.value && !hasStartChanged.value) {
             return;
         }
 
-        calculateEndFromService();
+        calculateEndFromServices();
+    },
+    {
+        deep: true,
     },
 );
 
@@ -295,7 +341,8 @@ const rescheduleBooking = () => {
 
     emit('reschedule-booking', props.booking, {
         booking_slot_id: null,
-        service_id: form.service_id,
+        service_ids: form.service_ids,
+        service_id: form.service_ids[0] ?? null,
         starts_at: formatDateTimeForBackend(form.starts_at),
         ends_at: formatDateTimeForBackend(form.ends_at),
         notify_patient: canNotifyPatient.value && form.notify_patient,
@@ -333,9 +380,7 @@ const cancelBooking = () => {
         @save="rescheduleBooking"
         @delete-occurrence="cancelBooking"
     >
-        <div
-            v-if="booking"
-        >
+        <div v-if="booking">
             <FormSection
                 title="Pacient"
                 columns="md:grid-cols-2"
@@ -364,21 +409,35 @@ const cancelBooking = () => {
                 columns="md:grid-cols-2"
             >
                 <FormField
-                    label="Názov služby"
-                    for="reschedule_service_id"
+                    label="Služby"
+                    for="reschedule_service_ids"
                     required
                     span="md:col-span-2"
                 >
-                    <Select
-                        id="reschedule_service_id"
-                        v-model="form.service_id"
+                    <MultiSelect
+                        id="reschedule_service_ids"
+                        v-model="form.service_ids"
                         :options="serviceOptions"
                         option-label="label"
                         option-value="value"
-                        placeholder="Vyberte službu"
+                        placeholder="Vyberte službu alebo služby"
+                        display="chip"
                         class="w-full"
                     />
                 </FormField>
+
+                <div
+                    v-if="selectedServices.length"
+                    class="rounded-md bg-soft p-4 text-sm text-accent md:col-span-2"
+                >
+                    <p>
+                        Vybrané služby: {{ selectedServicesLabel }}
+                    </p>
+
+                    <p>
+                        Celkové trvanie: {{ selectedServicesDuration }} min
+                    </p>
+                </div>
 
                 <FormField
                     label="Poznámka"
@@ -394,10 +453,7 @@ const cancelBooking = () => {
                     />
                 </FormField>
 
-                <div
-                    v-if="hasBookingChanges"
-                    class="col-span-2 flex items-center gap-2"
-                >
+                <div class="col-span-2 flex items-center gap-2">
                     <Checkbox
                         v-model="form.notify_patient"
                         binary
@@ -410,7 +466,7 @@ const cancelBooking = () => {
                         class="cursor-pointer text-sm font-medium text-dark"
                         :class="{ 'opacity-50': !canNotifyPatient }"
                     >
-                        Poslať pacientovi email o zmene termínu
+                        Upozorniť pacienta o zmenách v rezervácií
                     </label>
 
                     <span
@@ -425,7 +481,6 @@ const cancelBooking = () => {
                     v-if="form.notify_patient"
                     label="Dôvod zmeny pre pacienta"
                     for="notification_reason"
-                    required
                     span="md:col-span-2"
                 >
                     <Textarea

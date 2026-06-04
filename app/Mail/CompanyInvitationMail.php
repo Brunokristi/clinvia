@@ -26,7 +26,7 @@ class CompanyInvitationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.company-invitation',
+            view: 'emails.invitations.company',
             with: [
                 'companyName' => $this->invitation->company->legal_name,
                 'acceptUrl' => URL::route('company-invitations.accept', ['token' => $this->plainToken]),

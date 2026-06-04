@@ -496,7 +496,6 @@ onBeforeUnmount(() => {
     font-size: 12px;
     font-weight: 600;
 }
-
 .booking-calendar :deep(.fc-event-time) {
     font-size: 11px;
 }

@@ -1,7 +1,7 @@
 <script setup>
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
+import MultiSelect from 'primevue/multiselect';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, watch } from 'vue';
 
@@ -34,7 +34,7 @@ const emit = defineEmits([
 ]);
 
 const form = reactive({
-    service_id: null,
+    service_ids: [],
     date: null,
     starts_at: null,
     ends_at: null,
@@ -50,37 +50,43 @@ const form = reactive({
 
 const serviceOptions = computed(() => {
     return props.services
-        .filter((service) => service.is_bookable)
+        .filter((service) => service.is_bookable ?? true)
         .map((service) => ({
             label: service.name,
             value: service.id,
         }));
 });
 
-const selectedService = computed(() => {
-    return props.services.find((service) => {
-        return Number(service.id) === Number(form.service_id);
-    }) ?? null;
+const selectedServices = computed(() => {
+    return props.services.filter((service) => {
+        return form.service_ids.map(Number).includes(Number(service.id));
+    });
 });
 
 const hasPatientEmail = computed(() => {
     return Boolean(form.patient_email.trim());
 });
 
-const selectedServiceDuration = computed(() => {
-    const service = selectedService.value;
+const selectedServicesDuration = computed(() => {
+    return selectedServices.value.reduce((total, service) => {
+        return total + Number(
+            service.duration_minutes
+                ?? service.duration
+                ?? service.length_minutes
+                ?? service.minutes
+                ?? 0,
+        );
+    }, 0);
+});
 
-    if (!service) {
-        return null;
+const selectedServicesLabel = computed(() => {
+    if (!selectedServices.value.length) {
+        return '';
     }
 
-    return Number(
-        service.duration_minutes
-            ?? service.duration
-            ?? service.length_minutes
-            ?? service.minutes
-            ?? 0,
-    );
+    return selectedServices.value
+        .map((service) => service.name)
+        .join(', ');
 });
 
 const formatDateForBackend = (value) => {
@@ -137,7 +143,7 @@ const createDateFromDateAndTime = (dateValue, timeValue) => {
 };
 
 const calculatedEndsAtDate = computed(() => {
-    if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
+    if (!form.date || !form.starts_at || !selectedServicesDuration.value) {
         return null;
     }
 
@@ -147,17 +153,9 @@ const calculatedEndsAtDate = computed(() => {
         return null;
     }
 
-    start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
+    start.setMinutes(start.getMinutes() + selectedServicesDuration.value);
 
     return start;
-});
-
-const calculatedEndsAtLabel = computed(() => {
-    if (!form.ends_at) {
-        return '';
-    }
-
-    return formatTimeForBackend(form.ends_at);
 });
 
 const startsAtForBackend = computed(() => {
@@ -177,15 +175,16 @@ const endsAtForBackend = computed(() => {
 });
 
 const canSubmit = computed(() => {
-    return Boolean(form.service_id)
+    return Boolean(form.service_ids.length)
         && Boolean(form.date)
         && Boolean(form.starts_at)
         && Boolean(form.ends_at)
-        && Boolean(form.patient_name.trim());
+        && Boolean(form.patient_name.trim())
+        && selectedServicesDuration.value > 0;
 });
 
 const resetForm = () => {
-    form.service_id = null;
+    form.service_ids = [];
     form.ends_at = null;
 
     if (props.selection?.start) {
@@ -212,7 +211,7 @@ const resetForm = () => {
     form.patient_phone_full = '';
     form.patient_note = '';
     form.admin_note = '';
-    form.notify_patient = false;
+    form.notify_patient = true;
 };
 
 watch(() => props.visible, (visible) => {
@@ -228,14 +227,40 @@ watch(() => props.selection, () => {
 });
 
 watch(() => form.patient_email, (email) => {
-    if (!email.trim()) {
-        form.notify_patient = false;
+    if (email.trim()) {
+        form.notify_patient = true;
     }
 });
 
 watch(calculatedEndsAtDate, (endsAt) => {
     form.ends_at = endsAt;
 });
+
+watch(
+    () => [
+        form.service_ids,
+        form.date,
+        form.starts_at,
+    ],
+    () => {
+        if (!form.date || !form.starts_at || !selectedServicesDuration.value) {
+            return;
+        }
+
+        const start = createDateFromDateAndTime(form.date, form.starts_at);
+
+        if (!start) {
+            return;
+        }
+
+        start.setMinutes(start.getMinutes() + selectedServicesDuration.value);
+
+        form.ends_at = start;
+    },
+    {
+        deep: true,
+    },
+);
 
 const closeDialog = () => {
     emit('update:visible', false);
@@ -248,7 +273,8 @@ const submit = () => {
     }
 
     emit('create-booking', {
-        service_id: form.service_id,
+        service_ids: form.service_ids,
+        service_id: form.service_ids[0] ?? null,
         booking_slot_id: null,
         starts_at: startsAtForBackend.value,
         ends_at: endsAtForBackend.value,
@@ -260,29 +286,6 @@ const submit = () => {
         notify_patient: form.notify_patient,
     });
 };
-
-watch(
-    () => [
-        form.service_id,
-        form.date,
-        form.starts_at,
-    ],
-    () => {
-        if (!form.date || !form.starts_at || !selectedServiceDuration.value) {
-            return;
-        }
-
-        const start = createDateFromDateAndTime(form.date, form.starts_at);
-
-        if (!start) {
-            return;
-        }
-
-        start.setMinutes(start.getMinutes() + selectedServiceDuration.value);
-
-        form.ends_at = start;
-    },
-);
 </script>
 
 <template>
@@ -306,31 +309,45 @@ watch(
             :show-submit="false"
         >
             <FormSection
-                title="Služba"
+                title="Služby"
                 columns="md:grid-cols-2"
             >
                 <FormField
-                    label="Služba"
-                    for="service_id"
+                    label="Služby"
+                    for="service_ids"
                     required
                     span="md:col-span-2"
                 >
-                    <Select
-                        id="service_id"
-                        v-model="form.service_id"
+                    <MultiSelect
+                        id="service_ids"
+                        v-model="form.service_ids"
                         :options="serviceOptions"
                         option-label="label"
                         option-value="value"
-                        placeholder="Vyberte službu"
+                        placeholder="Vyberte službu alebo služby"
+                        display="chip"
                         class="w-full"
                     />
-                </FormField>    
+                </FormField>
 
                 <div
-                    v-if="selectedService && !selectedServiceDuration"
+                    v-if="selectedServices.length"
+                    class="rounded-md bg-soft p-4 text-sm text-accent md:col-span-2"
+                >
+                    <p>
+                        Vybrané služby: {{ selectedServicesLabel }}
+                    </p>
+
+                    <p>
+                        Celkové trvanie: {{ selectedServicesDuration }} min
+                    </p>
+                </div>
+
+                <div
+                    v-if="selectedServices.length && !selectedServicesDuration"
                     class="rounded-md bg-red-50 p-4 text-sm text-red-600 md:col-span-2"
                 >
-                    Vybraná služba nemá nastavené trvanie. Skontrolujte pole duration_minutes, duration, length_minutes alebo minutes.
+                    Vybrané služby nemajú nastavené trvanie. Skontrolujte pole duration_minutes.
                 </div>
             </FormSection>
 

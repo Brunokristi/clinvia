@@ -106,6 +106,8 @@ class BranchCapacityWindowController extends Controller
         );
 
         foreach ($bookings as $booking) {
+            $booking->loadMissing('bookingSlot');
+
             $oldSlot = $booking->bookingSlot;
             $oldStartsAt = $oldSlot?->starts_at?->copy();
             $oldEndsAt = $oldSlot?->ends_at?->copy();
@@ -316,12 +318,8 @@ class BranchCapacityWindowController extends Controller
             'status' => 'confirmed',
         ]);
 
-        if (
-            ($validated['notify_patient'] ?? false)
-            && filled($booking->patient_email)
-            && method_exists($notificationService, 'sendCreatedNotification')
-        ) {
-            $booking->load(['branch', 'service', 'bookingSlot']);
+        if ($validated['notify_patient'] ?? true) {
+            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
 
             $notificationService->sendCreatedNotification($booking);
         }
@@ -336,11 +334,18 @@ class BranchCapacityWindowController extends Controller
         AdminBookingNotificationService $notificationService,
     ): void {
         foreach ($bookings as $booking) {
+            $oldStatus = $booking->status;
+
             $booking->update([
                 'status' => 'cancelled',
             ]);
 
-            if ($notifyPatient) {
+            if (
+                $oldStatus !== 'cancelled'
+                && $notifyPatient
+            ) {
+                $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+
                 $notificationService->sendCancelledNotification($booking, $reason);
             }
         }

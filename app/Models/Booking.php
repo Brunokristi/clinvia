@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 class Booking extends Model
 {
     use HasFactory;
@@ -35,6 +35,16 @@ class Booking extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function services(): BelongsToMany
+    {
+        return $this->belongsToMany(Service::class)
+            ->withPivot([
+                'duration_minutes_snapshot',
+                'price_snapshot',
+            ])
+            ->withTimestamps();
     }
 
     public function hasPatientEmail(): bool

@@ -25,7 +25,7 @@ class BranchInvitationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.branch-invitation',
+            view: 'emails.invitations.branch',
             with: [
                 'branchName' => $this->invitation->branch->name,
                 'acceptUrl' => url('/branch-invite/'.$this->plainToken),

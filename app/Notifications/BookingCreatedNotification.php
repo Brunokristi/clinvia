@@ -13,7 +13,8 @@ class BookingCreatedNotification extends Notification
 
     public function __construct(
         public Booking $booking,
-    ) {}
+    ) {
+    }
 
     public function via(object $notifiable): array
     {
@@ -22,19 +23,30 @@ class BookingCreatedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $this->booking->loadMissing(['branch', 'service', 'bookingSlot']);
+        $this->booking->loadMissing(['branch', 'service', 'services', 'bookingSlot']);
 
         $slot = $this->booking->bookingSlot;
 
+        $appointmentLabel = '—';
+
+        if ($slot?->starts_at) {
+            $appointmentLabel = $slot->starts_at->format('d.m.Y H:i');
+
+            if ($slot->ends_at) {
+                $appointmentLabel .= ' – ' . $slot->ends_at->format('H:i');
+            }
+        }
+
         return (new MailMessage)
             ->subject('Rezervácia bola vytvorená')
-            ->greeting('Dobrý deň ' . $this->booking->patient_name . ',')
-            ->line('vaša rezervácia bola vytvorená.')
-            ->line('Služba: ' . ($this->booking->service?->name ?? '—'))
-            ->line('Termín: ' . ($slot?->starts_at?->format('d.m.Y H:i') ?? '—') . ($slot?->ends_at ? ' – ' . $slot->ends_at->format('H:i') : ''))
-            ->when(filled($this->booking->patient_note), function (MailMessage $message) {
-                return $message->line('Správa: ' . $this->booking->patient_note);
-            })
-            ->line('Ďakujeme.');
+            ->view('emails.bookings.created', [
+                'patientName' => $this->booking->patient_name,
+                'serviceName' => $this->booking->services->isNotEmpty()
+                    ? $this->booking->services->pluck('name')->join(', ')
+                    : ($this->booking->service?->name ?? '—'),
+                'branchName' => $this->booking->branch?->name ?? '—',
+                'appointmentLabel' => $appointmentLabel,
+                'patientNote' => $this->booking->patient_note,
+            ]);
     }
 }
