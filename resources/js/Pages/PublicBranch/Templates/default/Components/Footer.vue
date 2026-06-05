@@ -42,7 +42,10 @@ const contactIcon = (type) => {
     return {
         email: 'pi pi-envelope',
         phone: 'pi pi-phone',
+        booking_phone: 'pi pi-phone',
         website: 'pi pi-globe',
+        facebook: 'pi pi-facebook',
+        instagram: 'pi pi-instagram',
     }[type] ?? 'pi pi-info-circle';
 };
 
@@ -51,11 +54,11 @@ const contactHref = (contact) => {
         return `mailto:${contact.value}`;
     }
 
-    if (contact.type === 'phone') {
+    if (['phone', 'booking_phone'].includes(contact.type)) {
         return `tel:${contact.value.replace(/\s+/g, '')}`;
     }
 
-    if (contact.type === 'website') {
+    if (['website', 'facebook', 'instagram'].includes(contact.type)) {
         return contact.value;
     }
 
@@ -110,8 +113,8 @@ const fullAddress = computed(() => {
 
 <template>
     <footer class="border-t border-accent bg-soft">
-        <div class="mx-auto grid max-w-6xl gap-10 px-6 md:grid-cols-1 lg:grid-cols-3">
-            <div class="border-r border-accent py-10">
+        <div class="mx-auto grid max-w-6xl lg:grid-cols-3">
+            <div class="border-b border-accent px-6 py-8 lg:border-b-0 lg:border-r lg:py-10 lg:pl-6 lg:pr-8">
                 <h2 class="text-normal font-semibold text-dark">
                     {{ branch.name }}
                 </h2>
@@ -136,7 +139,7 @@ const fullAddress = computed(() => {
                 </p>
             </div>
 
-            <div class="border-r border-accent py-10">
+            <div class="border-b border-accent px-6 py-8 lg:border-b-0 lg:border-r lg:px-8 lg:py-10">
                 <h2 class="text-normal font-semibold text-dark">
                     Kontakt
                 </h2>
@@ -154,10 +157,10 @@ const fullAddress = computed(() => {
                     >
                         <i
                             :class="contactIcon(contact.type)"
-                            class="mt-1 text-xs"
+                            class="mt-1 shrink-0 text-xs"
                         />
 
-                        <span>
+                        <span class="min-w-0 break-words">
                             {{ contact.value }}
                         </span>
                     </component>
@@ -171,7 +174,7 @@ const fullAddress = computed(() => {
                 </p>
             </div>
 
-            <div class=" py-10">
+            <div class="px-6 py-8 lg:py-10 lg:pl-8 lg:pr-6">
                 <h2 class="text-normal font-semibold text-dark">
                     Otváracie hodiny
                 </h2>
@@ -183,9 +186,9 @@ const fullAddress = computed(() => {
                     <div
                         v-for="openingHour in branch.opening_hours"
                         :key="openingHour.day_of_week"
-                        class="flex justify-between gap-4 text-sm"
+                        class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 text-sm"
                     >
-                        <span class="text-dark">
+                        <span class="min-w-0 text-dark">
                             {{ dayNames[openingHour.day_of_week] }}
                         </span>
 
@@ -205,15 +208,13 @@ const fullAddress = computed(() => {
         </div>
 
         <div class="border-t border-accent">
-            <div class="mx-auto flex max-w-6xl flex flex-col gap-3 px-6 py-5 text-normal text-accent">
-                <p>
+            <div class="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-5 text-normal text-accent lg:flex-row lg:items-start lg:justify-between">
+                <p class="shrink-0">
                     © {{ new Date().getFullYear() }} {{ branch.name }}
                 </p>
 
-                <div class="flex gap-6">
-                    <p
-                        v-if="companyName"
-                    >
+                <div class="flex flex-col gap-2 text-sm lg:flex-row lg:flex-wrap lg:justify-end lg:gap-x-6 lg:gap-y-2 lg:text-normal">
+                    <p v-if="companyName">
                         Prevádzkovateľ: {{ companyName }}
                     </p>
 

@@ -84,20 +84,20 @@ const primaryContactValue = computed(() => {
         <section>
             <Link
                 :href="route('public.branch.services', branch.slug)"
-                class="inline-flex items-center gap-2 text-sm text-accent transition hover:text-dark"
+                class="inline-flex items-center gap-2 text-normal text-accent transition hover:text-dark"
             >
-                <i class="pi pi-arrow-left text-xs" />
+                <i class="pi pi-arrow-left text-normal" />
                 Späť na služby
             </Link>
 
-            <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-                <div class="rounded-md bg-accent p-6 text-white flex flex-col gap-4">
-                    <p
+            <div class="mt-5 grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div class="rounded-md bg-accent p-5 text-white flex flex-col gap-4">
+                    <h1
                         v-if="service.category"
-                        class="text-sm font-semibold text-white/70"
+                        class="text-normal font-semibold text-soft"
                     >
                         {{ service.category.name }}
-                    </p>
+                    </h1>
 
                     <div class="flex items-center gap-4">  
                         <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
@@ -115,15 +115,16 @@ const primaryContactValue = computed(() => {
                             </span>
                         </div>
 
-                        <h1 class="mt-1 text-3xl font-semibold leading-tight text-white">
+                        <h1 class="text-heading font-semibold leading-tight text-soft">
                             {{ service.name }}
                         </h1>
                     </div>
 
+                
                     <div class="flex flex-col items-start gap-3 text-sm">
                         <p
                             v-if="service.short_description"
-                            class="max-w-3xl text-sm leading-6 text-white/80"
+                            class="max-w-3xl text-sm leading-6 text-soft"
                         >
                             {{ service.short_description }}
                         </p>
@@ -153,14 +154,10 @@ const primaryContactValue = computed(() => {
                     </div>
                 </div>
 
-                <aside class="rounded-md border border-accent bg-white p-5">
-                    <h2 class="text-normal font-semibold text-dark">
+                <aside class="rounded-md bg-accent p-5">
+                    <h2 class="text-normal font-semibold text-soft">
                         Objednanie
                     </h2>
-
-                    <p class="mt-2 text-sm leading-6 text-accent">
-                        Pre viac informácií kontaktujte pobočku.
-                    </p>
 
                     <div class="flex items-center">
                         <component
@@ -174,13 +171,6 @@ const primaryContactValue = computed(() => {
                             </span>
                         </component>
                     </div>
-
-                    <Link
-                        :href="route('public.branch.contact', branch.slug)"
-                        class="mt-4 inline-flex w-full items-center justify-center rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90"
-                    >
-                        Kontakty
-                    </Link>
                 </aside>
             </div>
         </section>
@@ -259,7 +249,7 @@ const primaryContactValue = computed(() => {
             <aside class="space-y-5">
                 <div
                     v-if="service.files?.length"
-                    class="rounded-md border border-accent bg-white p-5"
+                    class="rounded-md border border-soft bg-white p-5"
                 >
                     <h2 class="text-normal font-semibold text-dark">
                         Potrebné dokumenty
@@ -284,7 +274,7 @@ const primaryContactValue = computed(() => {
 
                 <div
                     v-if="service.insurance_note || service.self_pay_note"
-                    class="rounded-md border border-accent/10 bg-white p-5"
+                    class="rounded-md border border-soft bg-white p-5"
                 >
                     <h2 class="text-lg font-semibold text-dark">
                         Poznámky k cene

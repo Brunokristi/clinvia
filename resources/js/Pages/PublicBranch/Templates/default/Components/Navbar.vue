@@ -127,6 +127,22 @@ const primaryContactButtonLabel = computed(() => {
     return 'Kontaktujte nás';
 });
 
+const primaryContactIcon = computed(() => {
+    if (!primaryContact.value) {
+        return 'pi pi-send';
+    }
+
+    if (['phone', 'booking_phone'].includes(primaryContact.value.type)) {
+        return 'pi pi-phone';
+    }
+
+    if (primaryContact.value.type === 'email') {
+        return 'pi pi-envelope';
+    }
+
+    return 'pi pi-send';
+});
+
 const primaryContactValue = computed(() => {
     return primaryContact.value?.value ?? null;
 });
@@ -156,10 +172,10 @@ const links = computed(() => [
 </script>
 
 <template>
-    <header class="border-b border-accent sticky top-0 z-20 bg-soft">
+    <header class="sticky top-0 z-20 border-b border-accent bg-soft">
         <div class="mx-auto max-w-6xl px-6">
-            <div class="hidden grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-stretch lg:grid">
-                <div class="flex min-w-0 items-center border-r border-accent px-5 py-4">
+            <div class="hidden grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-stretch lg:grid">
+                <div class="flex min-w-0 items-center border-r border-accent px-3 py-4">
                     <Link
                         :href="route('public.branch.home', branch.slug)"
                         class="block max-w-52 truncate font-semibold text-accent"
@@ -168,7 +184,19 @@ const links = computed(() => [
                     </Link>
                 </div>
 
-                <div class="flex max-w-64 items-center gap-2 border-r border-accent px-5 py-4 text-accent">
+                <nav class="flex min-w-0 items-center justify-center border-r border-accent px-6 py-4 text-normal text-accent">
+                    <Link
+                        v-for="link in links"
+                        :key="link.label"
+                        :href="link.href"
+                        class="whitespace-nowrap rounded-md px-3 py-2 transition hover:text-dark"
+                        :class="link.active ? 'bg-accent text-white' : ''"
+                    >
+                        {{ link.label }}
+                    </Link>
+                </nav>
+
+                <div class="flex max-w-64 items-center gap-2 border-r border-accent px-3 py-4 text-accent">
                     <i class="pi pi-map-marker text-lg" />
 
                     <p
@@ -186,21 +214,9 @@ const links = computed(() => [
                     </p>
                 </div>
 
-                <nav class="flex min-w-0 items-center justify-center gap-4 border-r border-accent px-6 py-4 text-normal text-accent">
-                    <Link
-                        v-for="link in links"
-                        :key="link.label"
-                        :href="link.href"
-                        class="whitespace-nowrap transition hover:text-dark px-3 py-2 rounded-md"
-                        :class="link.active ? 'bg-accent text-white' : ''"
-                    >
-                        {{ link.label }}
-                    </Link>
-                </nav>
-
                 <Link
                     :href="route('public.branch.contact', branch.slug)"
-                    class="flex items-center justify-end border-r border-accent px-5 py-4 text-right transition hover:bg-accent/5"
+                    class="flex items-center justify-end border-r border-accent px-3 py-4 text-right transition hover:bg-accent/5"
                 >
                     <div>
                         <p class="text-normal tracking-wide text-accent">
@@ -209,7 +225,7 @@ const links = computed(() => [
                     </div>
                 </Link>
 
-                <div class="flex items-center justify-end px-5 py-4">
+                <div class="flex items-center justify-end px-3 py-4">
                     <component
                         :is="primaryContactHref ? 'a' : 'div'"
                         v-if="primaryContactValue"
@@ -223,17 +239,22 @@ const links = computed(() => [
                 </div>
             </div>
 
-            <div class="flex items-center justify-between py-4 lg:hidden">
+            <div class="flex items-center justify-between gap-4 py-2 lg:hidden">
                 <Link
                     :href="route('public.branch.home', branch.slug)"
-                    class="block truncate text-heading font-semibold text-accent"
+                    class="min-w-0"
+                    @click="mobileMenuOpen = false"
                 >
-                    {{ branch.name }}
+                    <span class="block truncate text-lg font-semibold leading-tight text-accent">
+                        {{ branch.name }}
+                    </span>
                 </Link>
 
                 <button
                     type="button"
-                    class="inline-flex size-10 items-center justify-center rounded-md border border-accent/20 text-accent transition hover:bg-soft"
+                    class="inline-flex size-11 shrink-0 items-center justify-center text-accent transition hover:bg-accent/5"
+                    :aria-expanded="mobileMenuOpen"
+                    aria-label="Otvoriť menu"
                     @click="mobileMenuOpen = !mobileMenuOpen"
                 >
                     <i
@@ -244,65 +265,95 @@ const links = computed(() => [
             </div>
         </div>
 
-        <div
-            v-if="mobileMenuOpen"
-            class="border-t border-accent/20 lg:hidden"
+        <Transition
+            enter-active-class="transition duration-200 ease-out"
+            enter-from-class="-translate-y-2 opacity-0"
+            enter-to-class="translate-y-0 opacity-100"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="translate-y-0 opacity-100"
+            leave-to-class="-translate-y-2 opacity-0"
         >
-            <div class="mx-auto grid max-w-6xl divide-y divide-accent/10 px-6">
-                <div
-                    v-if="branch.address?.line_1"
-                    class="flex items-center gap-2 py-4 text-sm text-accent/70"
-                >
-                    <i class="pi pi-map-marker text-accent" />
+            <div
+                v-if="mobileMenuOpen"
+                class="border-t border-accent bg-soft shadow-lg backdrop-blur lg:hidden"
+            >
+                <div class="mx-auto max-w-6xl">
+                    <div class="grid">
+                        <Link
+                            :href="route('public.branch.contact', branch.slug)"
+                            class="flex items-center gap-3 border-b border-accent p-3 text-accent shadow-sm transition hover:bg-white/80"
+                            @click="mobileMenuOpen = false"
+                        >
+                            <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-accent/10">
+                                <i class="pi pi-clock text-sm" />
+                            </span>
 
-                    <span>
-                        {{ branch.address.line_1 }}, {{ branch.address.city }}
-                    </span>
-                </div>
+                            <span class="min-w-0">
+                                <span class="block text-xs uppercase tracking-wide text-accent/50">
+                                    Otváracie hodiny
+                                </span>
 
-                <nav class="grid py-2 text-normal font-medium text-accent">
-                    <Link
-                        v-for="link in links"
-                        :key="link.label"
-                        :href="link.href"
-                        class="rounded-md px-3 py-3 transition hover:bg-soft"
-                        :class="link.active ? 'bg-soft text-dark' : ''"
-                        @click="mobileMenuOpen = false"
-                    >
-                        {{ link.label }}
-                    </Link>
-                </nav>
+                                <span class="block truncate text-sm font-semibold">
+                                    Dnes: {{ openingHoursTodayLabel }}
+                                </span>
+                            </span>
+                        </Link>
 
-                <div class="grid gap-3 py-4">
-                    <Link
-                        :href="route('public.branch.contact', branch.slug)"
-                        class="flex items-center justify-end border-r border-accent px-5 py-4 text-right transition hover:bg-accent/5"
-                    >
-                        <div>
-                            <p class="text-normal tracking-wide text-accent">
-                                Dnes: {{ openingHoursTodayLabel }}
-                            </p>
+                        <div
+                            v-if="branch.address?.line_1"
+                            class="flex items-center gap-3  border-b border-accent p-3 text-accent shadow-sm"
+                        >
+                            <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-accent/10">
+                                <i class="pi pi-map-marker text-sm" />
+                            </span>
+
+                            <span class="min-w-0">
+                                <span class="block text-xs uppercase tracking-wide text-accent/50">
+                                    Adresa
+                                </span>
+
+                                <span class="block truncate text-sm font-semibold">
+                                    {{ branch.address.line_1 }}, {{ branch.address.city }}
+                                </span>
+                            </span>
                         </div>
-                    </Link>
+                    </div>
 
-                    <component
-                        :is="primaryContactHref ? 'a' : 'div'"
-                        v-if="primaryContactValue"
-                        :href="primaryContactHref"
-                        class="inline-flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-accent/90"
-                        @click="mobileMenuOpen = false"
-                    >
-                        <i
-                            :class="primaryContactIcon"
-                            class="text-xs"
-                        />
+                    <nav class="mt-4 grid gap-1 border-b border-accent px-6">
+                        <Link
+                            v-for="link in links"
+                            :key="link.label"
+                            :href="link.href"
+                            class="flex items-center justify-between rounded-md px-4 py-3 text-sm font-semibold text-accent transition hover:bg-accent"
+                            :class="link.active ? 'bg-accent text-soft shadow-sm hover:bg-accent' : ''"
+                            @click="mobileMenuOpen = false"
+                        >
+                            <span>
+                                {{ link.label }}
+                            </span>
+                        </Link>
+                    </nav>
 
-                        <span>
-                            {{ primaryContactButtonLabel }}
-                        </span>
-                    </component>
+                    <div class="px-6 py-3">
+                        <component
+                            :is="primaryContactHref ? 'a' : 'div'"
+                            v-if="primaryContactValue"
+                            :href="primaryContactHref"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-md bg-accent px- py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90"
+                            @click="mobileMenuOpen = false"
+                        >
+                            <i
+                                :class="primaryContactIcon"
+                                class="text-sm"
+                            />
+
+                            <span>
+                                {{ primaryContactButtonLabel }}
+                            </span>
+                        </component>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Transition>
     </header>
 </template>

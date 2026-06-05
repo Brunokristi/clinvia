@@ -4,6 +4,8 @@ import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
 
 const props = defineProps({
     branch: {
@@ -126,11 +128,14 @@ const durationLabel = (service) => {
                         Hľadať v službách
                     </label>
 
-                    <InputText
-                        v-model="searchTerm"
-                        class="w-full"
-                        placeholder="Názov, popis, kategória..."
-                    />
+                    <IconField class="w-full">
+                        <InputIcon class="pi pi-search" />
+                        <InputText
+                            v-model="searchTerm"
+                            class="w-full"
+                            :placeholder="Hľadať"
+                        />
+                    </IconField>
                 </div>
 
                 <div>
@@ -150,15 +155,15 @@ const durationLabel = (service) => {
 
             <div
                 v-if="filteredServices.length"
-                class="space-y-12"
+                class="space-y-8"
             >
                 <div
                     v-for="(categoryServices, categoryName) in groupedServices"
                     :key="categoryName"
-                    class="space-y-5"
+                    class="space-y-3"
                 >
                     <div>
-                        <h2 class="text-heading text-dark">
+                        <h2 class="text-normal font-semibold text-dark">
                             {{ categoryName }}
                         </h2>
                     </div>

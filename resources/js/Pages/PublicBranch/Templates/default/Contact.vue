@@ -267,12 +267,12 @@ const primaryContact = computed(() => {
                 </div>
             </div>
 
-            <aside class="space-y-4">
+            <aside class="space-y-5">
                 <div
                     v-if="branch.contacts?.length"
                     class="rounded-md border border-soft bg-accent p-5 text-white"
                 >
-                    <div class="space-y-3">
+                    <div class="space-y-5">
                         <component
                             :is="contactHref(contact) ? 'a' : 'div'"
                             v-for="(contact, index) in branch.contacts"

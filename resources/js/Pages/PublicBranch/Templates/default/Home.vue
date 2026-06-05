@@ -208,7 +208,7 @@ const professionalName = (professional) => {
 
         <section class="mb-8">
             <div class="overflow-hidden rounded-md bg-accent text-white">
-                <div class="grid gap-8 p-6 md:p-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-10">
+                <div class="grid gap-8 p-5 lg:grid-cols-[minmax(0,1fr)_340px]">
                     <div>
                         <h1 class="max-w-3xl text-2xl font-semibold leading-tight text-white">
                             {{ branch.name }}
@@ -241,44 +241,6 @@ const professionalName = (professional) => {
                             >
                                 {{ primaryContactButtonLabel }}
                             </component>
-                        </div>
-                    </div>
-
-                    <div class="grid gap-3">
-                        <div class="rounded-md bg-dark p-4">
-                            <div class="flex items-start gap-3 text-soft">
-                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md">
-                                    <i class="pi pi-map-marker" />
-                                </div>
-
-                                <div>
-                                    <p class="text-xs font-semibold uppercase tracking-wide">
-                                        Adresa
-                                    </p>
-
-                                    <p class="mt-1 text-sm font-semibold leading-6">
-                                        {{ branchAddressLabel }}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="rounded-md bg-dark p-4">
-                            <div class="flex items-start gap-3 text-soft">
-                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md">
-                                    <i class="pi pi-clock" />
-                                </div>
-
-                                <div>
-                                    <p class="text-xs font-semibold uppercase tracking-wide">
-                                        Dnes
-                                    </p>
-
-                                    <p class="mt-1 text-sm font-semibold leading-6">
-                                        {{ openingHoursTodayLabel }}
-                                    </p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -409,13 +371,6 @@ const professionalName = (professional) => {
                         Profesionáli
                     </h2>
                 </div>
-
-                <Link
-                    :href="route('public.branch.contact', branch.slug)"
-                    class="hidden rounded-md bg-white px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft md:inline-flex"
-                >
-                    Celý tím
-                </Link>
             </div>
 
             <div
@@ -474,13 +429,6 @@ const professionalName = (professional) => {
             >
                 Profesionáli budú čoskoro doplnení.
             </div>
-
-            <Link
-                :href="route('public.branch.contact', branch.slug)"
-                class="mt-4 inline-flex w-full items-center justify-center rounded-md border border-accent/20 bg-white px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-soft md:hidden"
-            >
-                Celý tím
-            </Link>
         </section>
 
 

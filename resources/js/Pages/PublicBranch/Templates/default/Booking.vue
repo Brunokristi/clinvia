@@ -916,15 +916,15 @@ const submitBooking = () => {
 
                 <aside class="space-y-4">
                     <div class="rounded-md border border-soft bg-accent p-5 text-white">
-                        <h2 class="text-lg font-semibold text-white">
+                        <h2 class="text-normal font-semibold text-white">
                             Súhrn
                         </h2>
 
-                        <div class="mt-4 space-y-3 text-sm text-white/85">
+                        <div class="mt-4 space-y-3 text-normal text-white">
                             <p>
-                                <strong class="text-white">
+                                <span class="font-semibold">
                                     Služby:
-                                </strong>
+                                </span>
 
                                 {{ selectedServicesLabel }}
                             </p>
