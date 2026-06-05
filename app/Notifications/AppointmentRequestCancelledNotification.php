@@ -45,7 +45,7 @@ class AppointmentRequestCancelledNotification extends Notification
 
         return (new MailMessage)
             ->subject('Žiadosť o termín bola zrušená')
-            ->view('emails.appointment.cancelled', [
+            ->view('emails.appointments.cancelled', [
                 'patientName' => $this->appointmentRequest->patient_name,
                 'serviceName' => $services ?: '—',
                 'branchName' => $this->appointmentRequest->branch?->name ?? '—',

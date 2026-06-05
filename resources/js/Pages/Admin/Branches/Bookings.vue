@@ -8,6 +8,7 @@ import BookingEditDialog from '@/Components/Booking/BookingEditDialog.vue';
 import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityRuleCreateEditDialog.vue';
 import GroupEventCreateEditDialog from '@/Components/Booking/GroupEventCreateEditDialog.vue';
 import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenceDialog.vue';
+import ConfirmDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 
 import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 
@@ -20,7 +21,7 @@ import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Tag from 'primevue/tag';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const props = defineProps({
     branch: {
@@ -114,9 +115,14 @@ const {
     addPatientToCapacityWindow,
 } = useBookingCalendar(props);
 
+const bookingCalendar = ref(null);
 const requestSidebar = ref(null);
+const requestSidebarHeight = ref(null);
+
+const requestToCancel = ref(null);
 
 let requestDraggable = null;
+let calendarResizeObserver = null;
 
 const periodLabels = {
     morning: 'Ráno',
@@ -130,6 +136,53 @@ const periodLabels = {
 };
 
 const pendingRequests = computed(() => props.pendingAppointmentRequests ?? []);
+
+const requestCancelDialogVisible = computed(() => {
+    return Boolean(requestToCancel.value);
+});
+
+const requestCancelDialogMessage = computed(() => {
+    if (!requestToCancel.value) {
+        return '';
+    }
+
+    return `Naozaj chcete zrušiť žiadosť pacienta ${requestToCancel.value.patient_name}?`;
+});
+
+const updateRequestSidebarHeight = () => {
+    if (!bookingCalendar.value) {
+        return;
+    }
+
+    const calendarElement = bookingCalendar.value.querySelector('.fc') ?? bookingCalendar.value;
+
+    requestSidebarHeight.value = Math.round(calendarElement.getBoundingClientRect().height);
+};
+
+const openCancelAppointmentRequestDialog = (request) => {
+    requestToCancel.value = request;
+};
+
+const closeCancelAppointmentRequestDialog = () => {
+    requestToCancel.value = null;
+};
+
+const confirmCancelAppointmentRequest = () => {
+    if (!requestToCancel.value) {
+        return;
+    }
+
+    router.delete(route('branches.booking.appointment-requests.destroy', [
+        props.branch.id,
+        requestToCancel.value.id,
+    ]), {
+        preserveScroll: true,
+        preserveState: false,
+        onFinish: () => {
+            closeCancelAppointmentRequestDialog();
+        },
+    });
+};
 
 const formatDate = (value) => {
     if (!value) {
@@ -151,6 +204,15 @@ const formatDate = (value) => {
     return `${day}.${month}.${year}`;
 };
 
+const getRequestPreferredDate = (request) => {
+    return request.preferred_date
+        ?? request.preferredDate
+        ?? request.requested_date
+        ?? request.date
+        ?? request.preferred_dates?.[0]?.date
+        ?? null;
+};
+
 const getRequestPeriodLabel = (request) => {
     return periodLabels[request.preferred_period] ?? request.preferred_period ?? 'Bez časti dňa';
 };
@@ -167,58 +229,59 @@ const getRequestServicesLabel = (request) => {
         .join(', ');
 };
 
-const cancelAppointmentRequest = (request) => {
-    if (!confirm(`Naozaj chcete zrušiť žiadosť pacienta ${request.patient_name}?`)) {
-        return;
-    }
-
-    router.delete(route('branches.booking.appointment-requests.destroy', [
-        props.branch.id,
-        request.id,
-    ]), {
-        preserveScroll: true,
-        preserveState: false,
-    });
-};
-
 onMounted(() => {
-    if (!requestSidebar.value) {
-        return;
+    if (requestSidebar.value) {
+        requestDraggable = new Draggable(requestSidebar.value, {
+            itemSelector: '.appointment-request-card',
+            eventData: (eventElement) => {
+                const requestId = Number(eventElement.dataset.requestId);
+
+                const appointmentRequest = pendingRequests.value.find((request) => {
+                    return Number(request.id) === requestId;
+                });
+
+                if (!appointmentRequest) {
+                    return null;
+                }
+
+                return {
+                    id: `appointment-request-${appointmentRequest.id}`,
+                    title: `${appointmentRequest.patient_name} · ${appointmentRequest.total_duration_minutes} min`,
+                    duration: {
+                        minutes: Number(appointmentRequest.total_duration_minutes || 30),
+                    },
+                    classNames: [
+                        'booking-request-preview-event',
+                    ],
+                    extendedProps: {
+                        type: 'appointment_request',
+                        appointmentRequest,
+                    },
+                };
+            },
+        });
     }
 
-    requestDraggable = new Draggable(requestSidebar.value, {
-        itemSelector: '.appointment-request-card',
-        eventData: (eventElement) => {
-            const requestId = Number(eventElement.dataset.requestId);
+    nextTick(() => {
+        updateRequestSidebarHeight();
 
-            const appointmentRequest = pendingRequests.value.find((request) => {
-                return Number(request.id) === requestId;
+        if (bookingCalendar.value) {
+            calendarResizeObserver = new ResizeObserver(() => {
+                updateRequestSidebarHeight();
             });
 
-            if (!appointmentRequest) {
-                return null;
-            }
-
-            return {
-                id: `appointment-request-${appointmentRequest.id}`,
-                title: `${appointmentRequest.patient_name} · ${appointmentRequest.total_duration_minutes} min`,
-                duration: {
-                    minutes: Number(appointmentRequest.total_duration_minutes || 30),
-                },
-                classNames: [
-                    'booking-request-preview-event',
-                ],
-                extendedProps: {
-                    type: 'appointment_request',
-                    appointmentRequest,
-                },
-            };
-        },
+            calendarResizeObserver.observe(bookingCalendar.value);
+        }
     });
+
+    window.addEventListener('resize', updateRequestSidebarHeight);
 });
 
 onBeforeUnmount(() => {
     requestDraggable?.destroy();
+    calendarResizeObserver?.disconnect();
+
+    window.removeEventListener('resize', updateRequestSidebarHeight);
 });
 </script>
 
@@ -227,7 +290,109 @@ onBeforeUnmount(() => {
         <div class="space-y-6">
             <FormSection columns="grid-cols-1">
                 <div class="space-y-4">
-                    <div class="flex flex-wrap items-center justify-end gap-4">
+                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                        <div
+                            ref="bookingCalendar"
+                            class="booking-calendar min-w-0"
+                        >
+                            <FullCalendar :options="calendarOptions" />
+                        </div>
+
+                        <aside
+                            ref="requestSidebar"
+                            class="flex min-h-0 flex-col gap-4"
+                            :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
+                        >
+                            <h1 class="text-normal text-dark font-semibold">Žiadosti o rezerváciu</h1>
+
+                            <div
+                                v-if="pendingRequests.length"
+                                class="min-h-0 flex-1 overflow-y-auto pr-1"
+                            >
+                                <div class="space-y-3">
+                                    <article
+                                        v-for="request in pendingRequests"
+                                        :key="request.id"
+                                        :data-request-id="request.id"
+                                        class="appointment-request-card cursor-grab rounded-md border border-soft bg-soft p-4 transition hover:bg-soft/80 active:cursor-grabbing active:bg-accent"
+                                    >
+                                        <div class="space-y-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <h3 class="font-semibold text-dark">
+                                                        {{ request.patient_name }}
+                                                    </h3>
+
+                                                    <div class="space-y-1 text-xs text-accent">
+                                                        <p v-if="request.patient_phone">
+                                                            {{ request.patient_phone }}
+                                                        </p>
+
+                                                        <p v-if="request.patient_email">
+                                                            {{ request.patient_email }}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    class="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                                                    @mousedown.stop
+                                                    @click.stop="openCancelAppointmentRequestDialog(request)"
+                                                >
+                                                    Zrušiť
+                                                </button>
+                                            </div>
+
+                                            <div class="grid gap-2 text-normal text-soft ">
+                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                                    <span class="text-right">
+                                                        {{ getRequestServicesLabel(request) }}
+                                                    </span>
+                                                </div>
+
+                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                                    <span class="font-medium">
+                                                        Preferovaný termín
+                                                    </span>
+
+                                                    <span class="text-right">
+                                                        {{ formatDate(getRequestPreferredDate(request)) }} · {{ getRequestPeriodLabel(request) }}
+                                                    </span>
+                                                </div>
+
+                                                <div class="request-card-soft-box flex items-center justify-between gap-3 text-accent">
+                                                    <span class="font-medium">
+                                                    </span>
+
+                                                    <span>
+                                                        {{ request.total_duration_minutes }} min
+                                                    </span>
+                                                </div>
+                                            </div>
+
+
+                                            <p
+                                                v-if="request.patient_note"
+                                                class="request-card-soft-box rounded-md bg-white/60 p-3 text-xs leading-5 text-accent"
+                                            >
+                                                {{ request.patient_note }}
+                                            </p>
+                                        </div>
+                                    </article>
+                                </div>
+                            </div>
+
+                            <div
+                                v-else
+                                class="min-h-0 flex-1 rounded-md border border-soft bg-soft p-4 text-sm text-accent"
+                            >
+                                Žiadne čakajúce žiadosti.
+                            </div>
+                        </aside>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-start gap-4">
                         <div class="flex flex-wrap gap-6">
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showAvailabilityRules" />
@@ -245,118 +410,6 @@ onBeforeUnmount(() => {
                             label="Vytvoriť udalosť"
                             @click="openCreateChoiceFromButton"
                         />
-                    </div>
-
-                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-                        <aside
-                            ref="requestSidebar"
-                            class="space-y-4"
-                        >
-                            <div class="rounded-md border border-soft bg-white p-4">
-                                <div class="space-y-1">
-                                    <h2 class="text-base font-semibold text-dark">
-                                        Čakajúce žiadosti
-                                    </h2>
-
-                                    <p class="text-sm text-accent">
-                                        Presuňte žiadosť do kalendára alebo ju zrušte.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="pendingRequests.length"
-                                class="space-y-3"
-                            >
-                                <article
-                                    v-for="request in pendingRequests"
-                                    :key="request.id"
-                                    :data-request-id="request.id"
-                                    class="appointment-request-card cursor-grab rounded-md border border-soft bg-white p-4 transition hover:bg-soft active:cursor-grabbing"
-                                >
-                                    <div class="space-y-4">
-                                        <div class="flex items-start justify-between gap-3">
-                                            <div>
-                                                <h3 class="font-semibold text-dark">
-                                                    {{ request.patient_name }}
-                                                </h3>
-
-                                                <p class="mt-1 text-xs text-accent">
-                                                    {{ getRequestServicesLabel(request) }}
-                                                </p>
-                                            </div>
-
-                                            <button
-                                                type="button"
-                                                class="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-                                                @mousedown.stop
-                                                @click.stop="cancelAppointmentRequest(request)"
-                                            >
-                                                Zrušiť
-                                            </button>
-                                        </div>
-
-                                        <div class="grid gap-2 text-sm text-accent">
-                                            <div class="flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2">
-                                                <span class="font-medium text-dark">
-                                                    Trvanie
-                                                </span>
-
-                                                <span>
-                                                    {{ request.total_duration_minutes }} min
-                                                </span>
-                                            </div>
-
-                                            <div class="flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2">
-                                                <span class="font-medium text-dark">
-                                                    Preferovaný termín
-                                                </span>
-
-                                                <span class="text-right">
-                                                    {{ formatDate(request.preferred_date) }} · {{ getRequestPeriodLabel(request) }}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div class="space-y-1 text-xs text-accent">
-                                            <p v-if="request.patient_phone">
-                                                {{ request.patient_phone }}
-                                            </p>
-
-                                            <p v-if="request.patient_email">
-                                                {{ request.patient_email }}
-                                            </p>
-                                        </div>
-
-                                        <p
-                                            v-if="request.patient_note"
-                                            class="rounded-md bg-soft p-3 text-xs leading-5 text-accent"
-                                        >
-                                            {{ request.patient_note }}
-                                        </p>
-
-                                        <div class="flex items-center justify-between gap-3">
-                                            <p class="text-xs font-semibold uppercase tracking-wide text-accent">
-                                                Presuňte do kalendára
-                                            </p>
-
-                                            <Tag value="Žiadosť" />
-                                        </div>
-                                    </div>
-                                </article>
-                            </div>
-
-                            <div
-                                v-else
-                                class="rounded-md border border-soft bg-white p-4 text-sm text-accent"
-                            >
-                                Žiadne čakajúce žiadosti.
-                            </div>
-                        </aside>
-
-                        <div class="booking-calendar min-w-0">
-                            <FullCalendar :options="calendarOptions" />
-                        </div>
                     </div>
                 </div>
             </FormSection>
@@ -432,11 +485,36 @@ onBeforeUnmount(() => {
                 @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
                 @delete-capacity-window-series="deleteCapacityWindowSeries"
             />
+
+            <ConfirmDialog
+                :show="requestCancelDialogVisible"
+                title="Zrušiť žiadosť"
+                :message="requestCancelDialogMessage"
+                confirm-label="Zrušiť žiadosť"
+                cancel-label="Ponechať"
+                confirm-severity="danger"
+                @cancel="closeCancelAppointmentRequestDialog"
+                @confirm="confirmCancelAppointmentRequest"
+            />
         </div>
     </AdminLayout>
 </template>
 
 <style scoped>
+.appointment-request-card:active,
+.appointment-request-card:active * {
+    color: #ffffff !important;
+}
+
+.appointment-request-card:active .request-card-soft-box {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.appointment-request-card:active :deep(.p-tag) {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
 .booking-calendar :deep(.fc) {
     font-family: inherit;
 }

@@ -38,7 +38,7 @@ class BookingCreatedNotification extends Notification
         }
 
         return (new MailMessage)
-            ->subject('Rezervácia bola vytvorená')
+            ->subject('Nová Rezervácia')
             ->view('emails.bookings.created', [
                 'patientName' => $this->booking->patient_name,
                 'serviceName' => $this->booking->services->isNotEmpty()

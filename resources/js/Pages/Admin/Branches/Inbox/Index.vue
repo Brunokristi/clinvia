@@ -85,11 +85,15 @@ const senderLabel = (message) => {
 };
 
 const createdLabel = (message) => {
+    if (!message.created_at) {
+        return '—';
+    }
+
     return new Date(message.created_at).toLocaleString('sk-SK');
 };
 
 const rows = computed(() => {
-    return props.messages.data.map((message) => ({
+    return (props.messages.data ?? []).map((message) => ({
         ...message,
         sender_label: senderLabel(message),
         type_label: typeLabel(message.type),
@@ -126,13 +130,28 @@ const columns = [
     },
 ];
 
+const paginationLinks = computed(() => {
+    return props.messages.links ?? [];
+});
+
+const hasPagination = computed(() => {
+    return paginationLinks.value.length > 3;
+});
+
+const normalizedFilters = computed(() => {
+    return {
+        type: props.filters.type ?? '',
+        status: props.filters.status ?? '',
+    };
+});
+
 const applyFilters = (changes = {}) => {
     router.get(
         route('branches.inbox.index', props.branch.id),
         {
-            type: props.filters.type,
-            status: props.filters.status,
+            ...normalizedFilters.value,
             ...changes,
+            page: 1,
         },
         {
             preserveScroll: true,
@@ -142,16 +161,32 @@ const applyFilters = (changes = {}) => {
     );
 };
 
+const goToPage = (url) => {
+    if (!url) {
+        return;
+    }
+
+    router.visit(url, {
+        preserveScroll: true,
+        preserveState: true,
+    });
+};
+
 const openMessage = (message) => {
     router.get(route('branches.inbox.show', [props.branch.id, message.id]));
 };
 
-const markAsRead = (message) => {
+const toggleRead = (message) => {
+    const routeName = message.read_at
+        ? 'branches.inbox.unread'
+        : 'branches.inbox.read';
+
     router.patch(
-        route('branches.inbox.read', [props.branch.id, message.id]),
+        route(routeName, [props.branch.id, message.id]),
         {},
         {
             preserveScroll: true,
+            preserveState: false,
         },
     );
 };
@@ -161,6 +196,7 @@ const deleteMessage = (message) => {
         route('branches.inbox.destroy', [props.branch.id, message.id]),
         {
             preserveScroll: true,
+            preserveState: false,
         },
     );
 };
@@ -171,44 +207,38 @@ const deleteMessage = (message) => {
         <Head :title="`Inbox | ${branch.name}`" />
 
         <div class="space-y-6">
-            <div>
-                <h1 class="text-heading font-semibold text-dark">
-                    Inbox
-                </h1>
-
-                <p class="mt-2 text-normal text-accent">
-                    Správy z kontaktného formulára, rezervácií a budúce chatové správy pre pobočku {{ branch.name }}.
-                </p>
-            </div>
-
-            <div class="grid gap-4 rounded-md bg-white p-4 md:grid-cols-2">
-                <Select
-                    :model-value="filters.type"
-                    :options="typeOptions"
-                    option-label="label"
-                    option-value="value"
-                    placeholder="Typ správy"
-                    @update:model-value="applyFilters({ type: $event })"
-                />
-
-                <Select
-                    :model-value="filters.status"
-                    :options="statusOptions"
-                    option-label="label"
-                    option-value="value"
-                    placeholder="Stav"
-                    @update:model-value="applyFilters({ status: $event })"
-                />
-            </div>
-
             <TableCard
                 title="Správy"
                 description="Prehľad všetkých správ pre túto pobočku."
                 :rows="rows"
                 :columns="columns"
+                :paginator="false"
+                :search-fields="['sender_label', 'sender_email', 'sender_phone', 'type_label', 'title', 'body', 'status_label', 'created_label']"
                 empty-message="Zatiaľ tu nie sú žiadne správy."
                 show-row-actions
             >
+                <template #actions>
+                    <div class="flex flex-col gap-3 sm:flex-row">
+                        <Select
+                            :model-value="normalizedFilters.type"
+                            :options="typeOptions"
+                            option-label="label"
+                            option-value="value"
+                            class="w-full sm:w-52"
+                            @update:model-value="applyFilters({ type: $event })"
+                        />
+
+                        <Select
+                            :model-value="normalizedFilters.status"
+                            :options="statusOptions"
+                            option-label="label"
+                            option-value="value"
+                            class="w-full sm:w-52"
+                            @update:model-value="applyFilters({ status: $event })"
+                        />
+                    </div>
+                </template>
+
                 <template #cell-sender_label="{ row }">
                     <div>
                         <p class="text-sm font-semibold text-dark">
@@ -255,27 +285,66 @@ const deleteMessage = (message) => {
                 <template #row-actions="{ row }">
                     <div class="flex justify-end gap-2">
                         <Button
-                            label="Otvoriť"
+                            v-tooltip.top="'Otvoriť'"
+                            icon="pi pi-eye"
                             size="small"
+                            rounded
+                            text
+                            severity="secondary"
+                            aria-label="Otvoriť správu"
                             @click="openMessage(row)"
                         />
 
                         <Button
-                            v-if="!row.read_at"
-                            label="Prečítané"
+                            v-tooltip.top="row.read_at ? 'Označiť ako neprečítané' : 'Označiť ako prečítané'"
+                            :icon="row.read_at ? 'pi pi-envelope' : 'pi pi-envelope-open'"
                             size="small"
+                            rounded
+                            text
                             severity="secondary"
-                            outlined
-                            @click="markAsRead(row)"
+                            :aria-label="row.read_at ? 'Označiť ako neprečítané' : 'Označiť ako prečítané'"
+                            @click="toggleRead(row)"
                         />
 
                         <Button
-                            label="Zmazať"
+                            v-tooltip.top="'Zmazať'"
+                            icon="pi pi-trash"
                             size="small"
+                            rounded
+                            text
                             severity="danger"
-                            outlined
+                            aria-label="Zmazať správu"
                             @click="deleteMessage(row)"
                         />
+                    </div>
+                </template>
+
+                <template #footer>
+                    <div
+                        v-if="hasPagination"
+                        class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                        <p class="text-sm text-accent">
+                            Zobrazené {{ messages.from ?? 0 }} – {{ messages.to ?? 0 }} z {{ messages.total ?? 0 }}
+                        </p>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                v-for="link in paginationLinks"
+                                :key="link.label"
+                                type="button"
+                                class="rounded-md border px-3 py-2 text-sm transition"
+                                :class="[
+                                    link.active
+                                        ? 'border-accent bg-accent text-white'
+                                        : 'border-soft bg-white text-accent hover:bg-soft',
+                                    !link.url ? 'cursor-not-allowed opacity-50' : '',
+                                ]"
+                                :disabled="!link.url"
+                                @click="goToPage(link.url)"
+                                v-html="link.label"
+                            />
+                        </div>
                     </div>
                 </template>
             </TableCard>
