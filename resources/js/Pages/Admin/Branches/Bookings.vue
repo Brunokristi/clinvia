@@ -14,8 +14,11 @@ import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 import FullCalendar from '@fullcalendar/vue3';
 import { Draggable } from '@fullcalendar/interaction';
 
+import { router } from '@inertiajs/vue3';
+
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
+import Tag from 'primevue/tag';
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -128,8 +131,28 @@ const periodLabels = {
 
 const pendingRequests = computed(() => props.pendingAppointmentRequests ?? []);
 
+const formatDate = (value) => {
+    if (!value) {
+        return 'Bez dátumu';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return 'Bez dátumu';
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}.${month}.${year}`;
+};
+
 const getRequestPeriodLabel = (request) => {
-    return periodLabels[request.preferred_period] ?? request.preferred_period;
+    return periodLabels[request.preferred_period] ?? request.preferred_period ?? 'Bez časti dňa';
 };
 
 const getRequestServicesLabel = (request) => {
@@ -142,6 +165,20 @@ const getRequestServicesLabel = (request) => {
     return services
         .map((service) => service.name)
         .join(', ');
+};
+
+const cancelAppointmentRequest = (request) => {
+    if (!confirm(`Naozaj chcete zrušiť žiadosť pacienta ${request.patient_name}?`)) {
+        return;
+    }
+
+    router.delete(route('branches.booking.appointment-requests.destroy', [
+        props.branch.id,
+        request.id,
+    ]), {
+        preserveScroll: true,
+        preserveState: false,
+    });
 };
 
 onMounted(() => {
@@ -188,9 +225,7 @@ onBeforeUnmount(() => {
 <template>
     <AdminLayout>
         <div class="space-y-6">
-            <FormSection
-                columns="grid-cols-1"
-            >
+            <FormSection columns="grid-cols-1">
                 <div class="space-y-4">
                     <div class="flex flex-wrap items-center justify-end gap-4">
                         <div class="flex flex-wrap gap-6">
@@ -212,19 +247,21 @@ onBeforeUnmount(() => {
                         />
                     </div>
 
-                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
                         <aside
                             ref="requestSidebar"
-                            class="space-y-3 rounded-xl border border-soft bg-white p-4"
+                            class="space-y-4"
                         >
-                            <div>
-                                <h2 class="text-base font-semibold text-dark">
-                                    Čakajúce žiadosti
-                                </h2>
+                            <div class="rounded-md border border-soft bg-white p-4">
+                                <div class="space-y-1">
+                                    <h2 class="text-base font-semibold text-dark">
+                                        Čakajúce žiadosti
+                                    </h2>
 
-                                <p class="text-sm text-normal">
-                                    Presuňte žiadosť do kalendára.
-                                </p>
+                                    <p class="text-sm text-accent">
+                                        Presuňte žiadosť do kalendára alebo ju zrušte.
+                                    </p>
+                                </div>
                             </div>
 
                             <div
@@ -235,30 +272,53 @@ onBeforeUnmount(() => {
                                     v-for="request in pendingRequests"
                                     :key="request.id"
                                     :data-request-id="request.id"
-                                    class="appointment-request-card cursor-grab rounded-lg border border-soft bg-soft p-3 shadow-sm active:cursor-grabbing"
+                                    class="appointment-request-card cursor-grab rounded-md border border-soft bg-white p-4 transition hover:bg-soft active:cursor-grabbing"
                                 >
-                                    <div class="space-y-2">
-                                        <div>
-                                            <h3 class="font-semibold text-dark">
-                                                {{ request.patient_name }}
-                                            </h3>
+                                    <div class="space-y-4">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <h3 class="font-semibold text-dark">
+                                                    {{ request.patient_name }}
+                                                </h3>
 
-                                            <p class="text-xs text-normal">
-                                                {{ getRequestServicesLabel(request) }}
-                                            </p>
+                                                <p class="mt-1 text-xs text-accent">
+                                                    {{ getRequestServicesLabel(request) }}
+                                                </p>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                class="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                                                @mousedown.stop
+                                                @click.stop="cancelAppointmentRequest(request)"
+                                            >
+                                                Zrušiť
+                                            </button>
                                         </div>
 
-                                        <div class="text-sm text-normal">
-                                            <p>
-                                                {{ request.total_duration_minutes }} min
-                                            </p>
+                                        <div class="grid gap-2 text-sm text-accent">
+                                            <div class="flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2">
+                                                <span class="font-medium text-dark">
+                                                    Trvanie
+                                                </span>
 
-                                            <p>
-                                                {{ request.preferred_date }} · {{ getRequestPeriodLabel(request) }}
-                                            </p>
+                                                <span>
+                                                    {{ request.total_duration_minutes }} min
+                                                </span>
+                                            </div>
+
+                                            <div class="flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2">
+                                                <span class="font-medium text-dark">
+                                                    Preferovaný termín
+                                                </span>
+
+                                                <span class="text-right">
+                                                    {{ formatDate(request.preferred_date) }} · {{ getRequestPeriodLabel(request) }}
+                                                </span>
+                                            </div>
                                         </div>
 
-                                        <div class="space-y-1 text-xs text-normal">
+                                        <div class="space-y-1 text-xs text-accent">
                                             <p v-if="request.patient_phone">
                                                 {{ request.patient_phone }}
                                             </p>
@@ -270,17 +330,25 @@ onBeforeUnmount(() => {
 
                                         <p
                                             v-if="request.patient_note"
-                                            class="rounded-md bg-white p-2 text-xs text-normal"
+                                            class="rounded-md bg-soft p-3 text-xs leading-5 text-accent"
                                         >
                                             {{ request.patient_note }}
                                         </p>
+
+                                        <div class="flex items-center justify-between gap-3">
+                                            <p class="text-xs font-semibold uppercase tracking-wide text-accent">
+                                                Presuňte do kalendára
+                                            </p>
+
+                                            <Tag value="Žiadosť" />
+                                        </div>
                                     </div>
                                 </article>
                             </div>
 
                             <div
                                 v-else
-                                class="rounded-lg bg-soft p-3 text-sm text-normal"
+                                class="rounded-md border border-soft bg-white p-4 text-sm text-accent"
                             >
                                 Žiadne čakajúce žiadosti.
                             </div>
@@ -496,6 +564,7 @@ onBeforeUnmount(() => {
     font-size: 12px;
     font-weight: 600;
 }
+
 .booking-calendar :deep(.fc-event-time) {
     font-size: 11px;
 }

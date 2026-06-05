@@ -18,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Actions\CreateBookingAction;
+use App\Notifications\AppointmentRequestCancelledNotification;
+use Illuminate\Support\Facades\Notification;
 
 class BranchBookingCalendarController extends Controller
 {
@@ -123,82 +125,110 @@ class BranchBookingCalendarController extends Controller
         Branch $branch,
         AppointmentRequest $appointmentRequest,
         CreateBookingAction $createBookingAction,
+        ): RedirectResponse {
+            abort_if(! $request->user()->canAccessBranch($branch), 403);
+            abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+            $validated = $request->validate([
+                'starts_at' => ['required', 'date'],
+            ]);
+
+            DB::transaction(function () use ($validated, $branch, $appointmentRequest, $createBookingAction): void {
+                $lockedAppointmentRequest = AppointmentRequest::query()
+                    ->whereKey($appointmentRequest->id)
+                    ->where('branch_id', $branch->id)
+                    ->with('services')
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($lockedAppointmentRequest->status !== 'pending') {
+                    throw ValidationException::withMessages([
+                        'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
+                    ]);
+                }
+
+                $services = $lockedAppointmentRequest->services;
+
+                if ($services->isEmpty()) {
+                    throw ValidationException::withMessages([
+                        'service_ids' => 'Žiadosť nemá vybrané služby.',
+                    ]);
+                }
+
+                $primaryService = $services->first();
+
+                $startsAt = Carbon::parse($validated['starts_at']);
+
+                $durationMinutes = max(
+                    15,
+                    (int) $lockedAppointmentRequest->total_duration_minutes
+                );
+
+                $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
+
+                $bookingSlot = BookingSlot::query()
+                    ->firstOrCreate(
+                        [
+                            'branch_id' => $branch->id,
+                            'service_id' => $primaryService->id,
+                            'starts_at' => $startsAt,
+                            'ends_at' => $endsAt,
+                        ],
+                        [
+                            'capacity' => 1,
+                            'is_enabled' => true,
+                        ],
+                    );
+
+                $booking = $createBookingAction->execute($branch, $bookingSlot, [
+                    'service_id' => $primaryService->id,
+                    'service_ids' => $services
+                        ->pluck('id')
+                        ->map(fn ($id) => (int) $id)
+                        ->values()
+                        ->all(),
+                    'patient_name' => $lockedAppointmentRequest->patient_name,
+                    'patient_email' => $lockedAppointmentRequest->patient_email,
+                    'patient_phone' => $lockedAppointmentRequest->patient_phone,
+                    'patient_note' => $lockedAppointmentRequest->patient_note,
+                    'notify_patient' => true,
+                ]);
+
+                $lockedAppointmentRequest->update([
+                    'status' => 'converted',
+                    'booking_id' => $booking->id,
+                ]);
+            });
+
+            return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+        }
+
+        public function destroyAppointmentRequest(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
 
-        $validated = $request->validate([
-            'starts_at' => ['required', 'date'],
+        if ($appointmentRequest->status !== 'pending') {
+            return back()->withErrors([
+                'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
+            ]);
+        }
+
+        $appointmentRequest->loadMissing(['services']);
+
+        $appointmentRequest->update([
+            'status' => 'cancelled',
         ]);
 
-        DB::transaction(function () use ($validated, $branch, $appointmentRequest, $createBookingAction): void {
-            $lockedAppointmentRequest = AppointmentRequest::query()
-                ->whereKey($appointmentRequest->id)
-                ->where('branch_id', $branch->id)
-                ->with('services')
-                ->lockForUpdate()
-                ->firstOrFail();
+        if (filled($appointmentRequest->patient_email)) {
+            Notification::route('mail', $appointmentRequest->patient_email)
+                ->notify(new AppointmentRequestCancelledNotification($appointmentRequest));
+        }
 
-            if ($lockedAppointmentRequest->status !== 'pending') {
-                throw ValidationException::withMessages([
-                    'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
-                ]);
-            }
-
-            $services = $lockedAppointmentRequest->services;
-
-            if ($services->isEmpty()) {
-                throw ValidationException::withMessages([
-                    'service_ids' => 'Žiadosť nemá vybrané služby.',
-                ]);
-            }
-
-            $primaryService = $services->first();
-
-            $startsAt = Carbon::parse($validated['starts_at']);
-
-            $durationMinutes = max(
-                15,
-                (int) $lockedAppointmentRequest->total_duration_minutes
-            );
-
-            $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
-
-            $bookingSlot = BookingSlot::query()
-                ->firstOrCreate(
-                    [
-                        'branch_id' => $branch->id,
-                        'service_id' => $primaryService->id,
-                        'starts_at' => $startsAt,
-                        'ends_at' => $endsAt,
-                    ],
-                    [
-                        'capacity' => 1,
-                        'is_enabled' => true,
-                    ],
-                );
-
-            $booking = $createBookingAction->execute($branch, $bookingSlot, [
-                'service_id' => $primaryService->id,
-                'service_ids' => $services
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id)
-                    ->values()
-                    ->all(),
-                'patient_name' => $lockedAppointmentRequest->patient_name,
-                'patient_email' => $lockedAppointmentRequest->patient_email,
-                'patient_phone' => $lockedAppointmentRequest->patient_phone,
-                'patient_note' => $lockedAppointmentRequest->patient_note,
-                'notify_patient' => true,
-            ]);
-
-            $lockedAppointmentRequest->update([
-                'status' => 'converted',
-                'booking_id' => $booking->id,
-            ]);
-        });
-
-        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+        return back()->with('success', 'Žiadosť bola zrušená.');
     }
 
     private function getPendingAppointmentRequests(Branch $branch)

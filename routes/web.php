@@ -164,6 +164,9 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::post('/booking/appointment-requests/{appointmentRequest}/convert',[BranchBookingCalendarController::class, 'convertAppointmentRequest'])
                     ->name('booking.appointment-requests.convert');
+                
+                Route::delete('/booking/appointment-requests/{appointmentRequest}',[BranchBookingCalendarController::class, 'destroyAppointmentRequest'])
+                    ->name('booking.appointment-requests.destroy');
 
                 Route::get('/booking/settings', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.settings.page');

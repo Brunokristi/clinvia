@@ -27,7 +27,7 @@ class BookingRequestCreatedNotification extends Notification
 
         return (new MailMessage)
             ->subject('Žiadosť o rezerváciu bola prijatá')
-            ->view('emails.bookings.requested', [
+            ->view('emails.appointments.requested', [
                 'patientName' => $this->appointmentRequest->patient_name,
                 'serviceName' => $this->serviceName(),
                 'branchName' => $this->appointmentRequest->branch?->name ?? '—',
