@@ -7,6 +7,7 @@ use App\Models\BookingSlot;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
+use App\Events\BranchBookingCreated;
 use App\Notifications\BookingCreatedNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -81,6 +82,8 @@ class CreateBookingAction
             'services',
             'bookingSlot',
         ]);
+
+        event(new BranchBookingCreated($booking));
 
         if ($booking->patient_email && ($data['notify_patient'] ?? true)) {
             Notification::route('mail', $booking->patient_email)

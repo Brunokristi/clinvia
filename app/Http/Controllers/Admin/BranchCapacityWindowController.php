@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Events\BranchBookingCreated;
 use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
@@ -318,9 +319,10 @@ class BranchCapacityWindowController extends Controller
             'status' => 'confirmed',
         ]);
 
-        if ($validated['notify_patient'] ?? true) {
-            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+        $booking->load(['branch', 'service', 'bookingSlot']);
+        event(new BranchBookingCreated($booking));
 
+        if ($validated['notify_patient'] ?? true) {
             $notificationService->sendCreatedNotification($booking);
         }
 

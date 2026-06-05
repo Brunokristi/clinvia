@@ -10,6 +10,7 @@ use App\Models\BookingSlot;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
+use App\Events\BranchAppointmentRequestCreated;
 use App\Notifications\BookingCreatedNotification;
 use App\Notifications\BookingRequestCreatedNotification;
 use App\Notifications\BranchAdminNotification;
@@ -934,6 +935,8 @@ class PublicBranchSiteController extends Controller
                 ),
             );
         }
+
+        event(new BranchAppointmentRequestCreated($appointmentRequest));
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])

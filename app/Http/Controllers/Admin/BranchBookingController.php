@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Service;
+use App\Events\BranchBookingCreated;
 use App\Services\AdminBookingCalendarService;
 use App\Services\AdminBookingNotificationService;
 use Carbon\Carbon;
@@ -49,9 +50,10 @@ class BranchBookingController extends Controller
             'status' => 'confirmed',
         ]);
 
-        if ($validated['notify_patient'] ?? true) {
-            $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+        $booking->load(['branch', 'service', 'bookingSlot']);
+        event(new BranchBookingCreated($booking));
 
+        if ($validated['notify_patient'] ?? true) {
             $notificationService->sendCreatedNotification($booking);
         }
 

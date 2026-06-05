@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import { computed } from 'vue';
+import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
 
 const props = defineProps({
     branch: {
@@ -46,6 +47,15 @@ const props = defineProps({
 
 const branchTitle = computed(() => props.branch.name || 'Pobočka');
 const companyName = computed(() => props.branch.company?.legal_name || 'Spoločnosť');
+
+const reloadBranchPage = () => {
+    router.reload({
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+useBranchBroadcasting(props.branch.id, reloadBranchPage);
 
 const overviewCards = computed(() => [
     {

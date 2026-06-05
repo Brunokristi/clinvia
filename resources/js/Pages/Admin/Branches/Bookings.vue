@@ -16,6 +16,7 @@ import FullCalendar from '@fullcalendar/vue3';
 import { Draggable } from '@fullcalendar/interaction';
 
 import { router } from '@inertiajs/vue3';
+import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
 
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
@@ -118,6 +119,15 @@ const {
 const bookingCalendar = ref(null);
 const requestSidebar = ref(null);
 const requestSidebarHeight = ref(null);
+
+const reloadBranchPage = () => {
+    router.reload({
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+useBranchBroadcasting(props.branch.id, reloadBranchPage);
 
 const requestToCancel = ref(null);
 

@@ -30,7 +30,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\BranchOpeningHoursPdfController;
 use App\Http\Controllers\BranchServicesPdfController;
 use App\Http\Controllers\Admin\BranchInboxMessageController;
+use Illuminate\Support\Facades\Broadcast;
 
+Broadcast::routes(['middleware' => ['auth', 'active']]);
 
 Route::redirect('/', '/dashboard');
 
