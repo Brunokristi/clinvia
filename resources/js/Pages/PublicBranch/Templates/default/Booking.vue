@@ -60,12 +60,12 @@ today.setHours(0, 0, 0, 0);
 const currentStep = ref(1);
 const submittedSuccessfully = ref(false);
 const dateValue = ref(null);
-const selectedServiceIds = ref([]);
+const selectedServiceIds = ref([...props.selectedServiceIds]);
 
 const bookingForm = useForm({
     mode: '',
     request_type: '',
-    service_ids: [],
+    service_ids: [...props.selectedServiceIds],
     booking_slot_id: '',
     preferred_option_id: '',
     preferred_date: '',

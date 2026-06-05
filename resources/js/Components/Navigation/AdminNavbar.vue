@@ -170,12 +170,16 @@ const branchLinks = computed(() => {
 
     return [
         {
+            label: 'Dashboard',
+            icon: 'pi pi-th-large',
+            href: route('branches.booking.dashboard.page', branch.value),
+            active: route().current('branches.booking.dashboard.page'),
+        },
+        {
             label: 'Rezervácie',
             icon: 'pi pi-calendar',
-            href: route('branches.booking.dashboard.page', branch.value),
-            active: route().current('branches.booking.dashboard.page')
-                || route().current('branches.booking.settings.page')
-                || route().current('branches.booking.agenda.page')
+            href: route('branches.booking.agenda.page', branch.value),
+            active: route().current('branches.booking.agenda.page')
                 || route().current('branches.booking.inbox.page'),
         },
         {
@@ -186,46 +190,11 @@ const branchLinks = computed(() => {
                 || route().current('branches.inbox.show'),
         },
         {
-            label: 'Info',
-            icon: 'pi pi-info-circle',
-            href: route('branches.edit', branch.value),
-            active: route().current('branches.edit'),
-        },
-        {
-            label: 'Kontakty',
-            icon: 'pi pi-address-book',
-            href: route('branches.contacts.page', branch.value),
-            active: route().current('branches.contacts.page'),
-        },
-        {
-            label: 'Otváracie hodiny',
-            icon: 'pi pi-clock',
-            href: route('branches.opening-hours.page', branch.value),
-            active: route().current('branches.opening-hours.page'),
-        },
-        {
-            label: 'Zamestnanci',
-            icon: 'pi pi-id-card',
-            href: route('branches.employees.page', branch.value),
-            active: route().current('branches.employees.page'),
-        },
-        {
-            label: 'Služby',
-            icon: 'pi pi-briefcase',
-            href: route('branches.services.page', branch.value),
-            active: route().current('branches.services.page'),
-        },
-        {
-            label: 'Používatelia',
-            icon: 'pi pi-users',
-            href: route('branches.users.page', branch.value),
-            active: route().current('branches.users.page'),
-        },
-        {
-            label: 'Verejná stránka',
-            icon: 'pi pi-globe',
-            href: route('branches.public-site.edit', branch.value),
-            active: route().current('branches.public-site.edit'),
+            label: 'Nastavenia',
+            icon: 'pi pi-cog',
+            href: route('branches.settings.page', branch.value),
+            active: route().current('branches.settings.page')
+                || route().current('branches.booking.settings.page'),
         },
     ];
 });

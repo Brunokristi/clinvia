@@ -30,6 +30,8 @@ class Branch extends Model
         'website',
         'is_active',
         'sort_order',
+        'booking_settings',
+        'notification_settings',
     ];
 
     protected function casts(): array
@@ -39,6 +41,8 @@ class Branch extends Model
             'sort_order' => 'integer',
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
+            'booking_settings' => 'array',
+            'notification_settings' => 'array',
         ];
     }
 

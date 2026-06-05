@@ -12,6 +12,7 @@ use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Notifications\BookingCreatedNotification;
 use App\Notifications\BookingRequestCreatedNotification;
+use App\Notifications\BranchAdminNotification;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -111,6 +112,7 @@ class PublicBranchSiteController extends Controller
     public function booking(Request $request, Branch $branch): Response
     {
         $this->ensurePublicSiteIsEnabled($branch);
+        $this->ensureBranchBookingIsEnabled($branch);
 
         $branch->load([
             'company',
@@ -121,6 +123,7 @@ class PublicBranchSiteController extends Controller
             'services.category',
         ]);
 
+        $bookingSettings = $this->bookingSettings($branch);
         $selectedDate = Carbon::parse($request->string('date', now()->toDateString()));
         $selectedServiceIds = $this->normalizeSelectedServiceIds($request);
 
@@ -128,6 +131,12 @@ class PublicBranchSiteController extends Controller
             ->where('is_active', true)
             ->where('is_bookable', true)
             ->values();
+
+        if (! $bookingSettings['allow_service_selection'] && $bookableServices->isNotEmpty()) {
+            $selectedServiceIds = [
+                (int) $bookableServices->first()->id,
+            ];
+        }
 
         if (empty($selectedServiceIds) && $bookableServices->isNotEmpty()) {
             $selectedServiceIds = [
@@ -143,7 +152,7 @@ class PublicBranchSiteController extends Controller
         $availableOptions = collect();
 
         $canBookExactSlots = false;
-        $canSubmitGeneralRequest = $selectedServices->isNotEmpty();
+        $canSubmitGeneralRequest = $selectedServices->isNotEmpty() && $bookingSettings['allow_appointment_requests'];
 
         if ($selectedServices->count() === 1) {
             $selectedService = $selectedServices->first();
@@ -162,7 +171,7 @@ class PublicBranchSiteController extends Controller
             }
         }
 
-        if ($selectedServices->isNotEmpty()) {
+        if ($selectedServices->isNotEmpty() && $bookingSettings['allow_appointment_requests']) {
             $availableOptions = $this->getAvailableRequestOptions(
                 branch: $branch,
                 selectedServices: $selectedServices,
@@ -192,12 +201,16 @@ class PublicBranchSiteController extends Controller
                 ])
                 ->values(),
             'availableOptions' => $availableOptions->values(),
+            'bookingSettings' => $bookingSettings,
         ]);
     }
 
     public function storeBooking(Request $request, Branch $branch, CreateBookingAction $createBookingAction): RedirectResponse
     {
         $this->ensurePublicSiteIsEnabled($branch);
+        $this->ensureBranchBookingIsEnabled($branch);
+
+        $bookingSettings = $this->bookingSettings($branch);
 
         $validated = $request->validate([
             'mode' => ['required', 'in:exact_slot,appointment_request'],
@@ -213,6 +226,18 @@ class PublicBranchSiteController extends Controller
             'patient_phone' => ['nullable', 'string', 'max:255'],
             'patient_note' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        if ($validated['mode'] === 'appointment_request' && ! $bookingSettings['allow_appointment_requests']) {
+            throw ValidationException::withMessages([
+                'mode' => 'Tento typ rezervácie nie je momentálne dostupný.',
+            ]);
+        }
+
+        if ($validated['mode'] === 'exact_slot' && ! $bookingSettings['is_enabled']) {
+            throw ValidationException::withMessages([
+                'mode' => 'Priame rezervácie sú momentálne vypnuté.',
+            ]);
+        }
 
         if ($validated['mode'] === 'exact_slot') {
             return $this->storeExactSlotBooking($branch, $validated, $createBookingAction);
@@ -241,6 +266,20 @@ class PublicBranchSiteController extends Controller
             'sender_email' => $validated['sender_email'] ?? null,
             'sender_phone' => $validated['sender_phone'] ?? null,
         ]);
+
+        $notificationSettings = $this->notificationSettings($branch);
+
+        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_contact_form']) {
+            $this->notifyBranchRecipients(
+                $branch,
+                'Nová správa z kontaktného formulára',
+                sprintf(
+                    'Kontaktný formulár od %s bol odoslaný.%s',
+                    $validated['sender_name'],
+                    $validated['body'] ? '\n\nSpráva:\n' . $validated['body'] : '',
+                ),
+            );
+        }
 
         return back()->with('success', 'Správa bola odoslaná.');
     }
@@ -747,12 +786,26 @@ class PublicBranchSiteController extends Controller
             ]);
         }
 
-        $createBookingAction->execute($branch, $slot, [
+        $booking = $createBookingAction->execute($branch, $slot, [
             'patient_name' => $validated['patient_name'],
             'patient_email' => $validated['patient_email'],
             'patient_phone' => $validated['patient_phone'] ?? null,
             'patient_note' => $validated['patient_note'] ?? null,
         ]);
+
+        $notificationSettings = $this->notificationSettings($branch);
+
+        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_booking']) {
+            $this->notifyBranchRecipients(
+                $branch,
+                'Nová rezervácia',
+                sprintf(
+                    'Vytvorili sme novú rezerváciu pre %s na %s.',
+                    $booking->patient_name,
+                    $slot->starts_at->format('d.m.Y H:i'),
+                ),
+            );
+        }
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])
@@ -868,9 +921,62 @@ class PublicBranchSiteController extends Controller
                 ->notify(new BookingRequestCreatedNotification($appointmentRequest));
         }
 
+        $notificationSettings = $this->notificationSettings($branch);
+
+        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_appointment_request']) {
+            $this->notifyBranchRecipients(
+                $branch,
+                'Nová žiadosť o termín',
+                sprintf(
+                    'Prijali sme novú žiadosť o termín od %s (%s). Požiadavka je vo fáze spracovania.',
+                    $appointmentRequest->patient_name,
+                    $appointmentRequest->patient_email ?: $appointmentRequest->patient_phone,
+                ),
+            );
+        }
+
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])
             ->with('success', 'Požiadavka bola odoslaná. Skontrolujte si email s potvrdením prijatia.');
+    }
+
+    private function bookingSettings(Branch $branch): array
+    {
+        return array_merge([
+            'is_enabled' => false,
+            'allow_service_selection' => true,
+            'allow_appointment_requests' => true,
+            'intro_text' => null,
+            'success_message' => null,
+        ], $branch->booking_settings ?? []);
+    }
+
+    private function notificationSettings(Branch $branch): array
+    {
+        return array_merge([
+            'is_enabled' => false,
+            'notification_emails' => [],
+            'notify_new_appointment_request' => true,
+            'notify_new_booking' => true,
+            'notify_new_contact_form' => true,
+        ], $branch->notification_settings ?? []);
+    }
+
+    private function notifyBranchRecipients(Branch $branch, string $subject, string $message): void
+    {
+        $notificationSettings = $this->notificationSettings($branch);
+        $emails = collect($notificationSettings['notification_emails'])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($emails)) {
+            return;
+        }
+
+        Notification::route('mail', $emails)
+            ->notify(new BranchAdminNotification($subject, $message));
     }
 
     private function ensurePublicSiteIsEnabled(Branch $branch): void
@@ -878,6 +984,14 @@ class PublicBranchSiteController extends Controller
         $branch->loadMissing('publicSite');
 
         abort_unless($branch->publicSite?->is_enabled, 404);
+    }
+
+    private function ensureBranchBookingIsEnabled(Branch $branch): void
+    {
+        abort_unless(
+            $branch->booking_settings['is_enabled'] ?? false,
+            404,
+        );
     }
 
     private function ensureServiceBelongsToBranch(Branch $branch, Service $service): void
@@ -940,7 +1054,9 @@ class PublicBranchSiteController extends Controller
                 'website' => $branch->company->website,
             ] : null,
             'public_site' => $branch->publicSite ? [
+                'is_enabled' => $branch->publicSite->is_enabled,
                 'template' => $branch->publicSite->template,
+                'custom_domain' => $branch->publicSite->custom_domain,
                 'primary_color' => $branch->publicSite->primary_color,
                 'secondary_color' => $branch->publicSite->secondary_color,
                 'logo_path' => $branch->publicSite->logo_path,
@@ -948,6 +1064,8 @@ class PublicBranchSiteController extends Controller
                 'meta_description' => $branch->publicSite->meta_description,
                 'faq_items' => $branch->publicSite->faq_items ?? [],
             ] : null,
+            'booking_settings' => $this->bookingSettings($branch),
+            'notification_settings' => $this->notificationSettings($branch),
             'contacts' => $branch->contacts->map(fn ($contact) => [
                 'type' => $contact->type,
                 'label' => $contact->label,
@@ -990,6 +1108,7 @@ class PublicBranchSiteController extends Controller
             'duration_sessions' => $service->duration_sessions,
             'duration_minutes' => $service->duration_minutes,
             'capacity' => $service->capacity,
+            'is_bookable' => $service->is_bookable,
             'booking_type' => $service->booking_type,
             'public_booking_type' => $service->public_booking_type ?? 'appointment_request',
             'insurance_amount' => $service->insurance_amount,

@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -159,6 +160,70 @@ class BranchController extends Controller
         ]);
     }
 
+    public function settings(Request $request, Branch $branch): Response
+    {
+        abort_if(! request()->user()->canAccessBranch($branch), 403);
+
+        $routeName = $request->route()->getName();
+        $tabName = match ($routeName) {
+            'branches.contacts.page' => 'contacts',
+            'branches.opening-hours.page' => 'openingHours',
+            'branches.employees.page' => 'employees',
+            'branches.services.page' => 'services',
+            'branches.users.page' => 'users',
+            'branches.public-site.edit' => 'publicSite',
+            'branches.public-site.page' => 'publicSite',
+            default => $request->string('tab', 'info'),
+        };
+
+        $branch->load([
+            'company:id,legal_name,slug',
+            'company.users:id,first_name,last_name,email,global_role,is_active',
+            'contacts',
+            'openingHours.intervals',
+            'employees',
+            'services.category',
+            'services.information',
+            'services.steps',
+            'services.files',
+            'users:id,first_name,last_name,email,global_role,is_active',
+            'branchInvitations.invitedBy:id,first_name,last_name,email',
+            'publicSite',
+        ])->loadCount(['contacts', 'openingHours', 'employees', 'services', 'users']);
+
+        $availableUsers = User::query()
+            ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])
+            ->whereIn('global_role', ['admin', 'editor', 'viewer'])
+            ->where('is_active', true)
+            ->whereDoesntHave('branches', function ($query) use ($branch) {
+                $query->where('branches.id', $branch->id);
+            })
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
+
+        $categories = Category::query()
+            ->select(['id', 'name'])
+            ->where('company_id', $branch->company_id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('Admin/Branches/Settings', [
+            'branch' => $branch,
+            'availableUsers' => $availableUsers,
+            'categories' => $categories,
+            'templates' => [
+                [
+                    'label' => 'Predvolený',
+                    'value' => 'default',
+                ],
+            ],
+            'activeTab' => $tabName,
+        ]);
+    }
+
     public function contacts(Branch $branch): Response
     {
         abort_if(! request()->user()->canAccessBranch($branch), 403);
@@ -288,6 +353,65 @@ class BranchController extends Controller
         return redirect()
             ->route('branches.edit', $branch)
             ->with('success', 'Pobočka bola upravená.');
+    }
+
+    public function updateSettings(Request $request, Branch $branch): RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        $validated = $request->validate([
+            'public_site' => ['nullable', 'array'],
+            'public_site.is_enabled' => ['boolean'],
+            'public_site.template' => ['required_if:public_site.is_enabled,1', 'string', 'in:default'],
+            'public_site.custom_domain' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('branch_public_sites', 'custom_domain')
+                    ->ignore($branch->publicSite?->id),
+            ],
+            'public_site.primary_color' => ['nullable', 'string', 'max:20'],
+            'public_site.secondary_color' => ['nullable', 'string', 'max:20'],
+            'public_site.logo_path' => ['nullable', 'string', 'max:255'],
+            'public_site.meta_title' => ['nullable', 'string', 'max:255'],
+            'public_site.meta_description' => ['nullable', 'string'],
+
+            'booking' => ['nullable', 'array'],
+            'booking.is_enabled' => ['boolean'],
+            'booking.allow_service_selection' => ['boolean'],
+            'booking.allow_appointment_requests' => ['boolean'],
+            'booking.intro_text' => ['nullable', 'string', 'max:2000'],
+            'booking.success_message' => ['nullable', 'string', 'max:2000'],
+
+            'notifications' => ['nullable', 'array'],
+            'notifications.is_enabled' => ['boolean'],
+            'notifications.notification_emails' => ['nullable', 'array'],
+            'notifications.notification_emails.*' => ['nullable', 'email', 'max:255'],
+            'notifications.notify_new_appointment_request' => ['boolean'],
+            'notifications.notify_new_booking' => ['boolean'],
+            'notifications.notify_new_contact_form' => ['boolean'],
+        ]);
+
+        if (! empty($validated['public_site'])) {
+            $branch->publicSite()->updateOrCreate(
+                ['branch_id' => $branch->id],
+                array_filter($validated['public_site'], fn ($value) => $value !== null),
+            );
+        }
+
+        $validated['notifications'] = $validated['notifications'] ?? [];
+
+        if (! ($validated['booking']['is_enabled'] ?? false)) {
+            $validated['notifications']['notify_new_appointment_request'] = false;
+            $validated['notifications']['notify_new_booking'] = false;
+        }
+
+        $branch->update([
+            'booking_settings' => $validated['booking'] ?? [],
+            'notification_settings' => $validated['notifications'] ?? [],
+        ]);
+
+        return back()->with('success', 'Nastavenia boli uložené.');
     }
 
     public function destroy(Branch $branch): RedirectResponse

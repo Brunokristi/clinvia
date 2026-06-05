@@ -68,6 +68,76 @@ class BranchBookingCalendarController extends Controller
         ]);
     }
 
+    public function dashboard(Request $request, Branch $branch): Response
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        $today = now()->toDateString();
+
+        $todayBookings = Booking::query()
+            ->with(['service', 'services', 'bookingSlot'])
+            ->where('branch_id', $branch->id)
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->whereHas('bookingSlot', function ($query) use ($today) {
+                $query->whereDate('starts_at', $today);
+            })
+            ->get()
+            ->sortBy(function (Booking $booking) {
+                return $booking->bookingSlot?->starts_at;
+            })
+            ->values();
+
+        return Inertia::render('Admin/Branches/Dashboard', [
+            'branch' => $branch->load(['company:id,legal_name,slug']),
+
+            'todayBookingsCount' => $todayBookings->count(),
+
+            'todayAgenda' => $todayBookings->map(function (Booking $booking) {
+                $startsAt = $booking->bookingSlot?->starts_at;
+
+                $serviceName = $booking->services?->pluck('name')->filter()->join(', ')
+                    ?: $booking->service?->name;
+
+                return [
+                    'id' => $booking->id,
+                    'time' => $startsAt
+                        ? Carbon::parse($startsAt)->format('H:i')
+                        : '—',
+                    'patient_name' => $booking->patient_name,
+                    'patient_email' => $booking->patient_email,
+                    'patient_phone' => $booking->patient_phone,
+                    'service_name' => $serviceName,
+                    'status' => $booking->status,
+                    'status_label' => match ($booking->status) {
+                        'confirmed' => 'Potvrdené',
+                        'pending' => 'Čaká',
+                        'completed' => 'Dokončené',
+                        'no_show' => 'Neprišiel',
+                        default => 'Neznáme',
+                    },
+                ];
+            })->values(),
+
+            'pendingAppointmentRequestsCount' => AppointmentRequest::query()
+                ->where('branch_id', $branch->id)
+                ->where('status', 'pending')
+                ->count(),
+
+            'unreadMessagesCount' => BranchInboxMessage::query()
+                ->where('branch_id', $branch->id)
+                ->whereNull('read_at')
+                ->count(),
+
+            'servicesCount' => Service::query()
+                ->where('branch_id', $branch->id)
+                ->count(),
+
+            'employeesCount' => $branch->employees()->count(),
+            'contactsCount' => $branch->contacts()->count(),
+            'usersCount' => $branch->users()->count(),
+        ]);
+    }
+
     public function updateServices(Request $request, Branch $branch): RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);

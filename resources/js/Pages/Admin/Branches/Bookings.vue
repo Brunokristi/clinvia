@@ -287,8 +287,6 @@ onBeforeUnmount(() => {
 
 <template>
     <AdminLayout>
-        <div class="space-y-6">
-            <FormSection columns="grid-cols-1">
                 <div class="space-y-4">
                     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
                         <div
@@ -303,12 +301,13 @@ onBeforeUnmount(() => {
                             class="flex min-h-0 flex-col gap-4"
                             :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
                         >
-                            <h1 class="text-normal text-dark font-semibold">Žiadosti o rezerváciu</h1>
+        
 
                             <div
                                 v-if="pendingRequests.length"
                                 class="min-h-0 flex-1 overflow-y-auto pr-1"
                             >
+                                <h1 class="text-normal text-dark font-semibold">Žiadosti o rezerváciu</h1>
                                 <div class="space-y-3">
                                     <article
                                         v-for="request in pendingRequests"
@@ -412,7 +411,6 @@ onBeforeUnmount(() => {
                         />
                     </div>
                 </div>
-            </FormSection>
 
             <CalendarCreateChoiceDialog
                 v-model:visible="createChoiceDialogVisible"
@@ -496,7 +494,6 @@ onBeforeUnmount(() => {
                 @cancel="closeCancelAppointmentRequestDialog"
                 @confirm="confirmCancelAppointmentRequest"
             />
-        </div>
     </AdminLayout>
 </template>
 

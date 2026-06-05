@@ -227,7 +227,7 @@ const professionalName = (professional) => {
                             </Link>
 
                             <Link
-                                :href="route('public.branch.booking', branch.slug)"
+                            v-if="branch.booking_settings?.is_enabled"
                                 class="inline-flex items-center justify-center gap-2 rounded-md border border-soft bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
                             >
                                 Rezervovať termín

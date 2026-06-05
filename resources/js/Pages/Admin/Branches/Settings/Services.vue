@@ -1,5 +1,4 @@
 <script setup>
-import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import BranchServiceForm from '@/Components/Branches/BranchServiceForm.vue';
@@ -54,24 +53,6 @@ const makeEmptyServiceData = () => ({
     files: [],
 });
 
-const makeEmptyInformationItem = () => ({
-    existing_id: null,
-    text: '',
-});
-
-const makeEmptyStepItem = () => ({
-    existing_id: null,
-    number: null,
-    title: '',
-    text: '',
-});
-
-const makeEmptyFileItem = () => ({
-    existing_id: null,
-    label: '',
-    file: null,
-});
-
 const createForm = useForm(makeEmptyServiceData());
 const editForm = useForm(makeEmptyServiceData());
 
@@ -103,6 +84,10 @@ const generatedCreateSlug = computed(() => {
 const serviceTitle = (service) => {
     return service.name || '—';
 };
+
+const branchBookingEnabled = computed(() => {
+    return Boolean(props.branch.booking_settings?.is_enabled);
+});
 
 const serviceCategoryName = (service) => {
     return service.category?.name || 'Bez kategórie';
@@ -241,7 +226,7 @@ const fillEditForm = (service) => {
     editForm.icon = service.icon ?? '';
     editForm.duration_sessions = service.duration_sessions ?? 1;
     editForm.duration_minutes = service.duration_minutes ?? null;
-    editForm.is_bookable = Boolean(service.is_bookable);
+    editForm.is_bookable = branchBookingEnabled.value && Boolean(service.is_bookable);
     editForm.is_available = Boolean(service.is_active ?? true);
     editForm.sort_order = service.sort_order ?? 0;
     editForm.insurance_amount = service.insurance_amount ?? null;
@@ -279,7 +264,7 @@ const createService = () => {
         icon: createForm.icon,
         duration_sessions: createForm.duration_sessions,
         duration_minutes: createForm.duration_minutes,
-        is_bookable: createForm.is_bookable,
+        is_bookable: branchBookingEnabled.value ? createForm.is_bookable : false,
         is_available: createForm.is_available,
         sort_order: createForm.sort_order,
         insurance_amount: createForm.insurance_amount,
@@ -331,7 +316,7 @@ const updateService = () => {
         icon: editForm.icon,
         duration_sessions: editForm.duration_sessions,
         duration_minutes: editForm.duration_minutes,
-        is_bookable: editForm.is_bookable,
+        is_bookable: branchBookingEnabled.value ? editForm.is_bookable : false,
         is_available: editForm.is_available,
         sort_order: editForm.sort_order,
         insurance_amount: editForm.insurance_amount,
@@ -410,152 +395,153 @@ const downloadServicesPdf = () => {
 </script>
 
 <template>
-    <AdminLayout>
-        <div class="space-y-6">
-
-            <TableCard
-                title="Služby pobočky"
-                description="Všetky služby priradené k tejto pobočke."
-                :rows="services"
-                :columns="columns"
-                empty-message="Táto pobočka zatiaľ nemá žiadne služby."
-                show-row-actions
-            >
-                <template #actions>
-                    <Button
-                        type="button"
-                        label="Vytlačiť PDF"
-                        icon="pi pi-print"
-                        outlined
-                        @click="printServicesPdf"
-                    />
-
-                    <Button
-                        type="button"
-                        label="Stiahnuť PDF"
-                        icon="pi pi-download"
-                        outlined
-                        @click="downloadServicesPdf"
-                    />
-
-                    <Button
-                        label="Pridať službu"
-                        @click="openCreateDialog"
-                    />
-                </template>
-
-                <template #cell-title_label="{ row }">
-                    <div class="flex items-start gap-3">
-                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
-                            <i :class="serviceIcon(row)" />
-                        </div>
-
-                        <div class="min-w-0">
-                            <p class="truncate text-sm font-semibold text-dark">
-                                {{ row.title_label }}
-                            </p>
-
-                            <p class="truncate text-xs text-accent/70">
-                                Kategória: {{ row.category_label }}
-                            </p>
-                        </div>
-                    </div>
-                </template>
-
-                <template #cell-duration_label="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.duration_label }}
-                    </span>
-                </template>
-
-                <template #cell-insurance_price_label="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.insurance_price_label }}
-                    </span>
-                </template>
-
-                <template #cell-self_pay_price_label="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.self_pay_price_label }}
-                    </span>
-                </template>
-
-                <template #cell-booking_label="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.booking_label }}
-                    </span>
-                </template>
-
-                <template #cell-availability_label="{ row }">
-                    <span
-                        class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
-                        :class="row.is_active ? 'bg-soft text-accent' : 'bg-soft/70 text-accent/60'"
-                    >
-                        {{ row.availability_label }}
-                    </span>
-                </template>
-
-                <template #row-actions="{ row }">
-                    <div class="flex justify-end gap-2">
-                        <Button
-                            label="Upraviť"
-                            size="small"
-                            severity="secondary"
-                            @click="openEditDialog(row)"
-                        />
-
-                        <Button
-                            label="Odstrániť"
-                            size="small"
-                            severity="danger"
-                            outlined
-                            @click="removeService(row)"
-                        />
-                    </div>
-                </template>
-            </TableCard>
-
-            <FormDialog
-                v-model:visible="createDialogVisible"
-                title="Pridať službu"
-                description="Kategória a názov služby sú povinné. Ostatné údaje môžete doplniť podľa potreby."
-                width="max-w-6xl"
-                :dismissable-mask="!createForm.processing"
-                @close="closeCreateDialog"
-            >
-                <BranchServiceForm
-                    :form="createForm"
-                    mode="create"
-                    :categories="categoryOptions"
-                    :new-category-value="newCategoryValue"
-                    submit-label="Vytvoriť službu"
-                    :loading="createForm.processing"
-                    @submit="createService"
+    <div class="space-y-6">
+        <TableCard
+            title="Služby pobočky"
+            description="Všetky služby priradené k tejto pobočke."
+            :rows="services"
+            :columns="columns"
+            empty-message="Táto pobočka zatiaľ nemá žiadne služby."
+            show-row-actions
+            class="py-10"
+        >
+            <template #actions>
+                <Button
+                    type="button"
+                    label="Vytlačiť PDF"
+                    icon="pi pi-print"
+                    outlined
+                    @click="printServicesPdf"
                 />
-            </FormDialog>
 
-            <FormDialog
-                v-model:visible="editDialogVisible"
+                <Button
+                    type="button"
+                    label="Stiahnuť PDF"
+                    icon="pi pi-download"
+                    outlined
+                    @click="downloadServicesPdf"
+                />
+
+                <Button
+                    label="Pridať službu"
+                    icon="pi pi-plus"
+                    @click="openCreateDialog"
+                />
+            </template>
+
+            <template #cell-title_label="{ row }">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
+                        <i :class="serviceIcon(row)" />
+                    </div>
+
+                    <div class="min-w-0">
+                        <p class="truncate text-sm font-semibold text-dark">
+                            {{ row.title_label }}
+                        </p>
+
+                        <p class="truncate text-xs text-accent/70">
+                            Kategória: {{ row.category_label }}
+                        </p>
+                    </div>
+                </div>
+            </template>
+
+            <template #cell-duration_label="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.duration_label }}
+                </span>
+            </template>
+
+            <template #cell-insurance_price_label="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.insurance_price_label }}
+                </span>
+            </template>
+
+            <template #cell-self_pay_price_label="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.self_pay_price_label }}
+                </span>
+            </template>
+
+            <template #cell-booking_label="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.booking_label }}
+                </span>
+            </template>
+
+            <template #cell-availability_label="{ row }">
+                <span
+                    class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
+                    :class="row.is_active ? 'bg-soft text-accent' : 'bg-soft/70 text-accent/60'"
+                >
+                    {{ row.availability_label }}
+                </span>
+            </template>
+
+            <template #row-actions="{ row }">
+                <div class="flex justify-end gap-2">
+                    <Button
+                        label="Upraviť"
+                        size="small"
+                        severity="secondary"
+                        @click="openEditDialog(row)"
+                    />
+
+                    <Button
+                        label="Odstrániť"
+                        size="small"
+                        severity="danger"
+                        outlined
+                        @click="removeService(row)"
+                    />
+                </div>
+            </template>
+        </TableCard>
+
+        <FormDialog
+            v-model:visible="createDialogVisible"
+            title="Pridať službu"
+            description="Kategória a názov služby sú povinné. Ostatné údaje môžete doplniť podľa potreby."
+            width="max-w-6xl"
+            :dismissable-mask="!createForm.processing"
+            @close="closeCreateDialog"
+        >
+            <BranchServiceForm
+                :form="createForm"
+                :branch="branch"
+                mode="create"
+                :categories="categoryOptions"
+                :new-category-value="newCategoryValue"
+                submit-label="Vytvoriť službu"
+                :loading="createForm.processing"
+                @submit="createService"
+            />
+        </FormDialog>
+
+        <FormDialog
+            v-model:visible="editDialogVisible"
+            title="Upraviť službu"
+            :description="editingService ? serviceTitle(editingService) : ''"
+            width="max-w-6xl"
+            :dismissable-mask="!editForm.processing"
+            @close="closeEditDialog"
+        >
+            <BranchServiceForm
+                v-if="editingService"
+                :form="editForm"
+                :branch="branch"
+                mode="edit"
+                :categories="categoryOptions"
+                :new-category-value="newCategoryValue"
                 title="Upraviť službu"
-                :description="editingService ? serviceTitle(editingService) : ''"
-                width="max-w-6xl"
-                :dismissable-mask="!editForm.processing"
-                @close="closeEditDialog"
-            >
-                <BranchServiceForm
-                    v-if="editingService"
-                    :form="editForm"
-                    mode="edit"
-                    :categories="categoryOptions"
-                    :new-category-value="newCategoryValue"
-                    title="Upraviť službu"
-                    :description="serviceTitle(editingService)"
-                    submit-label="Uložiť zmeny"
-                    :loading="editForm.processing"
-                    @submit="updateService"
-                />
-            </FormDialog>
-        </div>
+                :description="serviceTitle(editingService)"
+                submit-label="Uložiť zmeny"
+                :loading="editForm.processing"
+                @submit="updateService"
+            />
+        </FormDialog>
 
         <ConfirmationDialog
             :show="dialog.visible"
@@ -568,5 +554,5 @@ const downloadServicesPdf = () => {
             @cancel="closeDialog"
             @confirm="confirmDialog"
         />
-    </AdminLayout>
+    </div>
 </template>

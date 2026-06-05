@@ -159,7 +159,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::prefix('branches/{branch}')
             ->name('branches.')
             ->group(function () {
-                Route::get('/booking', [BranchBookingCalendarController::class, 'index'])
+                Route::get('/booking', [BranchBookingCalendarController::class, 'dashboard'])
                     ->name('booking.dashboard.page');
 
                 Route::post('/booking/appointment-requests/{appointmentRequest}/convert',[BranchBookingCalendarController::class, 'convertAppointmentRequest'])
@@ -168,14 +168,20 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/booking/appointment-requests/{appointmentRequest}',[BranchBookingCalendarController::class, 'destroyAppointmentRequest'])
                     ->name('booking.appointment-requests.destroy');
 
-                Route::get('/booking/settings', [BranchBookingCalendarController::class, 'index'])
-                    ->name('booking.settings.page');
-
-                Route::get('/booking/agenda', [BranchBookingCalendarController::class, 'index'])
+                Route::get('/booking/reservations', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.agenda.page');
 
                 Route::get('/booking/inbox', [BranchBookingCalendarController::class, 'index'])
                     ->name('booking.inbox.page');
+
+                Route::get('/booking/settings', [BranchController::class, 'settings'])
+                    ->name('booking.settings.page');
+
+                Route::get('/settings', [BranchController::class, 'settings'])
+                    ->name('settings.page');
+
+                Route::put('/settings', [BranchController::class, 'updateSettings'])
+                    ->name('settings.update');
                 
                 Route::get('/inbox', [BranchInboxMessageController::class, 'index'])
                     ->name('inbox.index');
@@ -237,7 +243,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::put('/booking/messages/{message}/read', [BranchBookingCalendarController::class, 'markMessageRead'])
                     ->name('booking.messages.read');
 
-                Route::get('/contacts', [BranchController::class, 'contacts'])
+                Route::get('/contacts', [BranchController::class, 'settings'])
                     ->name('contacts.page');
 
                 Route::post('/contacts', [BranchContactController::class, 'store'])
@@ -249,7 +255,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/contacts/{contact}', [BranchContactController::class, 'destroy'])
                     ->name('contacts.destroy');
 
-                Route::get('/opening-hours', [BranchController::class, 'openingHours'])
+                Route::get('/opening-hours', [BranchController::class, 'settings'])
                     ->name('opening-hours.page');
 
                 Route::put('/opening-hours', [BranchOpeningHoursController::class, 'update'])
@@ -261,7 +267,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::get('/opening-hours/pdf/download', [BranchOpeningHoursPdfController::class, 'download'])
                     ->name('opening-hours.pdf.download');
 
-                Route::get('/users', [BranchController::class, 'users'])
+                Route::get('/users', [BranchController::class, 'settings'])
                     ->name('users.page');
 
                 Route::post('/users', [BranchUserController::class, 'store'])
@@ -276,7 +282,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/invitations/{branchInvitation}', [BranchUserController::class, 'destroyInvitation'])
                     ->name('invitations.destroy');
 
-                Route::get('/employees', [BranchController::class, 'employees'])
+                Route::get('/employees', [BranchController::class, 'settings'])
                     ->name('employees.page');
 
                 Route::post('/employees', [BranchEmployeeController::class, 'store'])
@@ -288,7 +294,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/employees/{employee}', [BranchEmployeeController::class, 'destroy'])
                     ->name('employees.destroy');
 
-                Route::get('/services', [BranchController::class, 'services'])
+                Route::get('/services', [BranchController::class, 'settings'])
                     ->name('services.page');
 
                 Route::post('/services', [BranchServiceController::class, 'store'])
@@ -306,10 +312,10 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::get('/services/pdf/download', [BranchServicesPdfController::class, 'download'])
                     ->name('services.pdf.download');
 
-                Route::get('/public-site', [BranchController::class, 'publicSite'])
+                Route::get('/public-site', [BranchController::class, 'settings'])
                     ->name('public-site.page');
 
-                Route::get('/public-site/edit', [BranchController::class, 'publicSite'])
+                Route::get('/public-site/edit', [BranchController::class, 'settings'])
                     ->name('public-site.edit');
 
                 Route::put('/public-site', [BranchPublicSiteController::class, 'update'])

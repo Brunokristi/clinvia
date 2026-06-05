@@ -1,5 +1,4 @@
 <script setup>
-import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import EmployeeForm from '@/Components/Branches/EmployeeForm.vue';
@@ -9,7 +8,6 @@ import { ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
 
 import Button from 'primevue/button';
-import Tag from 'primevue/tag';
 
 const props = defineProps({
     branch: {
@@ -60,13 +58,6 @@ const employeeDisplayName = (employee) => {
         employee.last_name,
         employee.title_after,
     ].filter(Boolean).join(' ');
-};
-
-const employeeInitials = (employee) => {
-    return [
-        employee.first_name?.charAt(0),
-        employee.last_name?.charAt(0),
-    ].filter(Boolean).join('').toUpperCase();
 };
 
 const employeePhotoUrl = (employee) => {
@@ -147,7 +138,7 @@ const addEmployee = () => {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: () => {
-                closeCreateEmployeeDialog();
+            closeCreateEmployeeDialog();
         },
         onError: () => {
             toast.add({
@@ -174,7 +165,6 @@ const saveEmployee = () => {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {
-                
                 closeEditEmployeeDialog();
             },
             onError: () => {
@@ -198,9 +188,6 @@ const removeEmployee = (employee) => {
         onConfirm: () => {
             router.delete(route('branches.employees.destroy', [props.branch.id, employee.id]), {
                 preserveScroll: true,
-                onSuccess: () => {
-                    // success flash handled by layout
-                },
                 onError: () => {
                     toast.add({
                         severity: 'error',
@@ -216,8 +203,8 @@ const removeEmployee = (employee) => {
 </script>
 
 <template>
-    <AdminLayout>
-        <div class="mb-6 flex items-center justify-between">
+    <div class="space-y-6 py-10">
+        <div class="flex items-center justify-end">
             <Button
                 label="Pridať zamestnanca"
                 @click="openCreateEmployeeDialog"
@@ -225,67 +212,71 @@ const removeEmployee = (employee) => {
         </div>
 
         <section>
-            <div>
-                <div
-                    v-if="branch.employees?.length"
-                    class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3"
+            <div
+                v-if="branch.employees?.length"
+                class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3"
+            >
+                <article
+                    v-for="employee in branch.employees"
+                    :key="employee.id"
+                    class="group relative min-h-[22rem] overflow-hidden rounded-md bg-dark transition"
                 >
-                    <article
-                        v-for="employee in branch.employees"
-                        :key="employee.id"
-                        class="group relative min-h-[22rem] overflow-hidden rounded-md bg-dark transition"
-                    >
-                        <div
-                            v-if="employeePhotoUrl(employee)"
-                            class="absolute inset-0 bg-cover bg-center transition duration-500"
-                            :style="employeeCardBackground(employee)"
-                        />
+                    <div
+                        v-if="employeePhotoUrl(employee)"
+                        class="absolute inset-0 bg-cover bg-center transition duration-500"
+                        :style="employeeCardBackground(employee)"
+                    />
 
-                        <div
-                            v-else
-                            class="absolute inset-0 bg-gradient-to-br from-dark to-accent"
-                        />
+                    <div
+                        v-else
+                        class="absolute inset-0 bg-gradient-to-br from-dark to-accent"
+                    />
 
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-dark/20 to-transparent" />
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-dark/20 to-transparent" />
 
-                        <div class="relative flex h-full min-h-[22rem] flex-col justify-between p-5">
-                            <div>
-                            </div>
-                            <div>
-                                <p class="text-heading text-white">
-                                    {{ employeeDisplayName(employee) }}
-                                </p>
+                    <div class="relative flex h-full min-h-[22rem] flex-col justify-between p-5">
+                        <div />
 
-                                <div class="mt-5 flex justify-start gap-2">
-                                    <Button
-                                        label="Upraviť"
-                                        size="small"
-                                        severity="secondary"
-                                        @click="openEditEmployeeDialog(employee)"
-                                    />
+                        <div>
+                            <p class="text-heading text-white">
+                                {{ employeeDisplayName(employee) }}
+                            </p>
 
-                                    <Button
-                                        label="Odobrať"
-                                        size="small"
-                                        severity="danger"
-                                        outlined
-                                        @click="removeEmployee(employee)"
-                                    />
-                                </div>
+                            <p
+                                v-if="employee.position"
+                                class="mt-2 text-sm text-white/80"
+                            >
+                                {{ employee.position }}
+                            </p>
+
+                            <div class="mt-5 flex justify-start gap-2">
+                                <Button
+                                    label="Upraviť"
+                                    size="small"
+                                    severity="secondary"
+                                    @click="openEditEmployeeDialog(employee)"
+                                />
+
+                                <Button
+                                    label="Odobrať"
+                                    size="small"
+                                    severity="danger"
+                                    outlined
+                                    @click="removeEmployee(employee)"
+                                />
                             </div>
                         </div>
-                    </article>
-                </div>
+                    </div>
+                </article>
+            </div>
 
-                <div
-                    v-else
-                    class="text-center"
-                >
-                    <p class="mt-1 text-sm text-accent">
-                        Táto pobočka zatiaľ nemá priradených zamestnancov.
-                    </p>
-
-                </div>
+            <div
+                v-else
+                class=" p-6 text-center"
+            >
+                <p class="text-sm text-accent">
+                    Táto pobočka zatiaľ nemá priradených zamestnancov.
+                </p>
             </div>
         </section>
 
@@ -338,5 +329,5 @@ const removeEmployee = (employee) => {
             @cancel="closeDialog"
             @confirm="confirmDialog"
         />
-    </AdminLayout>
+    </div>
 </template>

@@ -93,7 +93,9 @@ class BranchServiceController extends Controller
                 'icon' => $data['icon'] ?? null,
                 'duration_sessions' => $data['duration_sessions'] ?? 1,
                 'duration_minutes' => $data['duration_minutes'] ?? null,
-                'is_bookable' => $data['is_bookable'] ?? false,
+                'is_bookable' => ($branch->booking_settings['is_enabled'] ?? false)
+                    ? ($data['is_bookable'] ?? false)
+                    : false,
 
                 'capacity' => 1,
                 'buffer_before_minutes' => 0,
@@ -178,7 +180,9 @@ class BranchServiceController extends Controller
                 'icon' => $data['icon'] ?? null,
                 'duration_sessions' => $data['duration_sessions'] ?? 1,
                 'duration_minutes' => $data['duration_minutes'] ?? null,
-                'is_bookable' => $data['is_bookable'] ?? false,
+                'is_bookable' => ($branch->booking_settings['is_enabled'] ?? false)
+                    ? ($data['is_bookable'] ?? false)
+                    : false,
 
                 'capacity' => 1,
                 'buffer_before_minutes' => 0,

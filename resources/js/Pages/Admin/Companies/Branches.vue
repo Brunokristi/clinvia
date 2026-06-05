@@ -62,7 +62,7 @@ const deleteBranch = (branch) => {
 
             <template #row-actions="{ row }">
                 <div class="flex items-center gap-2">
-                    <Link :href="route('branches.edit', row.id)">
+                    <Link :href="route('branches.booking.dashboard.page', row.id)">
                         <Button
                             type="button"
                             label="Detail"

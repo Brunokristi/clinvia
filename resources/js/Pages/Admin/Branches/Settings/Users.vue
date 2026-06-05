@@ -1,5 +1,4 @@
 <script setup>
-import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import InvitationFormSection from '@/Components/Invitations/InvitationFormSection.vue';
 import TableCard from '@/Components/Tables/TableCard.vue';
@@ -33,13 +32,6 @@ const currentUserRole = computed(() => {
 
 const currentUserEmail = computed(() => {
     return page.props.auth?.user?.email?.toLowerCase() ?? '';
-});
-
-const availableUsersByEmail = computed(() => {
-    return new Map((props.availableUsers ?? []).map((user) => [
-        user.email.toLowerCase(),
-        user,
-    ]));
 });
 
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
@@ -235,120 +227,118 @@ const deleteInvitation = (invitation) => {
 </script>
 
 <template>
-    <AdminLayout>
-        <div class="space-y-6">
-            <form @submit.prevent="inviteBranchAdmin">
-                <InvitationFormSection
-                    :form="inviteForm"
-                    title="Pozvať používateľa do pobočky"
-                    description="Pozvite používateľa, aby vedel spravovať túto pobočlku."
-                    input-label="Email používateľa"
-                    submit-label="Poslať pozvánku"
-                    :loading="inviteForm.processing"
-                />
-            </form>
+    <div class="space-y-6">
+        <form @submit.prevent="inviteBranchAdmin">
+            <InvitationFormSection
+                :form="inviteForm"
+                title="Pozvať používateľa do pobočky"
+                description="Pozvite používateľa, aby vedel spravovať túto pobočku."
+                input-label="Email používateľa"
+                submit-label="Poslať pozvánku"
+                :loading="inviteForm.processing"
+            />
+        </form>
 
-            <TableCard
-                title="Používatelia a pozvánky"
-                description="Používatelia s prístupom do pobočky a čakajúce pozvánky."
-                :rows="combinedRows"
-                :columns="columns"
-                empty-message="Táto pobočka zatiaľ nemá žiadnych používateľov ani pozvánky."
-                show-row-actions
-            >
-                <template #cell-name="{ row }">
-                    <div
-                        v-if="row.type === 'user'"
-                        class="flex items-center gap-3"
-                    >
-                        <Avatar
-                            :label="row.initials"
-                            shape="circle"
-                        />
+        <TableCard
+            title="Používatelia a pozvánky"
+            description="Používatelia s prístupom do pobočky a čakajúce pozvánky."
+            :rows="combinedRows"
+            :columns="columns"
+            empty-message="Táto pobočka zatiaľ nemá žiadnych používateľov ani pozvánky."
+            show-row-actions
+        >
+            <template #cell-name="{ row }">
+                <div
+                    v-if="row.type === 'user'"
+                    class="flex items-center gap-3"
+                >
+                    <Avatar
+                        :label="row.initials"
+                        shape="circle"
+                    />
 
-                        <div class="min-w-0">
-                            <p class="truncate text-sm font-semibold text-dark">
-                                {{ row.name }}
-                            </p>
-
-                            <p class="truncate text-sm text-accent/70">
-                                {{ row.email }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div
-                        v-else
-                        class="min-w-0"
-                    >
+                    <div class="min-w-0">
                         <p class="truncate text-sm font-semibold text-dark">
-                            {{ row.email }}
+                            {{ row.name }}
                         </p>
 
                         <p class="truncate text-sm text-accent/70">
-                            Pozval: {{ row.invitedByLabel }}
+                            {{ row.email }}
                         </p>
                     </div>
-                </template>
+                </div>
 
-                <template #cell-source="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.source }}
-                    </span>
-                </template>
+                <div
+                    v-else
+                    class="min-w-0"
+                >
+                    <p class="truncate text-sm font-semibold text-dark">
+                        {{ row.email }}
+                    </p>
 
-                <template #cell-role="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.role }}
-                    </span>
-                </template>
+                    <p class="truncate text-sm text-accent/70">
+                        Pozval: {{ row.invitedByLabel }}
+                    </p>
+                </div>
+            </template>
 
-                <template #cell-status="{ row }">
-                    <span class="text-sm text-accent">
-                        {{ row.status }}
-                    </span>
-                </template>
+            <template #cell-source="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.source }}
+                </span>
+            </template>
 
-                <template #row-actions="{ row }">
-                    <div class="flex items-center gap-2">
+            <template #cell-role="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.role }}
+                </span>
+            </template>
+
+            <template #cell-status="{ row }">
+                <span class="text-sm text-accent">
+                    {{ row.status }}
+                </span>
+            </template>
+
+            <template #row-actions="{ row }">
+                <div class="flex items-center gap-2">
+                    <Button
+                        v-if="row.type === 'user' && row.canDelete"
+                        type="button"
+                        label="Odstrániť"
+                        size="small"
+                        severity="danger"
+                        outlined
+                        @click="deleteUser(row)"
+                    />
+
+                    <div
+                        v-if="row.type === 'invitation'"
+                        class="flex items-center gap-2"
+                    >
                         <Button
-                            v-if="row.type === 'user' && row.canDelete"
+                            v-if="row.canResend"
+                            type="button"
+                            label="Znovu poslať"
+                            icon="pi pi-send"
+                            size="small"
+                            outlined
+                            @click="resendInvitation(row)"
+                        />
+
+                        <Button
+                            v-if="row.canDelete"
                             type="button"
                             label="Odstrániť"
                             size="small"
                             severity="danger"
                             outlined
-                            @click="deleteUser(row)"
+                            @click="deleteInvitation(row)"
                         />
-
-                        <div
-                            v-if="row.type === 'invitation'"
-                            class="flex items-center gap-2"
-                        >
-                            <Button
-                                v-if="row.canResend"
-                                type="button"
-                                label="Znovu poslať"
-                                icon="pi pi-send"
-                                size="small"
-                                outlined
-                                @click="resendInvitation(row)"
-                            />
-
-                            <Button
-                                v-if="row.canDelete"
-                                type="button"
-                                label="Odstrániť"
-                                size="small"
-                                severity="danger"
-                                outlined
-                                @click="deleteInvitation(row)"
-                            />
-                        </div>
                     </div>
-                </template>
-            </TableCard>
-        </div>
+                </div>
+            </template>
+        </TableCard>
 
         <ConfirmationDialog
             :show="dialog.visible"
@@ -361,5 +351,5 @@ const deleteInvitation = (invitation) => {
             @cancel="closeDialog"
             @confirm="confirmDialog"
         />
-    </AdminLayout>
+    </div>
 </template>

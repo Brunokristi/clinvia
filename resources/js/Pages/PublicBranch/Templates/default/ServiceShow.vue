@@ -75,6 +75,18 @@ const primaryContactButtonLabel = computed(() => {
 const primaryContactValue = computed(() => {
     return primaryContact.value?.value ?? null;
 });
+
+const canDirectBook = computed(() => {
+    return Boolean(props.service.is_bookable && props.branch.booking_settings?.is_enabled);
+});
+
+const bookingHref = computed(() => {
+    if (!canDirectBook.value) {
+        return null;
+    }
+
+    return `${route('public.branch.booking', props.branch.slug)}?services=${props.service.id}`;
+});
 </script>
 
 <template>
@@ -155,21 +167,31 @@ const primaryContactValue = computed(() => {
                 </div>
 
                 <aside class="rounded-md bg-accent p-5">
-                    <h2 class="text-normal font-semibold text-soft">
+                    <h2 class="text-normal font-semibold text-soft mb-3">
                         Objednanie
                     </h2>
 
-                    <div class="flex items-center">
+                    <div class="flex flex-col gap-3">
+                        <Link
+                            v-if="canDirectBook"
+                            :href="bookingHref"
+                            class="inline-flex w-full items-center justify-center rounded-md bg-soft px-4 py-2.5 text-normal font-semibold text-accent transition hover:bg-soft"
+                        >
+                            Rezervovať túto službu
+                        </Link>
+
                         <component
                             :is="primaryContactHref ? 'a' : 'div'"
                             v-if="primaryContactValue"
                             :href="primaryContactHref"
-                            class="mt-4 inline-flex w-full items-center justify-center rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90"
+                            class="inline-flex w-full items-center justify-center rounded-md bg-soft px-4 py-2.5 text-normal font-semibold text-accent transition hover:bg-accent/90"
                         >
                             <span>
                                 {{ primaryContactButtonLabel }}
                             </span>
                         </component>
+
+                        
                     </div>
                 </aside>
             </div>

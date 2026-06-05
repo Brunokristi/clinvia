@@ -137,8 +137,9 @@ const deleteBranch = () => {
                     class="flex gap-2"
                 >
                     <Button
-                        @click="router.visit(route('branches.edit', { branch: row.id }))"
-                        label="Detail"
+                        type="button"
+                        label="Dashboard"
+                        @click="router.visit(route('branches.booking.dashboard.page', { branch: row.id }))"
                     />
 
                     <Button

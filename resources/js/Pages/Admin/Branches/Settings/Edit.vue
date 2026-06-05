@@ -1,5 +1,4 @@
 <script setup>
-import AdminLayout from '@/Layouts/AdminLayout.vue';
 import BranchForm from '@/Components/Branches/BranchForm.vue';
 import { useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
@@ -61,17 +60,15 @@ const submit = () => {
 </script>
 
 <template>
-    <AdminLayout>
-        <form class="space-y-6" @submit.prevent="submit">
-            <BranchForm
-                :form="form"
-                :company="company"
-                :companies="companies"
-                :show-company-select="!company"
-                show-active-toggle
-                submit-label="Uložiť"
-                :loading="form.processing"
-            />
-        </form>
-    </AdminLayout>
+    <form class="space-y-6" @submit.prevent="submit">
+        <BranchForm
+            :form="form"
+            :company="company"
+            :companies="companies"
+            :show-company-select="!company"
+            show-active-toggle
+            submit-label="Uložiť"
+            :loading="form.processing"
+        />
+    </form>
 </template>

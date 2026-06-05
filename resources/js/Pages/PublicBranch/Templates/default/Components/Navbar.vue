@@ -147,28 +147,35 @@ const primaryContactValue = computed(() => {
     return primaryContact.value?.value ?? null;
 });
 
-const links = computed(() => [
-    {
-        label: 'Domov',
-        href: route('public.branch.home', props.branch.slug),
-        active: route().current('public.branch.home'),
-    },
-    {
-        label: 'Služby',
-        href: route('public.branch.services', props.branch.slug),
-        active: route().current('public.branch.services') || route().current('public.branch.services.show'),
-    },
-    {
-        label: 'Kontakt',
-        href: route('public.branch.contact', props.branch.slug),
-        active: route().current('public.branch.contact'),
-    },
-    {
-        label: 'Rezervácia',
-        href: route('public.branch.booking', props.branch.slug),
-        active: route().current('public.branch.booking'),
-    },
-]);
+const links = computed(() => {
+    const items = [
+        {
+            label: 'Domov',
+            href: route('public.branch.home', props.branch.slug),
+            active: route().current('public.branch.home'),
+        },
+        {
+            label: 'Služby',
+            href: route('public.branch.services', props.branch.slug),
+            active: route().current('public.branch.services') || route().current('public.branch.services.show'),
+        },
+        {
+            label: 'Kontakt',
+            href: route('public.branch.contact', props.branch.slug),
+            active: route().current('public.branch.contact'),
+        },
+    ];
+
+    if (props.branch.booking_settings?.is_enabled) {
+        items.push({
+            label: 'Rezervácia',
+            href: route('public.branch.booking', props.branch.slug),
+            active: route().current('public.branch.booking'),
+        });
+    }
+
+    return items;
+});
 </script>
 
 <template>

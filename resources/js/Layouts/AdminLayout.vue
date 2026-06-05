@@ -75,17 +75,16 @@ const breadcrumbs = computed(() => {
     if (branch.value) {
         items.push(breadcrumbItem(branch.value.name, route('branches.edit', branch.value)));
 
-        if (route().current('branches.booking.dashboard.page') || route().current('branches.booking.settings.page') || route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page')) {
+        if (route().current('branches.booking.dashboard.page')) {
+            items.push(breadcrumbItem('Dashboard'));
+        }
+
+        if (route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page')) {
             items.push(breadcrumbItem('Rezervácie'));
         }
 
-        if (
-            route().current('branches.booking.dashboard.page')
-            || route().current('branches.booking.settings.page')
-            || route().current('branches.booking.agenda.page')
-            || route().current('branches.booking.inbox.page')
-        ) {
-            items.push(breadcrumbItem('Rezervácie'));
+        if (route().current('branches.settings.page') || route().current('branches.booking.settings.page')) {
+            items.push(breadcrumbItem('Nastavenia'));
         }
 
         if (

@@ -9,7 +9,7 @@ import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     form: {
@@ -44,11 +44,29 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    branch: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const emit = defineEmits(['submit']);
 
 const form = props.form;
+
+const branchBookingEnabled = computed(() => {
+    return Boolean(props.branch?.booking_settings?.is_enabled);
+});
+
+watch(
+    () => branchBookingEnabled.value,
+    (enabled) => {
+        if (! enabled) {
+            form.is_bookable = false;
+        }
+    },
+    { immediate: true },
+);
 
 const draggedStepIndex = ref(null);
 
@@ -292,6 +310,7 @@ const iconLabel = (value) => {
                 </FormField>
 
                 <FormField
+                    v-if="branchBookingEnabled"
                     label="Rezervácia"
                     for="is_bookable"
                     :error="form.errors.is_bookable"
