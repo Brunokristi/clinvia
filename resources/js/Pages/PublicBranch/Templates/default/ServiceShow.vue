@@ -98,8 +98,7 @@ const bookingHref = computed(() => {
                 :href="route('public.branch.services', branch.slug)"
                 class="inline-flex items-center gap-2 text-normal text-accent transition hover:text-dark"
             >
-                <i class="pi pi-arrow-left text-normal" />
-                Späť na služby
+                ← Späť na služby
             </Link>
 
             <div class="mt-5 grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">

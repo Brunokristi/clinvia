@@ -99,6 +99,32 @@ const stepItems = computed(() => [
     },
 ]);
 
+const toPrimeVueDay = (dayOfWeek) => {
+    const day = Number(dayOfWeek);
+
+    if (day === 7) {
+        return 0;
+    }
+
+    return day;
+};
+
+const disabledWeekdays = computed(() => {
+    const openingHours = props.branch.opening_hours ?? [];
+
+    return openingHours
+        .filter((openingHour) => {
+            return openingHour.is_closed
+                || !openingHour.intervals?.length;
+        })
+        .map((openingHour) => {
+            return toPrimeVueDay(openingHour.day_of_week);
+        })
+        .filter((day) => {
+            return day >= 0 && day <= 6;
+        });
+});
+
 const serviceOptions = computed(() => {
     return props.services
         .filter((service) => service.is_bookable !== false)
@@ -530,7 +556,7 @@ const submitBooking = () => {
 
             <section class="grid gap-8 py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
                 <div class="space-y-8">
-                     <div
+                    <div
                         v-if="currentStep === 1"
                         class="flex flex-col"
                     >
@@ -584,7 +610,6 @@ const submitBooking = () => {
                     <div
                         v-if="currentStep === 2"
                         class="space-y-5"
-                        
                     >
                         <div class="space-y-1">
                             <h2 class="text-normal font-semibold text-dark">
@@ -721,6 +746,7 @@ const submitBooking = () => {
                                                 v-model="dateValue"
                                                 date-format="dd.mm.yy"
                                                 :min-date="today"
+                                                :disabled-days="disabledWeekdays"
                                                 class="w-full"
                                                 placeholder="Vyberte dátum"
                                                 @date-select="selectGeneralRequest"
@@ -732,13 +758,12 @@ const submitBooking = () => {
 
                             <p
                                 v-else
-                                class='text-accent text-center'
+                                class="text-center text-accent"
                             >
                                 Pre vybrané služby momentálne nie je dostupná online možnosť.
                             </p>
 
-
-                            <div class="flex flex-wrap gap-3 justify-end">
+                            <div class="flex flex-wrap justify-end gap-3">
                                 <Button
                                     label="Späť na služby"
                                     severity="secondary"
@@ -894,7 +919,7 @@ const submitBooking = () => {
                                 </small>
                             </div>
 
-                            <div class="flex flex-wrap gap-3 justify-end">
+                            <div class="flex flex-wrap justify-end gap-3">
                                 <Button
                                     label="← Späť na termín"
                                     severity="secondary"

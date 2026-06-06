@@ -870,7 +870,13 @@ class PublicBranchSiteController extends Controller
             }
         }
 
-        $preferredDate = $requestType === 'preferred_period'
+        if ($requestType === 'general' && empty($validated['preferred_date'])) {
+            throw ValidationException::withMessages([
+                'preferred_date' => 'Vyberte preferovaný dátum.',
+            ]);
+        }
+
+        $preferredDate = ! empty($validated['preferred_date'])
             ? Carbon::parse($validated['preferred_date'])->toDateString()
             : null;
 
