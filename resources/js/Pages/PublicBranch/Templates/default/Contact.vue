@@ -4,7 +4,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     branch: {
@@ -15,7 +15,13 @@ const props = defineProps({
 
 const page = usePage();
 
+const submittedSuccessfully = ref(false);
+
 const flashSuccess = computed(() => page.props.flash?.success ?? null);
+
+const homeHref = computed(() => {
+    return route('public.branch.home', props.branch.slug);
+});
 
 const form = useForm({
     sender_name: '',
@@ -27,7 +33,9 @@ const form = useForm({
 const submit = () => {
     form.post(route('public.branch.contact-message.store', props.branch.slug), {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
+            submittedSuccessfully.value = true;
             form.reset();
         },
     });
@@ -149,18 +157,37 @@ const primaryContact = computed(() => {
                     Napíšte nám správu alebo použite kontaktné údaje pobočky {{ branch.name }}.
                 </p>
             </div>
-
-            <div
-                v-if="flashSuccess"
-                class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-            >
-                {{ flashSuccess }}
-            </div>
         </section>
 
         <section class="grid gap-8 py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div class="space-y-8">
-                <div class="space-y-5">
+                <section
+                    v-if="submittedSuccessfully || flashSuccess"
+                    class="py-8"
+                >
+                    <div class="max-w-2xl">
+                        <div class="space-y-6 text-center">
+                            <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-700">
+                                ✓
+                            </div>
+
+                            <div class="space-y-2">
+                                <h2 class="text-heading font-semibold text-dark">
+                                    Ozveme sa vám v čo najkratšom čase.
+                                </h2>
+
+                                <p class="text-normal leading-7 text-accent">
+                                    {{ flashSuccess || 'Ozveme sa vám v čo najkratšom čase.' }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div
+                    v-else
+                    class="space-y-5"
+                >
                     <div class="space-y-1">
                         <h2 class="text-normal font-semibold text-dark">
                             Napíšte nám
@@ -278,7 +305,7 @@ const primaryContact = computed(() => {
                             v-for="(contact, index) in branch.contacts"
                             :key="index"
                             :href="contactHref(contact)"
-                            class="flex items-center gap-4 rounded-md text-white transition "
+                            class="flex items-center gap-4 rounded-md text-white transition"
                         >
                             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
                                 <i :class="contactIcon(contact.type)" />

@@ -9,7 +9,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class AppointmentRequestCancelledNotification extends Notification
+class RequestCancelledNotification extends Notification
 {
     use Queueable;
 

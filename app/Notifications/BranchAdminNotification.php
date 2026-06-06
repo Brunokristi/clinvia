@@ -12,7 +12,7 @@ class BranchAdminNotification extends Notification
 
     public function __construct(
         protected string $subject,
-        protected string $message,
+        protected string $bodyText,
     ) {
     }
 
@@ -23,9 +23,11 @@ class BranchAdminNotification extends Notification
 
     public function toMail($notifiable): MailMessage
     {
-        return (new MailMessage())
+        return (new MailMessage)
             ->subject($this->subject)
-            ->line($this->message)
-            ->line('Ak chcete vyriešiť túto udalosť, otvorte svoju administráciu.');
+            ->view('emails.notifications.notification', [
+                'subject' => $this->subject,
+                'bodyText' => $this->bodyText,
+            ]);
     }
 }

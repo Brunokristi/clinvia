@@ -12,7 +12,7 @@ use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Events\BranchAppointmentRequestCreated;
 use App\Notifications\BookingCreatedNotification;
-use App\Notifications\BookingRequestCreatedNotification;
+use App\Notifications\RequestCreatedNotification;
 use App\Notifications\BranchAdminNotification;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -134,12 +134,6 @@ class PublicBranchSiteController extends Controller
             ->values();
 
         if (! $bookingSettings['allow_service_selection'] && $bookableServices->isNotEmpty()) {
-            $selectedServiceIds = [
-                (int) $bookableServices->first()->id,
-            ];
-        }
-
-        if (empty($selectedServiceIds) && $bookableServices->isNotEmpty()) {
             $selectedServiceIds = [
                 (int) $bookableServices->first()->id,
             ];
@@ -919,7 +913,7 @@ class PublicBranchSiteController extends Controller
 
         if ($appointmentRequest->patient_email) {
             Notification::route('mail', $appointmentRequest->patient_email)
-                ->notify(new BookingRequestCreatedNotification($appointmentRequest));
+                ->notify(new RequestCreatedNotification($appointmentRequest));
         }
 
         $notificationSettings = $this->notificationSettings($branch);

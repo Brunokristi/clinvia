@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Actions\CreateBookingAction;
-use App\Notifications\AppointmentRequestCancelledNotification;
+use App\Notifications\RequestCancelledNotification;
 use Illuminate\Support\Facades\Notification;
 
 class BranchBookingCalendarController extends Controller
@@ -295,7 +295,7 @@ class BranchBookingCalendarController extends Controller
 
         if (filled($appointmentRequest->patient_email)) {
             Notification::route('mail', $appointmentRequest->patient_email)
-                ->notify(new AppointmentRequestCancelledNotification($appointmentRequest));
+                ->notify(new RequestCancelledNotification($appointmentRequest));
         }
 
         return back()->with('success', 'Žiadosť bola zrušená.');
