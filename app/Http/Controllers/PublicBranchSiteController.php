@@ -23,6 +23,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\BranchInboxMessageService;
 use App\Notifications\ContactFormSubmittedNotification;
+use App\Services\BookingAvailabilityService;
 
 class PublicBranchSiteController extends Controller
 {
@@ -110,7 +111,11 @@ class PublicBranchSiteController extends Controller
         ]);
     }
 
-    public function booking(Request $request, Branch $branch): Response
+    public function booking(
+        Request $request,
+        Branch $branch,
+        BookingAvailabilityService $bookingAvailabilityService,
+    ): Response
     {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
@@ -149,21 +154,14 @@ class PublicBranchSiteController extends Controller
         $canBookExactSlots = false;
         $canSubmitGeneralRequest = $selectedServices->isNotEmpty() && $bookingSettings['allow_appointment_requests'];
 
-        if ($selectedServices->count() === 1) {
-            $selectedService = $selectedServices->first();
-
-            $canBookExactSlots = $this->serviceHasGroupAvailabilityRule(
+        if ($selectedServices->isNotEmpty()) {
+            $availableSlots = $bookingAvailabilityService->getAvailableSlotsForServices(
                 branch: $branch,
-                service: $selectedService,
+                services: $selectedServices,
+                date: $selectedDate,
             );
 
-            if ($canBookExactSlots) {
-                $availableSlots = $this->getUpcomingExactGroupSlots(
-                    branch: $branch,
-                    service: $selectedService,
-                    fromDate: $selectedDate,
-                );
-            }
+            $canBookExactSlots = $availableSlots->isNotEmpty();
         }
 
         if ($selectedServices->isNotEmpty() && $bookingSettings['allow_appointment_requests']) {
@@ -483,15 +481,12 @@ class PublicBranchSiteController extends Controller
             ->where('branch_id', $branch->id)
             ->where('is_enabled', true)
             ->where('slot_mode', 'free_bookable_time')
-            ->where(function ($query) use ($serviceIds) {
-                $query
-                    ->whereHas('services', function ($serviceQuery) use ($serviceIds) {
-                        $serviceQuery->whereIn('services.id', $serviceIds);
-                    })
-                    ->orWhereIn('service_id', $serviceIds);
-            })
             ->with('services')
-            ->get();
+            ->get()
+            ->filter(function (BookingAvailabilityRule $rule) use ($serviceIds) {
+                return $this->ruleAllowsAllSelectedServices($rule, $serviceIds);
+            })
+            ->values();
 
         if ($rules->isEmpty()) {
             return collect();
@@ -582,6 +577,37 @@ class PublicBranchSiteController extends Controller
                 'ends_at' => '21:00:00',
             ],
         ];
+    }
+
+    private function ruleAllowsAllSelectedServices(
+        BookingAvailabilityRule $rule,
+        Collection $selectedServiceIds,
+    ): bool {
+        $selectedServiceIds = $selectedServiceIds
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $ruleServiceIds = $rule->services
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ruleServiceIds->isEmpty()) {
+            $ruleServiceIds = collect($rule->service_ids ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+        }
+
+        if ($ruleServiceIds->isEmpty() && $rule->service_id) {
+            $ruleServiceIds = collect([(int) $rule->service_id]);
+        }
+
+        return $selectedServiceIds
+            ->diff($ruleServiceIds)
+            ->isEmpty();
     }
 
     private function availableRuleMinutesForPeriod(
