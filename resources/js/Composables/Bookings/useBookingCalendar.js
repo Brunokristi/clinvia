@@ -47,6 +47,7 @@ export function useBookingCalendar(props) {
         props,
         dateTime,
         dialogs,
+        ruleForm: rules.ruleForm,
     });
 
     const events = useBookingCalendarEvents({
@@ -355,5 +356,7 @@ export function useBookingCalendar(props) {
         deleteCapacityWindowFromDate: capacityWindowActions.deleteCapacityWindowFromDate,
         deleteCapacityWindowSeries: capacityWindowActions.deleteCapacityWindowSeries,
         addPatientToCapacityWindow: capacityWindowActions.addPatientToCapacityWindow,
+
+        openCapacityWindowRuleEditor: capacityWindowActions.openCapacityWindowRuleEditor,
     };
 }

@@ -116,6 +116,8 @@ class BranchCapacityWindowController extends Controller
             $booking->update([
                 'booking_slot_id' => $newSlot->id,
                 'service_id' => $service->id,
+                'starts_at' => $newStartsAt,
+                'ends_at' => $newEndsAt,
                 'status' => 'confirmed',
             ]);
 

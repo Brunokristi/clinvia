@@ -114,6 +114,8 @@ const {
     deleteCapacityWindowFromDate,
     deleteCapacityWindowSeries,
     addPatientToCapacityWindow,
+
+    openCapacityWindowRuleEditor,
 } = useBookingCalendar(props);
 
 const bookingCalendar = ref(null);
@@ -482,14 +484,14 @@ onBeforeUnmount(() => {
                 v-model:visible="groupEventOccurrenceDialogVisible"
                 :capacity-window="selectedCapacityWindow"
                 :booking-notes="bookingNotes"
-                :available-slots="availableRescheduleSlots"
-                @add-patient-to-capacity-window="addPatientToCapacityWindow"
-                @cancel-booking="cancelBooking"
-                @cancel-capacity-window="cancelCapacityWindow"
+                @edit-capacity-window-rule="openCapacityWindowRuleEditor"
                 @reschedule-capacity-window="rescheduleCapacityWindow"
+                @cancel-capacity-window="cancelCapacityWindow"
                 @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
                 @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
                 @delete-capacity-window-series="deleteCapacityWindowSeries"
+                @add-patient-to-capacity-window="addPatientToCapacityWindow"
+                @cancel-booking="cancelBooking"
             />
 
             <ConfirmDialog

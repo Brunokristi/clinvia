@@ -36,6 +36,7 @@ const emit = defineEmits([
     'delete-capacity-window-occurrence',
     'delete-capacity-window-from-date',
     'delete-capacity-window-series',
+    'edit-capacity-window-rule',
 ]);
 
 const dialogVisible = computed({
@@ -371,6 +372,16 @@ const addPatientToCapacityWindow = () => {
                 <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent md:col-span-2">
                     <strong class="text-dark">Obsadenosť:</strong>
                     {{ bookings.length }} / {{ capacity ?? '—' }}
+                </div>
+
+                <div class="flex justify-end md:col-span-2">
+                    <Button
+                        type="button"
+                        label="Upraviť pravidlo a opakovanie"
+                        icon="pi pi-cog"
+                        outlined
+                        @click="emit('edit-capacity-window-rule', capacityWindow)"
+                    />
                 </div>
 
                 <div class="flex items-center gap-2 md:col-span-2">
