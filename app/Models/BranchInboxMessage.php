@@ -2,14 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BranchInboxMessage extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
         'branch_id',
         'type',
@@ -19,15 +16,13 @@ class BranchInboxMessage extends Model
         'sender_email',
         'sender_phone',
         'booking_id',
+        'appointment_request_id',
         'read_at',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'read_at' => 'datetime',
-        ];
-    }
+    protected $casts = [
+        'read_at' => 'datetime',
+    ];
 
     public function branch(): BelongsTo
     {
@@ -39,19 +34,26 @@ class BranchInboxMessage extends Model
         return $this->belongsTo(Booking::class);
     }
 
-    public function markAsRead(): void
+    public function appointmentRequest(): BelongsTo
     {
-        if ($this->read_at) {
-            return;
-        }
-
-        $this->update([
-            'read_at' => now(),
-        ]);
+        return $this->belongsTo(AppointmentRequest::class);
     }
 
-    public function isRead(): bool
+    public function markAsRead(): void
     {
-        return $this->read_at !== null;
+        if (! $this->read_at) {
+            $this->update([
+                'read_at' => now(),
+            ]);
+        }
+    }
+
+    public function markAsUnread(): void
+    {
+        if ($this->read_at) {
+            $this->update([
+                'read_at' => null,
+            ]);
+        }
     }
 }

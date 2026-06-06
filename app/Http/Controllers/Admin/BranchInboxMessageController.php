@@ -19,8 +19,17 @@ class BranchInboxMessageController extends Controller
         $type = $request->string('type')->toString();
         $status = $request->string('status')->toString();
 
+        $perPage = $request->integer('per_page', 15);
+
+        if (! in_array($perPage, [10, 15, 20, 25, 50, 100], true)) {
+            $perPage = 15;
+        }
+
         $messages = $branch->inboxMessages()
-            ->with('booking')
+            ->with([
+                'booking',
+                'appointmentRequest',
+            ])
             ->when($type, function ($query) use ($type) {
                 $query->where('type', $type);
             })
@@ -31,7 +40,7 @@ class BranchInboxMessageController extends Controller
                 $query->whereNotNull('read_at');
             })
             ->latest()
-            ->paginate(15)
+            ->paginate($perPage)
             ->withQueryString();
 
         return Inertia::render('Admin/Branches/Inbox/Index', [
@@ -41,6 +50,7 @@ class BranchInboxMessageController extends Controller
             'filters' => [
                 'type' => $type,
                 'status' => $status,
+                'per_page' => $perPage,
             ],
         ]);
     }
@@ -57,7 +67,10 @@ class BranchInboxMessageController extends Controller
 
         return Inertia::render('Admin/Branches/Inbox/Show', [
             'branch' => $branch,
-            'message' => $message->fresh('booking'),
+            'message' => $message->fresh([
+                'booking',
+                'appointmentRequest',
+            ]),
         ]);
     }
 
@@ -74,6 +87,19 @@ class BranchInboxMessageController extends Controller
         return back()->with('success', 'Správa bola označená ako prečítaná.');
     }
 
+    public function markAsUnread(Branch $branch, BranchInboxMessage $message): RedirectResponse
+    {
+        abort_unless($message->branch_id === $branch->id, 404);
+
+        if ($message->read_at) {
+            $message->update([
+                'read_at' => null,
+            ]);
+        }
+
+        return back()->with('success', 'Správa bola označená ako neprečítaná.');
+    }
+
     public function destroy(Branch $branch, BranchInboxMessage $message): RedirectResponse
     {
         abort_unless($message->branch_id === $branch->id, 404);
@@ -81,7 +107,12 @@ class BranchInboxMessageController extends Controller
         $message->delete();
 
         return redirect()
-            ->route('branches.inbox.index', $branch)
+            ->route('branches.inbox.index', [
+                'branch' => $branch,
+                'per_page' => request('per_page', 15),
+                'type' => request('type'),
+                'status' => request('status'),
+            ])
             ->with('success', 'Správa bola odstránená.');
     }
 }

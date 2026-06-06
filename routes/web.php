@@ -194,6 +194,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::patch('/inbox/{message}/read', [BranchInboxMessageController::class, 'markAsRead'])
                     ->name('inbox.read');
 
+                Route::patch('/inbox/{message}/unread', [BranchInboxMessageController::class, 'markAsUnread'])
+                    ->name('inbox.unread');
+
                 Route::delete('/inbox/{message}', [BranchInboxMessageController::class, 'destroy'])
                     ->name('inbox.destroy');
 

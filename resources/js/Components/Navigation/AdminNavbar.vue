@@ -127,8 +127,8 @@ const makeMenuLink = (link) => {
 
 const mainLinks = computed(() => [
     {
-        label: 'Dashboard',
-        icon: 'pi pi-home',
+        label: 'Prehľad',
+        icon: 'pi pi-th-large',
         href: route('dashboard'),
         active: route().current('dashboard'),
     },
@@ -170,7 +170,7 @@ const branchLinks = computed(() => {
 
     return [
         {
-            label: 'Dashboard',
+            label: 'Prehľad',
             icon: 'pi pi-th-large',
             href: route('branches.booking.dashboard.page', branch.value),
             active: route().current('branches.booking.dashboard.page'),
@@ -183,7 +183,7 @@ const branchLinks = computed(() => {
                 || route().current('branches.booking.inbox.page'),
         },
         {
-            label: 'Inbox',
+            label: 'Správy',
             icon: 'pi pi-inbox',
             href: route('branches.inbox.index', branch.value),
             active: route().current('branches.inbox.index')

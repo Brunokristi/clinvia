@@ -1,14 +1,13 @@
 <script setup>
-import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
 import { FilterMatchMode } from '@primevue/core/api';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
     title: {
         type: String,
         required: true,
@@ -25,6 +24,10 @@ defineProps({
         type: Array,
         default: () => [],
     },
+    pagination: {
+        type: Object,
+        default: null,
+    },
     emptyMessage: {
         type: String,
         default: 'Zatiaľ tu nie sú žiadne záznamy.',
@@ -37,13 +40,9 @@ defineProps({
         type: String,
         default: 'min-width: 40rem',
     },
-    paginator: {
-        type: Boolean,
-        default: true,
-    },
     rowsPerPageOptions: {
         type: Array,
-        default: () => [10, 25, 50, 100],
+        default: () => [10, 20, 25, 50, 100],
     },
     removableSort: {
         type: Boolean,
@@ -73,6 +72,10 @@ defineProps({
         type: Array,
         default: () => [],
     },
+    searchValue: {
+        type: String,
+        default: '',
+    },
     searchPlaceholder: {
         type: String,
         default: 'Hľadať',
@@ -87,7 +90,9 @@ defineProps({
     },
 });
 
-const globalSearch = ref(null);
+const emit = defineEmits(['page', 'search']);
+
+const globalSearch = ref(props.searchValue);
 
 const filters = ref({
     global: {
@@ -96,9 +101,41 @@ const filters = ref({
     },
 });
 
+const currentPage = computed(() => {
+    return props.pagination?.current_page ?? 1;
+});
+
+const perPage = computed(() => {
+    return props.pagination?.per_page ?? 20;
+});
+
+const first = computed(() => {
+    return (currentPage.value - 1) * perPage.value;
+});
+
+const totalRecords = computed(() => {
+    return props.pagination?.total ?? props.rows.length;
+});
+
+watch(
+    () => props.searchValue,
+    (value) => {
+        globalSearch.value = value;
+    },
+);
+
 watch(globalSearch, (value) => {
     filters.value.global.value = value;
+
+    emit('search', value ?? '');
 });
+
+const onPage = (event) => {
+    emit('page', {
+        page: event.page + 1,
+        perPage: event.rows,
+    });
+};
 
 const resolveCellValue = (row, column) => {
     const value = row?.[column.field];
@@ -109,7 +146,6 @@ const resolveCellValue = (row, column) => {
 
     return value;
 };
-
 </script>
 
 <template>
@@ -131,17 +167,23 @@ const resolveCellValue = (row, column) => {
             </div>
 
             <div
-                v-if="showSearch"
-                class="py-4 flex flex-col gap-3 sm:flex-row justify-end"
+                v-if="showSearch || $slots.actions"
+                class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-end"
             >
-                <IconField class="w-full sm:max-w-md">
+                <IconField
+                    v-if="showSearch"
+                    class="w-full sm:max-w-md"
+                >
                     <InputIcon class="pi pi-search" />
+
                     <InputText
                         v-model="globalSearch"
                         class="w-full"
+                        :aria-label="searchLabel"
                         :placeholder="searchPlaceholder"
                     />
                 </IconField>
+
                 <div
                     v-if="$slots.actions"
                     class="flex flex-wrap items-center gap-3"
@@ -153,19 +195,25 @@ const resolveCellValue = (row, column) => {
 
         <div class="overflow-hidden">
             <DataTable
-                v-if="rows.length > 0"
+                lazy
+                paginator
+                class="table-card-datatable"
                 :value="rows"
                 :dataKey="rowKey"
                 :tableStyle="tableStyle"
-                :paginator="paginator"
-                :rows="20"
+                :first="first"
+                :rows="perPage"
+                :totalRecords="totalRecords"
                 :rowsPerPageOptions="rowsPerPageOptions"
+                paginatorTemplate="CurrentPageReport PrevPageLink PageLinks NextPageLink RowsPerPageDropdown"
+                currentPageReportTemplate="Zobrazené {first} – {last} z {totalRecords}"
                 :removableSort="removableSort"
                 :stripedRows="stripedRows"
                 :rowHover="rowHover"
                 :emptyMessage="emptyMessage"
                 v-model:filters="filters"
                 :globalFilterFields="searchFields"
+                @page="onPage"
             >
                 <Column
                     v-for="column in columns"
@@ -207,31 +255,12 @@ const resolveCellValue = (row, column) => {
                     </template>
                 </Column>
 
-                <template #paginatorcontainer="{ first, last, page, pageCount, prevPageCallback, nextPageCallback, totalRecords }">
-                    <div class="flex items-center justify-between gap-4 bg-transparentw w-full py-1">
-                        <Button icon="pi pi-chevron-left" class="!text-xs" text @click="prevPageCallback" :disabled="page === 0" />
-                        <div class="text-color text-normal font-semibold w-full min-w-[500px] text-center">
-                            <span class="hidden sm:block">Zobrazujú sa záznamy od {{ first }} do {{ last }} z {{ totalRecords }}</span>
-                            <span class="block sm:hidden">Stánka {{ page + 1 }} z {{ pageCount }}</span>
-                        </div>
-                        <Button icon="pi pi-chevron-right" class="!text-xs" text @click="nextPageCallback" :disabled="page === pageCount - 1" />
+                <template #empty>
+                    <div class="p-8 text-center text-normal text-accent">
+                        {{ emptyMessage }}
                     </div>
                 </template>
             </DataTable>
-
-            <div
-                v-else
-                class="p-8 text-center text-normal text-accent"
-            >
-                {{ emptyMessage }}
-            </div>
-        </div>
-
-        <div
-            v-if="$slots.footer"
-            class="border-t border-slate-200 p-6"
-        >
-            <slot name="footer" />
         </div>
     </section>
 </template>

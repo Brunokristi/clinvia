@@ -8,12 +8,10 @@ use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
 use App\Models\BookingSlot;
 use App\Models\Branch;
-use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Events\BranchAppointmentRequestCreated;
 use App\Notifications\BookingCreatedNotification;
 use App\Notifications\RequestCreatedNotification;
-use App\Notifications\BranchAdminNotification;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,6 +21,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\BranchInboxMessageService;
 
 class PublicBranchSiteController extends Controller
 {
@@ -200,7 +199,12 @@ class PublicBranchSiteController extends Controller
         ]);
     }
 
-    public function storeBooking(Request $request, Branch $branch, CreateBookingAction $createBookingAction): RedirectResponse
+    public function storeBooking(
+        Request $request,
+        Branch $branch,
+        CreateBookingAction $createBookingAction,
+        BranchInboxMessageService $inboxMessageService,
+    ): RedirectResponse
     {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
@@ -235,14 +239,26 @@ class PublicBranchSiteController extends Controller
         }
 
         if ($validated['mode'] === 'exact_slot') {
-            return $this->storeExactSlotBooking($branch, $validated, $createBookingAction);
+            return $this->storeExactSlotBooking(
+                branch: $branch,
+                validated: $validated,
+                createBookingAction: $createBookingAction,
+                inboxMessageService: $inboxMessageService,
+            );
         }
 
-        return $this->storeAppointmentRequest($branch, $validated);
+        return $this->storeAppointmentRequest(
+            branch: $branch,
+            validated: $validated,
+            inboxMessageService: $inboxMessageService,
+        );
     }
 
-    public function storeContactMessage(Request $request, Branch $branch): RedirectResponse
-    {
+    public function storeContactMessage(
+        Request $request,
+        Branch $branch,
+        BranchInboxMessageService $inboxMessageService,
+    ): RedirectResponse {
         $this->ensurePublicSiteIsEnabled($branch);
 
         $validated = $request->validate([
@@ -252,29 +268,13 @@ class PublicBranchSiteController extends Controller
             'body' => ['required', 'string', 'max:4000'],
         ]);
 
-        BranchInboxMessage::create([
-            'branch_id' => $branch->id,
-            'type' => 'contact_message',
-            'title' => 'Nová správa z kontaktného formulára',
-            'body' => $validated['body'],
-            'sender_name' => $validated['sender_name'],
-            'sender_email' => $validated['sender_email'] ?? null,
-            'sender_phone' => $validated['sender_phone'] ?? null,
-        ]);
-
-        $notificationSettings = $this->notificationSettings($branch);
-
-        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_contact_form']) {
-            $this->notifyBranchRecipients(
-                $branch,
-                'Nová správa z kontaktného formulára',
-                sprintf(
-                    'Kontaktný formulár od %s bol odoslaný.%s',
-                    $validated['sender_name'],
-                    $validated['body'] ? '\n\nSpráva:\n' . $validated['body'] : '',
-                ),
-            );
-        }
+        $inboxMessageService->createForContactForm(
+            branch: $branch,
+            senderName: $validated['sender_name'],
+            senderEmail: $validated['sender_email'] ?? null,
+            senderPhone: $validated['sender_phone'] ?? null,
+            body: $validated['body'],
+        );
 
         return back()->with('success', 'Správa bola odoslaná.');
     }
@@ -750,6 +750,7 @@ class PublicBranchSiteController extends Controller
         Branch $branch,
         array $validated,
         CreateBookingAction $createBookingAction,
+        BranchInboxMessageService $inboxMessageService,
     ): RedirectResponse {
         if (empty($validated['booking_slot_id'])) {
             throw ValidationException::withMessages([
@@ -788,27 +789,18 @@ class PublicBranchSiteController extends Controller
             'patient_note' => $validated['patient_note'] ?? null,
         ]);
 
-        $notificationSettings = $this->notificationSettings($branch);
-
-        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_booking']) {
-            $this->notifyBranchRecipients(
-                $branch,
-                'Nová rezervácia',
-                sprintf(
-                    'Vytvorili sme novú rezerváciu pre %s na %s.',
-                    $booking->patient_name,
-                    $slot->starts_at->format('d.m.Y H:i'),
-                ),
-            );
-        }
+        $inboxMessageService->createForBooking($booking);
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])
             ->with('success', 'Termín bol rezervovaný. Skontrolujte si email s potvrdením.');
     }
 
-    private function storeAppointmentRequest(Branch $branch, array $validated): RedirectResponse
-    {
+    private function storeAppointmentRequest(
+        Branch $branch,
+        array $validated,
+        BranchInboxMessageService $inboxMessageService,
+    ): RedirectResponse {
         $serviceIds = collect($validated['service_ids'])
             ->map(fn ($id) => (int) $id)
             ->unique()
@@ -911,23 +903,11 @@ class PublicBranchSiteController extends Controller
 
         $appointmentRequest->load(['branch', 'services']);
 
+        $inboxMessageService->createForAppointmentRequest($appointmentRequest);
+
         if ($appointmentRequest->patient_email) {
             Notification::route('mail', $appointmentRequest->patient_email)
                 ->notify(new RequestCreatedNotification($appointmentRequest));
-        }
-
-        $notificationSettings = $this->notificationSettings($branch);
-
-        if ($notificationSettings['is_enabled'] && $notificationSettings['notify_new_appointment_request']) {
-            $this->notifyBranchRecipients(
-                $branch,
-                'Nová žiadosť o termín',
-                sprintf(
-                    'Prijali sme novú žiadosť o termín od %s (%s). Požiadavka je vo fáze spracovania.',
-                    $appointmentRequest->patient_name,
-                    $appointmentRequest->patient_email ?: $appointmentRequest->patient_phone,
-                ),
-            );
         }
 
         event(new BranchAppointmentRequestCreated($appointmentRequest));
@@ -957,23 +937,6 @@ class PublicBranchSiteController extends Controller
             'notify_new_booking' => true,
             'notify_new_contact_form' => true,
         ], $branch->notification_settings ?? []);
-    }
-
-    private function notifyBranchRecipients(Branch $branch, string $subject, string $message): void
-    {
-        $notificationSettings = $this->notificationSettings($branch);
-        $emails = collect($notificationSettings['notification_emails'])
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        if (empty($emails)) {
-            return;
-        }
-
-        Notification::route('mail', $emails)
-            ->notify(new BranchAdminNotification($subject, $message));
     }
 
     private function ensurePublicSiteIsEnabled(Branch $branch): void

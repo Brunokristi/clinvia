@@ -314,81 +314,226 @@ export const primevuePt = {
     paginator: {
         root: {
             class: [
-                '!border-0 !rounded-none',
+                '!border-0',
                 '!bg-accent',
-                '!px-0 !py-0',
-                '!text-white',
+                '!px-5 !py-3',
+                '!text-accent',
+                '!rounded-none',
+                '!overflow-x-auto',
 
+                // Force paginator dropdown/select to stay inline.
+                '[&_.p-select]:!w-auto',
+                '[&_.p-select]:!min-w-20',
+                '[&_.p-select]:!max-w-24',
+                '[&_.p-select]:!shrink-0',
+                '[&_.p-paginator-rpp-dropdown]:!w-auto',
+                '[&_.p-paginator-rpp-dropdown]:!min-w-20',
+                '[&_.p-paginator-rpp-dropdown]:!max-w-24',
+                '[&_.p-paginator-rpp-dropdown]:!shrink-0',
             ],
         },
 
         content: {
             class: [
-                'flex items-center justify-center gap-3',
-                '!bg-white',
+                'flex w-full flex-nowrap items-center justify-center gap-3',
+                '!bg-transparent',
+
+                // Every direct paginator item stays in the same row.
+                '[&>*]:shrink-0',
+
+                // Page buttons stay inline.
+                '[&_.p-paginator-pages]:flex',
+                '[&_.p-paginator-pages]:flex-nowrap',
+                '[&_.p-paginator-pages]:items-center',
+                '[&_.p-paginator-pages]:gap-2',
+
+                // Report text does not wrap.
+                '[&_.p-paginator-current]:whitespace-nowrap',
+                '[&_.p-paginator-current]:shrink-0',
+
+                // Rows-per-page select does not stretch.
+                '[&_.p-select]:!w-auto',
+                '[&_.p-select]:!min-w-20',
+                '[&_.p-select]:!max-w-24',
+                '[&_.p-select]:!shrink-0',
+                '[&_.p-paginator-rpp-dropdown]:!w-auto',
+                '[&_.p-paginator-rpp-dropdown]:!min-w-20',
+                '[&_.p-paginator-rpp-dropdown]:!max-w-24',
+                '[&_.p-paginator-rpp-dropdown]:!shrink-0',
             ],
         },
 
         first: {
             class: [
+                'shrink-0',
+                '!h-9 !min-w-9',
                 '!rounded-md',
-                '!bg-soft !text-accent',
                 '!border !border-soft',
-                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                '!bg-soft',
+                '!text-accent',
+                '!shadow-none',
+                'transition-all duration-150',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
                 'disabled:!opacity-40',
+                'disabled:hover:!border-soft',
+                'disabled:hover:!bg-soft',
+                'disabled:hover:!text-accent',
             ],
         },
 
         prev: {
             class: [
+                'shrink-0',
+                '!h-9 !min-w-9',
                 '!rounded-md',
-                '!bg-soft !text-accent',
                 '!border !border-soft',
-                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                '!bg-soft',
+                '!text-accent',
+                '!shadow-none',
+                'transition-all duration-150',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
                 'disabled:!opacity-40',
+                'disabled:hover:!border-soft',
+                'disabled:hover:!bg-soft',
+                'disabled:hover:!text-accent',
             ],
         },
 
         next: {
             class: [
+                'shrink-0',
+                '!h-9 !min-w-9',
                 '!rounded-md',
-                '!bg-soft !text-accent',
                 '!border !border-soft',
-                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                '!bg-soft',
+                '!text-accent',
+                '!shadow-none',
+                'transition-all duration-150',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
                 'disabled:!opacity-40',
+                'disabled:hover:!border-soft',
+                'disabled:hover:!bg-soft',
+                'disabled:hover:!text-accent',
             ],
         },
 
         last: {
             class: [
+                'shrink-0',
+                '!h-9 !min-w-9',
                 '!rounded-md',
-                '!bg-soft !text-accent',
                 '!border !border-soft',
-                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                '!bg-soft',
+                '!text-accent',
+                '!shadow-none',
+                'transition-all duration-150',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
                 'disabled:!opacity-40',
+                'disabled:hover:!border-soft',
+                'disabled:hover:!bg-soft',
+                'disabled:hover:!text-accent',
             ],
         },
 
-        page: {
+        page: ({ context }) => ({
             class: [
+                'shrink-0',
+                '!h-9 !min-w-9',
                 '!rounded-md',
-                '!bg-soft !text-accent',
-                '!border !border-soft',
-                'hover:!bg-accent hover:!text-white hover:!border-accent',
+                '!border',
+                '!shadow-none',
+                '!text-normal !font-medium',
+                'transition-all duration-150',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
+
+                context.active
+                    ? [
+                        '!border-dark',
+                        '!bg-dark',
+                        '!text-soft',
+                    ]
+                    : [
+                        '!border-soft',
+                        '!bg-soft',
+                        '!text-accent',
+                        'hover:!border-accent',
+                        'hover:!bg-accent',
+                        'hover:!text-white',
+                    ],
+            ],
+        }),
+
+        pages: {
+            class: [
+                'flex shrink-0 flex-nowrap items-center justify-center gap-2',
             ],
         },
 
         current: {
             class: [
+                'shrink-0',
+                'whitespace-nowrap',
+                '!mx-2',
                 '!text-normal',
-                '!text-dark',
+                '!font-semibold',
+                '!text-soft',
             ],
         },
 
-        pages: {
-            class: [
-                'flex items-center gap-2',
-            ],
+        rowPerPageDropdown: {
+            root: {
+                class: [
+                    'shrink-0',
+                    '!ml-2',
+                    '!w-auto',
+                    '!min-w-20',
+                    '!rounded-md',
+                    '!border !border-soft',
+                    '!bg-soft',
+                    '!shadow-none',
+                    'hover:!border-accent',
+                    'focus-within:!border-accent',
+                ],
+            },
+
+            label: {
+                class: [
+                    'whitespace-nowrap',
+                    '!px-3 !py-2',
+                    '!text-normal',
+                    '!text-accent',
+                ],
+            },
+
+            dropdown: {
+                class: [
+                    'shrink-0',
+                    '!w-8',
+                    '!text-accent',
+                ],
+            },
         },
     },
 

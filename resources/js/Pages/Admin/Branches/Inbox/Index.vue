@@ -21,34 +21,27 @@ const props = defineProps({
         default: () => ({
             type: '',
             status: '',
+            per_page: 15,
         }),
     },
 });
 
 const typeOptions = [
     {
-        label: 'Všetky typy',
-        value: '',
-    },
-    {
         label: 'Kontaktný formulár',
         value: 'contact_form',
-    },
-    {
-        label: 'Chat',
-        value: 'chat',
     },
     {
         label: 'Rezervácia',
         value: 'booking',
     },
+    {
+        label: 'Žiadosť o rezerváciu',
+        value: 'appointment_request',
+    },
 ];
 
 const statusOptions = [
-    {
-        label: 'Všetky správy',
-        value: '',
-    },
     {
         label: 'Neprečítané',
         value: 'unread',
@@ -62,9 +55,9 @@ const statusOptions = [
 const typeLabel = (type) => {
     return {
         contact_form: 'Kontaktný formulár',
-        chat: 'Chat',
         booking: 'Rezervácia',
-    }[type] ?? type;
+        appointment_request: 'Žiadosť o rezerváciu',
+    }[type] ?? 'Správa';
 };
 
 const statusLabel = (message) => {
@@ -89,7 +82,13 @@ const createdLabel = (message) => {
         return '—';
     }
 
-    return new Date(message.created_at).toLocaleString('sk-SK');
+    return new Date(message.created_at).toLocaleString('sk-SK', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 };
 
 const rows = computed(() => {
@@ -110,12 +109,7 @@ const columns = [
     },
     {
         field: 'type_label',
-        header: 'Typ',
-        sortable: true,
-    },
-    {
-        field: 'title',
-        header: 'Predmet',
+        header: 'Typ správy',
         sortable: true,
     },
     {
@@ -130,18 +124,11 @@ const columns = [
     },
 ];
 
-const paginationLinks = computed(() => {
-    return props.messages.links ?? [];
-});
-
-const hasPagination = computed(() => {
-    return paginationLinks.value.length > 3;
-});
-
 const normalizedFilters = computed(() => {
     return {
         type: props.filters.type ?? '',
         status: props.filters.status ?? '',
+        per_page: props.filters.per_page ?? props.messages.per_page ?? 15,
     };
 });
 
@@ -161,15 +148,20 @@ const applyFilters = (changes = {}) => {
     );
 };
 
-const goToPage = (url) => {
-    if (!url) {
-        return;
-    }
-
-    router.visit(url, {
-        preserveScroll: true,
-        preserveState: true,
-    });
+const changePage = ({ page, perPage }) => {
+    router.get(
+        route('branches.inbox.index', props.branch.id),
+        {
+            ...normalizedFilters.value,
+            page,
+            per_page: perPage,
+        },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        },
+    );
 };
 
 const openMessage = (message) => {
@@ -212,65 +204,48 @@ const deleteMessage = (message) => {
                 description="Prehľad všetkých správ pre túto pobočku."
                 :rows="rows"
                 :columns="columns"
-                :paginator="false"
-                :search-fields="['sender_label', 'sender_email', 'sender_phone', 'type_label', 'title', 'body', 'status_label', 'created_label']"
+                :pagination="messages"
+                :search-fields="['sender_label', 'type_label', 'status_label', 'created_label']"
                 empty-message="Zatiaľ tu nie sú žiadne správy."
                 show-row-actions
+                @page="changePage"
             >
                 <template #actions>
                     <div class="flex flex-col gap-3 sm:flex-row">
                         <Select
-                            :model-value="normalizedFilters.type"
+                            :model-value="normalizedFilters.type || null"
                             :options="typeOptions"
                             option-label="label"
                             option-value="value"
+                            placeholder="Typ správy"
+                            show-clear
                             class="w-full sm:w-52"
-                            @update:model-value="applyFilters({ type: $event })"
+                            @update:model-value="applyFilters({ type: $event ?? '' })"
                         />
 
                         <Select
-                            :model-value="normalizedFilters.status"
+                            :model-value="normalizedFilters.status || null"
                             :options="statusOptions"
                             option-label="label"
                             option-value="value"
+                            placeholder="Stav správy"
+                            show-clear
                             class="w-full sm:w-52"
-                            @update:model-value="applyFilters({ status: $event })"
+                            @update:model-value="applyFilters({ status: $event ?? '' })"
                         />
                     </div>
                 </template>
 
                 <template #cell-sender_label="{ row }">
-                    <div>
-                        <p class="text-sm font-semibold text-dark">
-                            {{ row.sender_label }}
-                        </p>
-
-                        <p
-                            v-if="row.sender_email"
-                            class="text-xs text-accent/70"
-                        >
-                            {{ row.sender_email }}
-                        </p>
-
-                        <p
-                            v-if="row.sender_phone"
-                            class="text-xs text-accent/70"
-                        >
-                            {{ row.sender_phone }}
-                        </p>
-                    </div>
+                    <span class="text-sm font-semibold text-dark">
+                        {{ row.sender_label }}
+                    </span>
                 </template>
 
-                <template #cell-title="{ row }">
-                    <div>
-                        <p class="text-sm font-medium text-dark">
-                            {{ row.title || 'Bez predmetu' }}
-                        </p>
-
-                        <p class="mt-1 line-clamp-1 text-xs text-accent/70">
-                            {{ row.body }}
-                        </p>
-                    </div>
+                <template #cell-type_label="{ row }">
+                    <span class="text-normal text-accent">
+                        {{ row.type_label }}
+                    </span>
                 </template>
 
                 <template #cell-status_label="{ row }">
@@ -279,6 +254,12 @@ const deleteMessage = (message) => {
                         :class="statusClass(row)"
                     >
                         {{ row.status_label }}
+                    </span>
+                </template>
+
+                <template #cell-created_label="{ row }">
+                    <span class="text-normal text-accent">
+                        {{ row.created_label }}
                     </span>
                 </template>
 
@@ -297,7 +278,7 @@ const deleteMessage = (message) => {
 
                         <Button
                             v-tooltip.top="row.read_at ? 'Označiť ako neprečítané' : 'Označiť ako prečítané'"
-                            :icon="row.read_at ? 'pi pi-envelope' : 'pi pi-envelope-open'"
+                            :icon="row.read_at ? 'pi pi-envelope' : 'pi pi-check-circle'"
                             size="small"
                             rounded
                             text
@@ -316,35 +297,6 @@ const deleteMessage = (message) => {
                             aria-label="Zmazať správu"
                             @click="deleteMessage(row)"
                         />
-                    </div>
-                </template>
-
-                <template #footer>
-                    <div
-                        v-if="hasPagination"
-                        class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                        <p class="text-sm text-accent">
-                            Zobrazené {{ messages.from ?? 0 }} – {{ messages.to ?? 0 }} z {{ messages.total ?? 0 }}
-                        </p>
-
-                        <div class="flex flex-wrap gap-2">
-                            <button
-                                v-for="link in paginationLinks"
-                                :key="link.label"
-                                type="button"
-                                class="rounded-md border px-3 py-2 text-sm transition"
-                                :class="[
-                                    link.active
-                                        ? 'border-accent bg-accent text-white'
-                                        : 'border-soft bg-white text-accent hover:bg-soft',
-                                    !link.url ? 'cursor-not-allowed opacity-50' : '',
-                                ]"
-                                :disabled="!link.url"
-                                @click="goToPage(link.url)"
-                                v-html="link.label"
-                            />
-                        </div>
                     </div>
                 </template>
             </TableCard>

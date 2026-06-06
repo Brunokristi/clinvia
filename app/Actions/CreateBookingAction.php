@@ -2,12 +2,11 @@
 
 namespace App\Actions;
 
+use App\Events\BranchBookingCreated;
 use App\Models\Booking;
 use App\Models\BookingSlot;
 use App\Models\Branch;
-use App\Models\BranchInboxMessage;
 use App\Models\Service;
-use App\Events\BranchBookingCreated;
 use App\Notifications\BookingCreatedNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -56,22 +55,6 @@ class CreateBookingAction
             ]);
 
             $this->syncBookingServices($booking, $services);
-
-            BranchInboxMessage::create([
-                'branch_id' => $branch->id,
-                'type' => 'booking_notification',
-                'title' => 'Nová rezervácia: ' . $services->pluck('name')->join(', '),
-                'body' => sprintf(
-                    '%s rezervoval termín %s – %s.',
-                    $booking->patient_name,
-                    $lockedSlot->starts_at->format('d.m.Y'),
-                    $lockedSlot->starts_at->format('H:i'),
-                ),
-                'sender_name' => $booking->patient_name,
-                'sender_email' => $booking->patient_email,
-                'sender_phone' => $booking->patient_phone,
-                'booking_id' => $booking->id,
-            ]);
 
             return $booking;
         });

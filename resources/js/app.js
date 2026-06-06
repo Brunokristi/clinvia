@@ -9,6 +9,7 @@ import { createApp, h } from 'vue';
 import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
 import ToastService from 'primevue/toastservice';
+import Tooltip from 'primevue/tooltip';
 import { primevuePt } from './primevue/passthrough';
 import { sk } from './primevue/locales/sk';
 
@@ -59,6 +60,7 @@ createInertiaApp({
                 },
             })
             .use(ToastService)
+            .directive('tooltip', Tooltip)
             .mount(el);
     },
     progress: {
