@@ -1,8 +1,12 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 
 import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
 
 const props = defineProps({
     branch: {
@@ -13,14 +17,61 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    replyTemplates: {
+        type: Array,
+        default: () => [],
+    },
+});
+
+const selectedTemplateId = ref(null);
+const reply = ref(false);
+
+const replyForm = useForm({
+    subject: `Re: ${props.message.title || 'Správa'}`,
+    body: '',
+});
+
+const periodLabels = {
+    morning: 'Ráno',
+    forenoon: 'Dopoludnia',
+    afternoon: 'Popoludní',
+    evening: 'Večer',
+    rano: 'Ráno',
+    dopoludnia: 'Dopoludnia',
+    popoludni: 'Popoludní',
+    vecer: 'Večer',
+};
+
+const isContactForm = computed(() => {
+    return props.message.type === 'contact_form';
+});
+
+const isBooking = computed(() => {
+    return props.message.type === 'booking';
+});
+
+const isAppointmentRequest = computed(() => {
+    return props.message.type === 'appointment_request';
+});
+
+const canReply = computed(() => {
+    return isContactForm.value && Boolean(props.message.sender_email);
+});
+
+const booking = computed(() => {
+    return props.message.booking ?? null;
+});
+
+const appointmentRequest = computed(() => {
+    return props.message.appointment_request ?? props.message.appointmentRequest ?? null;
 });
 
 const typeLabel = (type) => {
     return {
         contact_form: 'Kontaktný formulár',
-        chat: 'Chat',
         booking: 'Rezervácia',
-    }[type] ?? type;
+        appointment_request: 'Žiadosť o rezerváciu',
+    }[type] ?? 'Správa';
 };
 
 const statusLabel = (message) => {
@@ -28,16 +79,194 @@ const statusLabel = (message) => {
 };
 
 const createdLabel = (message) => {
-    return new Date(message.created_at).toLocaleString('sk-SK');
+    return formatDateTime(message.created_at);
 };
 
+const formatDate = (value) => {
+    if (!value) {
+        return 'Bez dátumu';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return 'Bez dátumu';
+    }
+
+    return date.toLocaleDateString('sk-SK', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    });
+};
+
+const formatDateTime = (value) => {
+    if (!value) {
+        return 'Bez termínu';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return 'Bez termínu';
+    }
+
+    return date.toLocaleString('sk-SK', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const bookingServicesLabel = computed(() => {
+    const services = booking.value?.services ?? [];
+
+    if (services.length > 0) {
+        return services.map((service) => service.name).join(', ');
+    }
+
+    return booking.value?.service?.name || 'Bez služby';
+});
+
+const bookingStartsAt = computed(() => {
+    return booking.value?.booking_slot?.starts_at
+        ?? booking.value?.bookingSlot?.starts_at
+        ?? null;
+});
+
+const bookingEndsAt = computed(() => {
+    return booking.value?.booking_slot?.ends_at
+        ?? booking.value?.bookingSlot?.ends_at
+        ?? null;
+});
+
+const bookingDateLabel = computed(() => {
+    return formatDateTime(bookingStartsAt.value);
+});
+
+const bookingDurationLabel = computed(() => {
+    if (!bookingStartsAt.value || !bookingEndsAt.value) {
+        return null;
+    }
+
+    const start = new Date(bookingStartsAt.value);
+    const end = new Date(bookingEndsAt.value);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return null;
+    }
+
+    const minutes = Math.round((end - start) / 60000);
+
+    if (minutes <= 0) {
+        return null;
+    }
+
+    return `${minutes} min`;
+});
+
+const requestServicesLabel = computed(() => {
+    const services = appointmentRequest.value?.services ?? [];
+
+    if (services.length === 0) {
+        return 'Bez služby';
+    }
+
+    return services.map((service) => service.name).join(', ');
+});
+
+const requestPreferredDateLabel = computed(() => {
+    const date = appointmentRequest.value?.preferred_date
+        ?? appointmentRequest.value?.preferredDate
+        ?? appointmentRequest.value?.requested_date
+        ?? null;
+
+    return formatDate(date);
+});
+
+const requestPeriodLabel = computed(() => {
+    const period = appointmentRequest.value?.preferred_period;
+
+    return periodLabels[period] ?? period ?? 'Bez časti dňa';
+});
+
+const requestDurationLabel = computed(() => {
+    const minutes = appointmentRequest.value?.total_duration_minutes;
+
+    if (!minutes) {
+        return null;
+    }
+
+    return `${minutes} min`;
+});
+
+const patientName = computed(() => {
+    return props.message.sender_name
+        ?? booking.value?.patient_name
+        ?? appointmentRequest.value?.patient_name
+        ?? 'Neznámy pacient';
+});
+
+const patientEmail = computed(() => {
+    return props.message.sender_email
+        ?? booking.value?.patient_email
+        ?? appointmentRequest.value?.patient_email
+        ?? null;
+});
+
+const patientPhone = computed(() => {
+    return props.message.sender_phone
+        ?? booking.value?.patient_phone
+        ?? appointmentRequest.value?.patient_phone
+        ?? null;
+});
+
+const patientNote = computed(() => {
+    return booking.value?.patient_note
+        ?? appointmentRequest.value?.patient_note
+        ?? null;
+});
+
+watch(selectedTemplateId, (templateId) => {
+    const template = props.replyTemplates.find((item) => {
+        return Number(item.id) === Number(templateId);
+    });
+
+    if (!template) {
+        return;
+    }
+
+    replyForm.subject = template.subject || replyForm.subject;
+    replyForm.body = template.body;
+});
+
 const goBack = () => {
-    router.get(route('admin.branches.inbox.index', props.branch.id));
+    router.get(route('branches.inbox.index', props.branch.id));
+};
+
+const goToCalendar = () => {
+    router.get(route('branches.booking.agenda.page', props.branch.id));
+};
+
+const sendReply = () => {
+    replyForm.post(route('branches.inbox.reply', [props.branch.id, props.message.id]), {
+        preserveScroll: true,
+        onSuccess: () => {
+            selectedTemplateId.value = null;
+            replyForm.reset('body');
+        },
+    });
 };
 
 const deleteMessage = () => {
     router.delete(
-        route('admin.branches.inbox.destroy', [props.branch.id, props.message.id]),
+        route('branches.inbox.destroy', [props.branch.id, props.message.id]),
         {
             preserveScroll: true,
         },
@@ -49,18 +278,10 @@ const deleteMessage = () => {
     <AdminLayout>
         <Head :title="`Správa | ${branch.name}`" />
 
-        <div class="mx-auto max-w-4xl space-y-6">
+        <div class="space-y-6">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <button
-                        type="button"
-                        class="mb-3 text-sm font-medium text-accent hover:underline"
-                        @click="goBack"
-                    >
-                        ← Späť na inbox
-                    </button>
-
-                    <h1 class="text-heading font-semibold text-dark">
+                    <h1 class="text-normal font-semibold text-dark">
                         {{ message.title || 'Správa' }}
                     </h1>
 
@@ -68,6 +289,14 @@ const deleteMessage = () => {
                         {{ typeLabel(message.type) }} · {{ statusLabel(message) }}
                     </p>
                 </div>
+                
+                <div class="flex gap-2">
+                <Button
+                    label="Späť na správy"
+                    severity="secondary"
+                    outlined
+                    @click="goBack"
+                />
 
                 <Button
                     label="Zmazať"
@@ -75,94 +304,311 @@ const deleteMessage = () => {
                     outlined
                     @click="deleteMessage"
                 />
+                </div>
             </div>
 
-            <section class="rounded-md border border-soft bg-white p-6">
-                <dl class="grid gap-5 md:grid-cols-2">
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Meno
-                        </dt>
+            <section
+                v-if="isBooking"
+            >
+                <div class="flex flex-wrap items-start justify-end gap-4">
+                    <Button
+                        label="Otvoriť kalendár"
+                        icon="pi pi-calendar"
+                        @click="goToCalendar"
+                    />
+                </div>
 
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ message.sender_name || '—' }}
-                        </dd>
+                <article class="mt-5 rounded-md border border-soft bg-soft p-4">
+                    <div class="space-y-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 class="font-semibold text-dark">
+                                    {{ patientName }}
+                                </h3>
+
+                                <div class="space-y-1 text-xs text-accent">
+                                    <p v-if="patientPhone">
+                                        {{ patientPhone }}
+                                    </p>
+
+                                    <p v-if="patientEmail">
+                                        {{ patientEmail }}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <span class="rounded-md bg-white/70 px-2 py-1 text-xs font-semibold text-accent">
+                                Rezervácia
+                            </span>
+                        </div>
+
+                        <div class="grid gap-2 text-normal text-soft">
+                            <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                <span class="font-medium">
+                                    Služba
+                                </span>
+
+                                <span class="text-right">
+                                    {{ bookingServicesLabel }}
+                                </span>
+                            </div>
+
+                            <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                <span class="font-medium">
+                                    Termín
+                                </span>
+
+                                <span class="text-right">
+                                    {{ bookingDateLabel }}
+                                </span>
+                            </div>
+
+                            <div
+                                v-if="bookingDurationLabel"
+                                class="request-card-soft-box flex items-center justify-end gap-3 text-accent"
+                            >
+                                <span class="font-medium">
+                                    Trvanie
+                                </span>
+
+                                <span>
+                                    {{ bookingDurationLabel }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <p
+                            v-if="patientNote"
+                            class="request-card-soft-box rounded-md bg-white/60 p-3 text-xs leading-5 text-accent"
+                        >
+                            {{ patientNote }}
+                        </p>
                     </div>
-
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Email
-                        </dt>
-
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ message.sender_email || '—' }}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Telefón
-                        </dt>
-
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ message.sender_phone || '—' }}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Dátum
-                        </dt>
-
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ createdLabel(message) }}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Typ
-                        </dt>
-
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ typeLabel(message.type) }}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-accent/60">
-                            Stav
-                        </dt>
-
-                        <dd class="mt-1 text-sm font-semibold text-dark">
-                            {{ statusLabel(message) }}
-                        </dd>
-                    </div>
-                </dl>
-            </section>
-
-            <section class="rounded-md border border-soft bg-white p-6">
-                <h2 class="text-normal font-semibold text-dark">
-                    Obsah správy
-                </h2>
-
-                <p class="mt-5 whitespace-pre-line text-normal leading-7 text-accent">
-                    {{ message.body }}
-                </p>
+                </article>
             </section>
 
             <section
-                v-if="message.booking"
+                v-if="isAppointmentRequest"
+                class=""
+            >
+                <div class="flex flex-wrap items-start justify-end gap-4">
+                    <Button
+                        label="Otvoriť kalendár"
+                        icon="pi pi-calendar"
+                        @click="goToCalendar"
+                    />
+                </div>
+
+                <article class="mt-5 rounded-md border border-soft bg-soft p-4">
+                    <div class="space-y-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 class="font-semibold text-dark">
+                                    {{ patientName }}
+                                </h3>
+
+                                <div class="space-y-1 text-xs text-accent">
+                                    <p v-if="patientPhone">
+                                        {{ patientPhone }}
+                                    </p>
+
+                                    <p v-if="patientEmail">
+                                        {{ patientEmail }}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <span class="rounded-md bg-white/70 px-2 py-1 text-xs font-semibold text-accent">
+                                Žiadosť
+                            </span>
+                        </div>
+
+                        <div class="grid gap-2 text-normal text-soft">
+                            <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                <span class="font-medium">
+                                    Služby
+                                </span>
+
+                                <span class="text-right">
+                                    {{ requestServicesLabel }}
+                                </span>
+                            </div>
+
+                            <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                <span class="font-medium">
+                                    Preferovaný termín
+                                </span>
+
+                                <span class="text-right">
+                                    {{ requestPreferredDateLabel }} · {{ requestPeriodLabel }}
+                                </span>
+                            </div>
+
+                            <div
+                                v-if="requestDurationLabel"
+                                class="request-card-soft-box flex items-center justify-end gap-3 text-accent"
+                            >
+                                <span class="font-medium">
+                                    Trvanie
+                                </span>
+
+                                <span>
+                                    {{ requestDurationLabel }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <p
+                            v-if="patientNote"
+                            class="request-card-soft-box rounded-md bg-white/60 p-3 text-xs leading-5 text-accent"
+                        >
+                            {{ patientNote }}
+                        </p>
+                    </div>
+                </article>
+            </section>
+
+            <section
+                v-if="!isBooking && !isAppointmentRequest"
+                class=""
+            >
+                <div class="flex items-start gap-1">
+                    <h1 class="text-normal font-semibold text-dark">
+                        {{ patientName }}
+                    </h1>
+
+                    <span class="text-accent text-normal">
+                        •
+                    </span>
+                    
+                    <a
+                        class="text-normal text-accent"
+                        :href="`mailto:${patientEmail}`"
+                    >
+                        {{ patientEmail }}
+                    </a>
+                </div>
+
+                <div class="py-4 pb-8">
+                    <div class="border-l border-accent pl-5">
+                        <p class="whitespace-pre-line text-normal leading-7 text-accent">
+                            {{ message.body }}
+                        </p>
+                    </div>
+                </div>
+                
+                <Button
+                    v-if="isContactForm"
+                    label="Odpovedať"
+                    @click="reply = true"
+                />
+            </section>
+
+            <section
+                v-if="isContactForm && reply"
                 class="rounded-md border border-soft bg-white p-6"
             >
                 <h2 class="text-normal font-semibold text-dark">
-                    Súvisiaca rezervácia
+                    Odpoveď
                 </h2>
 
-                <p class="mt-3 text-sm text-accent">
-                    Táto správa je prepojená s rezerváciou #{{ message.booking.id }}.
+                <p
+                    v-if="!message.sender_email"
+                    class="mt-3 rounded-md bg-soft px-4 py-3 text-sm text-accent"
+                >
+                    Na túto správu nie je možné odpovedať e-mailom, pretože odosielateľ neuviedol e-mailovú adresu.
                 </p>
+
+                <form
+                    v-else
+                    class="mt-5 space-y-4"
+                    @submit.prevent="sendReply"
+                >
+                    <Select
+                        v-model="selectedTemplateId"
+                        :options="replyTemplates"
+                        option-label="name"
+                        option-value="id"
+                        placeholder="Použiť predvolenú odpoveď"
+                        show-clear
+                        class="w-full"
+                    />
+
+                    <div>
+                        <label
+                            for="subject"
+                            class="mb-2 block text-sm font-medium text-dark"
+                        >
+                            Predmet
+                        </label>
+
+                        <InputText
+                            id="subject"
+                            v-model="replyForm.subject"
+                            class="w-full"
+                            :invalid="Boolean(replyForm.errors.subject)"
+                        />
+
+                        <p
+                            v-if="replyForm.errors.subject"
+                            class="mt-1 text-sm text-red-600"
+                        >
+                            {{ replyForm.errors.subject }}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label
+                            for="body"
+                            class="mb-2 block text-sm font-medium text-dark"
+                        >
+                            Správa
+                        </label>
+
+                        <Textarea
+                            id="body"
+                            v-model="replyForm.body"
+                            rows="7"
+                            auto-resize
+                            class="w-full"
+                            :invalid="Boolean(replyForm.errors.body)"
+                        />
+
+                        <p
+                            v-if="replyForm.errors.body"
+                            class="mt-1 text-sm text-red-600"
+                        >
+                            {{ replyForm.errors.body }}
+                        </p>
+                    </div>
+
+                    <div class="flex justify-end gap-3">
+                        <Button
+                            type="button"
+                            label="Zrušiť"
+                            outlined
+                            :disabled="replyForm.processing"
+                            @click="reply = false"
+                        />
+
+                        <Button
+                            type="submit"
+                            label="Odoslať odpoveď"
+                            icon="pi pi-send"
+                            :loading="replyForm.processing"
+                            :disabled="replyForm.processing || !canReply"
+                        />
+                    </div>
+                </form>
             </section>
         </div>
     </AdminLayout>
 </template>
+
+<style scoped>
+.request-card-soft-box {
+    transition:
+        background-color 150ms ease,
+        color 150ms ease;
+}
+</style>

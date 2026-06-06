@@ -19,7 +19,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
             notification_reason: options.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeCapacityWindowDialog,
         });
     };
@@ -33,7 +33,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
             notification_reason: data.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeCapacityWindowDialog,
         });
     };
@@ -55,7 +55,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
             notification_reason: 'Termín skupinovej rezervácie bol presunutý.',
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onError: () => {
                 changeInfo.revert();
             },
@@ -69,7 +69,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
             notification_reason: options.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeCapacityWindowDialog,
         });
     };
@@ -129,7 +129,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
             notification_reason: options.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeCapacityWindowDialog,
         });
     };
@@ -142,7 +142,7 @@ export function useCapacityWindowActions({ props, dateTime, dialogs }) {
                 notification_reason: options.notification_reason ?? null,
             },
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeCapacityWindowDialog,
         });
     };

@@ -896,7 +896,7 @@ const submitBooking = () => {
 
                             <div class="flex flex-wrap gap-3 justify-end">
                                 <Button
-                                    label="Späť na termín"
+                                    label="← Späť na termín"
                                     severity="secondary"
                                     outlined
                                     type="button"

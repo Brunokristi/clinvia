@@ -127,4 +127,9 @@ class Branch extends Model
     {
         return $this->hasMany(BranchInboxMessage::class);
     }
+
+    public function replyTemplates(): HasMany
+    {
+        return $this->hasMany(BranchReplyTemplate::class);
+    }
 }

@@ -66,8 +66,8 @@ const statusLabel = (message) => {
 
 const statusClass = (message) => {
     return message.read_at
-        ? 'bg-green-50 text-green-700'
-        : 'bg-blue-50 text-blue-700';
+        ? 'bg-soft text-accent'
+        : 'bg-dark text-soft';
 };
 
 const senderLabel = (message) => {
@@ -178,7 +178,7 @@ const toggleRead = (message) => {
         {},
         {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
         },
     );
 };
@@ -188,7 +188,7 @@ const deleteMessage = (message) => {
         route('branches.inbox.destroy', [props.branch.id, message.id]),
         {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
         },
     );
 };
@@ -250,7 +250,7 @@ const deleteMessage = (message) => {
 
                 <template #cell-status_label="{ row }">
                     <span
-                        class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
+                        class="inline-flex rounded-md px-3 py-1 text-xs font-semibold"
                         :class="statusClass(row)"
                     >
                         {{ row.status_label }}

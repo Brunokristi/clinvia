@@ -200,6 +200,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::delete('/inbox/{message}', [BranchInboxMessageController::class, 'destroy'])
                     ->name('inbox.destroy');
 
+                Route::post('/inbox/{message}/reply', [BranchInboxMessageController::class, 'reply'])
+                    ->name('inbox.reply');
+
                 Route::put('/booking/services', [BranchBookingCalendarController::class, 'updateServices'])
                     ->name('booking.services.update');
 

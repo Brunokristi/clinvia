@@ -135,7 +135,7 @@ const deleteCompany = () => {
                     class="flex gap-2"
                 >
                     <Button
-                        @click="router.visit(route('companies.edit', { company: row.id }))"
+                        @click="router.visit(route('companies.branches', { company: row.id }))"
                         label="Detail"
                     />
 

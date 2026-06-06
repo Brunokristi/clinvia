@@ -22,6 +22,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\BranchInboxMessageService;
+use App\Notifications\ContactFormSubmittedNotification;
 
 class PublicBranchSiteController extends Controller
 {
@@ -275,6 +276,14 @@ class PublicBranchSiteController extends Controller
             senderPhone: $validated['sender_phone'] ?? null,
             body: $validated['body'],
         );
+
+        if (! empty($validated['sender_email'])) {
+            Notification::route('mail', $validated['sender_email'])
+                ->notify(new ContactFormSubmittedNotification(
+                    branch: $branch,
+                    senderName: $validated['sender_name'],
+                ));
+        }
 
         return back()->with('success', 'Správa bola odoslaná.');
     }

@@ -9,6 +9,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Notifications\BranchAdminNotification;
+use App\Notifications\BranchContactReplyNotification;
+use Illuminate\Support\Facades\Notification;
 
 class BranchInboxMessageController extends Controller
 {
@@ -68,9 +71,14 @@ class BranchInboxMessageController extends Controller
         return Inertia::render('Admin/Branches/Inbox/Show', [
             'branch' => $branch,
             'message' => $message->fresh([
-                'booking',
-                'appointmentRequest',
+                'booking.bookingSlot',
+                'booking.service',
+                'booking.services',
+                'appointmentRequest.services',
             ]),
+            'replyTemplates' => $branch->replyTemplates()
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -114,5 +122,35 @@ class BranchInboxMessageController extends Controller
                 'status' => request('status'),
             ])
             ->with('success', 'Správa bola odstránená.');
+    }
+
+    public function reply(Request $request, Branch $branch, BranchInboxMessage $message): RedirectResponse
+    {
+        abort_unless($message->branch_id === $branch->id, 404);
+        abort_unless($message->type === 'contact_form', 404);
+
+        $validated = $request->validate([
+            'subject' => ['required', 'string', 'max:255'],
+            'body' => ['required', 'string', 'max:5000'],
+        ]);
+
+        if (! $message->sender_email) {
+            return back()->withErrors([
+                'sender_email' => 'Správa nemá e-mailovú adresu, na ktorú je možné odpovedať.',
+            ]);
+        }
+
+        Notification::route('mail', $message->sender_email)
+            ->notify(new BranchContactReplyNotification(
+                subject: $validated['subject'],
+                bodyText: $validated['body'],
+                branchName: $branch->name,
+            ));
+
+        $message->update([
+            'read_at' => now(),
+        ]);
+
+        return back()->with('success', 'Odpoveď bola odoslaná.');
     }
 }

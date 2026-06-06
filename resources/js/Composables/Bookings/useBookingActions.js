@@ -62,7 +62,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             notify_patient: Boolean(data.notify_patient ?? true),
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: () => {
                 createBookingDialogVisible.value = false;
                 pendingCalendarSelection.value = null;
@@ -78,7 +78,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             notification_reason: options.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeBookingDialogs,
         });
     };
@@ -90,7 +90,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             notification_reason: options.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeBookingDialogs,
         });
     };
@@ -133,7 +133,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             notification_reason: data.notification_reason ?? null,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeBookingDialogs,
         });
     };
@@ -160,7 +160,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             notification_reason: 'Termín rezervácie bol presunutý.',
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onError: () => {
                 changeInfo.revert();
             },
@@ -183,7 +183,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             starts_at: toLocalDateTimeString(receiveInfo.event.start),
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onError: () => {
                 receiveInfo.revert();
             },

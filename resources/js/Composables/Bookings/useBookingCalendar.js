@@ -15,6 +15,9 @@ export function useBookingCalendar(props) {
     const showAvailabilityRules = ref(true);
     const showReservations = ref(true);
 
+    const currentCalendarDate = ref(new Date().toISOString().slice(0, 10));
+    const currentCalendarView = ref('timeGridWeek');
+
     const dateTime = useBookingDateTime();
 
     const openingHours = useBookingOpeningHours({
@@ -213,6 +216,11 @@ export function useBookingCalendar(props) {
         }
     };
 
+    const rememberCalendarPosition = (dateInfo) => {
+        currentCalendarDate.value = dateInfo.startStr.slice(0, 10);
+        currentCalendarView.value = dateInfo.view.type;
+    };
+
     const calendarOptions = computed(() => {
         const branchHours = openingHours.getBranchOpeningHoursForCalendar();
 
@@ -222,8 +230,8 @@ export function useBookingCalendar(props) {
                 interactionPlugin,
             ],
 
-            initialView: 'timeGridWeek',
-            initialDate: new Date().toISOString().slice(0, 10),
+            initialView: currentCalendarView.value,
+            initialDate: currentCalendarDate.value,
             firstDay: 1,
 
             allDaySlot: false,
@@ -274,6 +282,8 @@ export function useBookingCalendar(props) {
             },
 
             events: events.calendarEvents.value,
+
+            datesSet: rememberCalendarPosition,
 
             select: dialogs.openCreateChoiceDialog,
             dateClick: (clickInfo) => {

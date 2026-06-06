@@ -977,6 +977,7 @@ export const primevuePt = {
                     '!w-full !rounded-md',
                     '!bg-soft px-4 py-2 !border-soft shadow-0',
                     '!text-normal !text-accent',
+                    'placeholder:!text-accent/50',
                     'hover:!border-accent',
                     'focus:!border-accent focus:!bg-white',
                 ],
@@ -985,9 +986,11 @@ export const primevuePt = {
 
         dropdown: {
             class: [
-                '!text-accent',
+                '!rounded-r-md',
+                '!border !border-soft',
                 '!bg-soft',
-                '!border-soft',
+                '!text-accent',
+                'hover:!border-accent',
                 'hover:!bg-accent',
                 'hover:!text-white',
             ],
@@ -1001,11 +1004,264 @@ export const primevuePt = {
 
         panel: {
             class: [
+                '!mt-1',
                 '!rounded-md',
                 '!border !border-soft',
                 '!bg-white',
                 '!shadow-lg',
+                '!p-3',
+                '!text-accent',
             ],
+        },
+
+        calendarContainer: {
+            class: [
+                '!bg-white',
+            ],
+        },
+
+        header: {
+            class: [
+                '!border-0',
+                '!border-b !border-soft',
+                '!bg-white',
+                '!px-0 !pb-3 !pt-0',
+                '!text-accent',
+            ],
+        },
+
+        title: {
+            class: [
+                'flex items-center gap-2',
+                '!text-normal !font-semibold',
+                '!text-dark',
+            ],
+        },
+
+        selectMonth: {
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-normal !font-semibold',
+                '!text-dark',
+                'hover:!bg-soft',
+                'hover:!text-accent',
+            ],
+        },
+
+        selectYear: {
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-normal !font-semibold',
+                '!text-dark',
+                'hover:!bg-soft',
+                'hover:!text-accent',
+            ],
+        },
+
+        previousButton: {
+            class: [
+                '!h-9 !w-9',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-soft',
+                '!text-accent',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
+            ],
+        },
+
+        nextButton: {
+            class: [
+                '!h-9 !w-9',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-soft',
+                '!text-accent',
+                'hover:!border-accent',
+                'hover:!bg-accent',
+                'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
+            ],
+        },
+
+        table: {
+            class: [
+                '!mt-3',
+                '!w-full',
+                '!border-collapse',
+            ],
+        },
+
+        tableHeaderRow: {
+            class: [
+                '!border-0',
+            ],
+        },
+
+        tableHeaderCell: {
+            class: [
+                '!p-2',
+                '!text-center',
+                '!text-small',
+                '!font-semibold',
+                '!text-accent',
+            ],
+        },
+
+        tableBodyRow: {
+            class: [
+                '!border-0',
+            ],
+        },
+
+        dayCell: {
+            class: [
+                '!p-1',
+                '!text-center',
+            ],
+        },
+
+        day: ({ context }) => ({
+            class: [
+                'inline-flex items-center justify-center',
+                '!h-9 !w-9',
+                '!rounded-md',
+                '!text-normal',
+                '!font-medium',
+                'transition-all duration-150',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
+
+                context.selected
+                    ? [
+                        '!bg-accent',
+                        '!text-white',
+                    ]
+                    : [
+                        '!bg-transparent',
+                        '!text-accent',
+                        'hover:!bg-soft',
+                        'hover:!text-dark',
+                    ],
+
+                context.today && !context.selected
+                    ? [
+                        '!border !border-accent',
+                        '!text-dark',
+                    ]
+                    : '',
+
+                context.disabled
+                    ? [
+                        '!opacity-40',
+                        '!pointer-events-none',
+                    ]
+                    : '',
+            ],
+        }),
+
+        monthView: {
+            class: [
+                '!mt-3',
+                '!grid !grid-cols-3',
+                '!gap-2',
+            ],
+        },
+
+        month: ({ context }) => ({
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-normal !font-medium',
+                'transition-all duration-150',
+
+                context.selected
+                    ? [
+                        '!bg-accent',
+                        '!text-white',
+                    ]
+                    : [
+                        '!bg-soft',
+                        '!text-accent',
+                        'hover:!bg-accent',
+                        'hover:!text-white',
+                    ],
+            ],
+        }),
+
+        yearView: {
+            class: [
+                '!mt-3',
+                '!grid !grid-cols-2',
+                '!gap-2',
+            ],
+        },
+
+        year: ({ context }) => ({
+            class: [
+                '!rounded-md',
+                '!px-3 !py-2',
+                '!text-normal !font-medium',
+                'transition-all duration-150',
+
+                context.selected
+                    ? [
+                        '!bg-accent',
+                        '!text-white',
+                    ]
+                    : [
+                        '!bg-soft',
+                        '!text-accent',
+                        'hover:!bg-accent',
+                        'hover:!text-white',
+                    ],
+            ],
+        }),
+
+        buttonbar: {
+            class: [
+                '!mt-3',
+                '!border-t !border-soft',
+                '!pt-3',
+                'flex items-center justify-between gap-2',
+            ],
+        },
+
+        pcTodayButton: {
+            root: {
+                class: [
+                    '!rounded-md !px-4 !py-2',
+                    '!border !border-accent',
+                    '!bg-accent',
+                    '!text-normal !font-medium',
+                    '!text-white',
+                    'hover:!bg-dark',
+                    'hover:!border-dark',
+                ],
+            },
+        },
+
+        pcClearButton: {
+            root: {
+                class: [
+                    '!rounded-md !px-4 !py-2',
+                    '!border !border-accent',
+                    '!bg-transparent',
+                    '!text-normal !font-medium',
+                    '!text-accent',
+                    'hover:!bg-accent',
+                    'hover:!text-white',
+                ],
+            },
         },
     },
 
@@ -1308,6 +1564,32 @@ export const primevuePt = {
                 '!text-soft hover:!text-dark',
                 '!text-[11px] cursor-pointer',
                 'transition-colors duration-150',
+            ],
+        },
+    },
+
+    tooltip: {
+        root: {
+            class: [
+                '!bg-white',
+                '!shadow-lg',
+                '!rounded-md',
+                '!px-4 !py-3',
+                '!text-normal !text-accent',
+            ],
+        },
+
+        text: {
+            class: [
+                '!text-normal',
+                '!text-dark !font-semibold',
+                '!bg-white',
+            ],
+        },
+
+        arrow: {
+            class: [
+                '!bg-white',
             ],
         },
     },

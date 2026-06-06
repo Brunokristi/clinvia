@@ -164,7 +164,7 @@ const updateRequestSidebarHeight = () => {
         return;
     }
 
-    const calendarElement = bookingCalendar.value.querySelector('.fc') ?? bookingCalendar.value;
+    const calendarElement = bookingCalendar.value;
 
     requestSidebarHeight.value = Math.round(calendarElement.getBoundingClientRect().height);
 };
@@ -187,7 +187,7 @@ const confirmCancelAppointmentRequest = () => {
         requestToCancel.value.id,
     ]), {
         preserveScroll: true,
-        preserveState: false,
+        preserveState: true,
         onFinish: () => {
             closeCancelAppointmentRequestDialog();
         },
@@ -301,38 +301,55 @@ onBeforeUnmount(() => {
                     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
                         <div
                             ref="bookingCalendar"
-                            class="booking-calendar min-w-0"
+                            class="booking-calendar min-w-0 gap-4 flex flex-col"
                         >
                             <FullCalendar :options="calendarOptions" />
+
+                            <div class="flex flex-wrap items-center justify-between gap-4">
+                                <div class="flex flex-wrap gap-6">
+                                    <label class="flex items-center gap-2 text-sm text-dark">
+                                        <ToggleSwitch v-model="showAvailabilityRules" />
+                                        Zobraziť pravidlá
+                                    </label>
+
+                                    <label class="flex items-center gap-2 text-sm text-dark">
+                                        <ToggleSwitch v-model="showReservations" />
+                                        Zobraziť rezervácie
+                                    </label>
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    label="Vytvoriť udalosť"
+                                    @click="openCreateChoiceFromButton"
+                                />
+                            </div>
                         </div>
 
                         <aside
                             ref="requestSidebar"
-                            class="flex min-h-0 flex-col gap-4"
+                            class="flex min-h-0 flex-col gap-4 rounded-md bg-soft p-4"
                             :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
                         >
-        
-
                             <div
                                 v-if="pendingRequests.length"
                                 class="min-h-0 flex-1 overflow-y-auto pr-1"
                             >
-                                <h1 class="text-normal text-dark font-semibold">Žiadosti o rezerváciu</h1>
                                 <div class="space-y-3">
                                     <article
                                         v-for="request in pendingRequests"
                                         :key="request.id"
                                         :data-request-id="request.id"
-                                        class="appointment-request-card cursor-grab rounded-md border border-soft bg-soft p-4 transition hover:bg-soft/80 active:cursor-grabbing active:bg-accent"
+                                        class="appointment-request-card cursor-grab rounded-md bg-accent p-4 transition active:cursor-grabbing"
                                     >
                                         <div class="space-y-4">
                                             <div class="flex items-start justify-between gap-3">
                                                 <div>
-                                                    <h3 class="font-semibold text-dark">
+                                                    <h3 class="font-semibold text-soft">
                                                         {{ request.patient_name }}
                                                     </h3>
 
-                                                    <div class="space-y-1 text-xs text-accent">
+                                                    <div class="space-y-1 text-xs text-soft">
                                                         <p v-if="request.patient_phone">
                                                             {{ request.patient_phone }}
                                                         </p>
@@ -345,7 +362,7 @@ onBeforeUnmount(() => {
 
                                                 <button
                                                     type="button"
-                                                    class="rounded-md px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                                                    class="rounded-md px-2 py-1 text-xs font-semibold text-dark transition hover:bg-red-50"
                                                     @mousedown.stop
                                                     @click.stop="openCancelAppointmentRequestDialog(request)"
                                                 >
@@ -354,13 +371,13 @@ onBeforeUnmount(() => {
                                             </div>
 
                                             <div class="grid gap-2 text-normal text-soft ">
-                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
                                                     <span class="text-right">
                                                         {{ getRequestServicesLabel(request) }}
                                                     </span>
                                                 </div>
 
-                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-accent px-3 py-2 text-soft">
+                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
                                                     <span class="font-medium">
                                                         Preferovaný termín
                                                     </span>
@@ -370,8 +387,9 @@ onBeforeUnmount(() => {
                                                     </span>
                                                 </div>
 
-                                                <div class="request-card-soft-box flex items-center justify-between gap-3 text-accent">
+                                                <div class="request-card-soft-box flex items-center justify-end gap-3 text-soft">
                                                     <span class="font-medium">
+                                                        Trvanie
                                                     </span>
 
                                                     <span>
@@ -394,31 +412,11 @@ onBeforeUnmount(() => {
 
                             <div
                                 v-else
-                                class="min-h-0 flex-1 rounded-md border border-soft bg-soft p-4 text-sm text-accent"
+                                class="min-h-0 flex-1 text-sm text-accent text-center align-middle flex items-center justify-center"
                             >
                                 Žiadne čakajúce žiadosti.
                             </div>
                         </aside>
-                    </div>
-
-                    <div class="flex flex-wrap items-center justify-start gap-4">
-                        <div class="flex flex-wrap gap-6">
-                            <label class="flex items-center gap-2 text-sm text-dark">
-                                <ToggleSwitch v-model="showAvailabilityRules" />
-                                Zobraziť pravidlá
-                            </label>
-
-                            <label class="flex items-center gap-2 text-sm text-dark">
-                                <ToggleSwitch v-model="showReservations" />
-                                Zobraziť rezervácie
-                            </label>
-                        </div>
-
-                        <Button
-                            type="button"
-                            label="Vytvoriť udalosť"
-                            @click="openCreateChoiceFromButton"
-                        />
                     </div>
                 </div>
 
@@ -508,20 +506,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.appointment-request-card:active,
-.appointment-request-card:active * {
-    color: #ffffff !important;
-}
-
-.appointment-request-card:active .request-card-soft-box {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-.appointment-request-card:active :deep(.p-tag) {
-    background: rgba(255, 255, 255, 0.18);
-    color: #ffffff;
-}
-
 .booking-calendar :deep(.fc) {
     font-family: inherit;
 }

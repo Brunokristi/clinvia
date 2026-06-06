@@ -253,7 +253,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             .transform(() => getRulesPayload())
             .put(route('branches.booking.rules.update', props.branch.id), {
                 preserveScroll: true,
-                preserveState: false,
+                preserveState: true,
                 ...options,
             });
     };
@@ -351,7 +351,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             date: selectedRuleOccurrence.value.occurrenceDate,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeRuleDeletes,
         });
     };
@@ -373,7 +373,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             date: selectedRuleOccurrence.value.occurrenceDate,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeRuleDeletes,
         });
     };
@@ -393,7 +393,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         router.delete(route('branches.booking.rules.destroy', [props.branch.id, rule.id]), {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
             onSuccess: closeRuleDeletes,
         });
     };
