@@ -17,6 +17,30 @@ const props = defineProps({
         type: [Date, String],
         default: null,
     },
+    dateId: {
+        type: String,
+        default: 'event_date',
+    },
+    startsAtId: {
+        type: String,
+        default: 'event_starts_at',
+    },
+    endsAtId: {
+        type: String,
+        default: 'event_ends_at',
+    },
+    datePlaceholder: {
+        type: String,
+        default: 'Vyberte dátum',
+    },
+    startsAtPlaceholder: {
+        type: String,
+        default: '08:00',
+    },
+    endsAtPlaceholder: {
+        type: String,
+        default: '09:00',
+    },
 });
 
 const emit = defineEmits([
@@ -45,50 +69,50 @@ const endsAtModel = computed({
     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
         <FormField
             label="Dátum"
-            for="event_date"
+            :for="dateId"
             required
         >
             <DatePicker
-                input-id="event_date"
+                :input-id="dateId"
                 v-model="dateModel"
                 date-format="dd.mm.yy"
                 class="w-full"
                 input-class="w-full"
-                placeholder="Vyberte dátum"
+                :placeholder="datePlaceholder"
             />
         </FormField>
 
         <FormField
             label="Začiatok"
-            for="event_starts_at"
+            :for="startsAtId"
             required
         >
             <DatePicker
-                input-id="event_starts_at"
+                :input-id="startsAtId"
                 v-model="startsAtModel"
                 time-only
                 hour-format="24"
                 icon-display="input"
                 class="w-full"
                 input-class="w-full"
-                placeholder="08:00"
+                :placeholder="startsAtPlaceholder"
             />
         </FormField>
 
         <FormField
             label="Koniec"
-            for="event_ends_at"
+            :for="endsAtId"
             required
         >
             <DatePicker
-                input-id="event_ends_at"
+                :input-id="endsAtId"
                 v-model="endsAtModel"
                 time-only
                 hour-format="24"
                 icon-display="input"
                 class="w-full"
                 input-class="w-full"
-                placeholder="09:00"
+                :placeholder="endsAtPlaceholder"
             />
         </FormField>
     </div>

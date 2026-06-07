@@ -8,6 +8,7 @@ import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
 
 const props = defineProps({
     visible: {
@@ -381,117 +382,112 @@ const cancelBooking = () => {
         @delete-occurrence="cancelBooking"
     >
         <div v-if="booking">
-            <FormSection
-                title="Pacient"
-                columns="md:grid-cols-2"
+            <PatientCard
+                class="md:col-span-2"
+                :patient-name="booking.patient_name"
+                :patient-phone="booking.patient_phone"
+                :patient-email="booking.patient_email"
             >
-                <PatientCard
-                    class="md:col-span-2"
-                    :patient-name="booking.patient_name"
-                    :patient-phone="booking.patient_phone"
-                    :patient-email="booking.patient_email"
+                <p
+                    v-if="booking.patient_note"
+                    class="mt-4 whitespace-pre-line rounded-lg border border-soft/60 bg-soft/40 p-3 text-sm leading-6 text-dark"
                 >
-                    <p
-                        v-if="booking.patient_note"
-                        class="mt-4 whitespace-pre-line rounded-lg border border-soft/60 bg-soft/40 p-3 text-sm leading-6 text-dark"
-                    >
-                        <span class="mb-1 block text-xs font-medium text-accent">
-                            Poznámka od pacienta:
-                        </span>
-
-                        {{ booking.patient_note }}
-                    </p>
-                </PatientCard>
-            </FormSection>
-
-            <FormSection
-                title="Rezervácia"
-                columns="md:grid-cols-2"
-            >
-                <FormField
-                    label="Služby"
-                    for="reschedule_service_ids"
-                    required
-                    span="md:col-span-2"
-                >
-                    <MultiSelect
-                        id="reschedule_service_ids"
-                        v-model="form.service_ids"
-                        :options="serviceOptions"
-                        option-label="label"
-                        option-value="value"
-                        placeholder="Vyberte službu alebo služby"
-                        display="chip"
-                        class="w-full"
-                    />
-                </FormField>
-
-                <div
-                    v-if="selectedServices.length"
-                    class="rounded-md bg-soft p-4 text-sm text-accent md:col-span-2"
-                >
-                    <p>
-                        Vybrané služby: {{ selectedServicesLabel }}
-                    </p>
-
-                    <p>
-                        Celkové trvanie: {{ selectedServicesDuration }} min
-                    </p>
-                </div>
-
-                <FormField
-                    label="Poznámka"
-                    :for="`booking_admin_note_${booking.id}`"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        :id="`booking_admin_note_${booking.id}`"
-                        v-model="bookingNotes[booking.id]"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Zadajte internú poznámku..."
-                    />
-                </FormField>
-
-                <div class="col-span-2 flex items-center gap-2">
-                    <Checkbox
-                        v-model="form.notify_patient"
-                        binary
-                        input-id="notify_patient_reschedule"
-                        :disabled="!canNotifyPatient"
-                    />
-
-                    <label
-                        for="notify_patient_reschedule"
-                        class="cursor-pointer text-sm font-medium text-dark"
-                        :class="{ 'opacity-50': !canNotifyPatient }"
-                    >
-                        Upozorniť pacienta o zmenách v rezervácií
-                    </label>
-
-                    <span
-                        v-if="!canNotifyPatient"
-                        class="ml-auto text-xs font-medium text-red-500"
-                    >
-                        Pacient nemá priradený email
+                    <span class="mb-1 block text-xs font-medium text-accent">
+                        Poznámka od pacienta:
                     </span>
-                </div>
 
-                <FormField
-                    v-if="form.notify_patient"
-                    label="Dôvod zmeny pre pacienta"
-                    for="notification_reason"
-                    span="md:col-span-2"
+                    {{ booking.patient_note }}
+                </p>
+            </PatientCard>
+
+            <FormPage
+                :show-submit="false"
+            >
+                <FormSection
+                    title="Rezervácia"
+                    columns="md:grid-cols-2"
                 >
-                    <Textarea
-                        id="notification_reason"
-                        v-model="form.notification_reason"
-                        rows="2"
-                        class="w-full"
-                        placeholder="Napríklad: Termín presúvame z organizačných dôvodov."
-                    />
-                </FormField>
-            </FormSection>
+                    <FormField
+                        label="Služby"
+                        for="reschedule_service_ids"
+                        required
+                        span="md:col-span-2"
+                    >
+                        <MultiSelect
+                            id="reschedule_service_ids"
+                            v-model="form.service_ids"
+                            :options="serviceOptions"
+                            option-label="label"
+                            option-value="value"
+                            placeholder="Vyberte službu alebo služby"
+                            display="chip"
+                            class="w-full"
+                        />
+                    </FormField>
+
+                    <div
+                        v-if="selectedServices.length"
+                        class="text-normal text-accent"
+                    >
+                        <p>
+                            Trvanie: {{ selectedServicesDuration }} min
+                        </p>
+                    </div>
+
+                    <FormField
+                        label="Poznámka"
+                        :for="`booking_admin_note_${booking.id}`"
+                        span="md:col-span-2"
+                    >
+                        <Textarea
+                            :id="`booking_admin_note_${booking.id}`"
+                            v-model="bookingNotes[booking.id]"
+                            rows="3"
+                            class="w-full"
+                            placeholder="Zadajte internú poznámku..."
+                        />
+                    </FormField>
+
+                    <div class="col-span-2 flex items-center gap-2">
+                        <Checkbox
+                            v-model="form.notify_patient"
+                            binary
+                            input-id="notify_patient_reschedule"
+                            :disabled="!canNotifyPatient"
+                        />
+
+                        <label
+                            for="notify_patient_reschedule"
+                            class="cursor-pointer text-sm font-medium text-dark"
+                            :class="{ 'opacity-50': !canNotifyPatient }"
+                        >
+                            Upozorniť pacienta o zmenách v rezervácií
+                        </label>
+
+                        <span
+                            v-if="!canNotifyPatient"
+                            class="ml-auto text-xs font-medium text-red-500"
+                        >
+                            Pacient nemá priradený email
+                        </span>
+                    </div>
+
+                    <FormField
+                        v-if="form.notify_patient"
+                        label="Dôvod zmeny pre pacienta"
+                        for="notification_reason"
+                        span="md:col-span-2"
+                    >
+                        <Textarea
+                            id="notification_reason"
+                            v-model="form.notification_reason"
+                            rows="2"
+                            class="w-full"
+                            placeholder="Napríklad: Termín presúvame z organizačných dôvodov."
+                        />
+                    </FormField>
+                </FormSection>
+            </FormPage>
         </div>
 
         <div

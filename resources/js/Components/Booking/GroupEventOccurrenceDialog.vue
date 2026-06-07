@@ -359,75 +359,73 @@ const addPatientToCapacityWindow = () => {
         @delete-from-now-on="deleteCapacityWindowFromDate"
         @delete-all="deleteCapacityWindowSeries"
     >
+        <template #footer-start>
+            <Button
+                v-if="capacityWindow"
+                type="button"
+                label="Viac"
+                outlined
+                @click="emit('edit-capacity-window-rule', capacityWindow)"
+            />
+        </template>
+
+        <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent md:col-span-2">
+            <strong class="text-dark">Obsadenosť:</strong>
+            {{ bookings.length }} / {{ capacity ?? '—' }}
+        </div>
+
         <FormPage
             v-if="capacityWindow"
             submit-label="Uložiť"
             :show-submit="false"
         >
             <FormSection
-                title="Skupinový termín"
-                description="Tu upravíte celý skupinový termín a oznámenia pre pacientov."
-                columns="md:grid-cols-2"
+                v-if="bookings.length"
+                title="Pacienti v skupinovom termíne"
+                columns="md:grid-cols-1"
             >
-                <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent md:col-span-2">
-                    <strong class="text-dark">Obsadenosť:</strong>
-                    {{ bookings.length }} / {{ capacity ?? '—' }}
-                </div>
-
-                <div class="flex justify-end md:col-span-2">
-                    <Button
-                        type="button"
-                        label="Upraviť pravidlo a opakovanie"
-                        icon="pi pi-cog"
-                        outlined
-                        @click="emit('edit-capacity-window-rule', capacityWindow)"
-                    />
-                </div>
-
-                <div class="flex items-center gap-2 md:col-span-2">
-                    <Checkbox
-                        v-model="groupForm.notify_patient"
-                        binary
-                        input-id="capacity_notify_patient"
-                        :disabled="!bookings.length"
-                    />
-
-                    <label
-                        for="capacity_notify_patient"
-                        class="cursor-pointer text-sm text-accent"
-                        :class="{ 'opacity-50': !bookings.length }"
+                <div class="space-y-4">
+                    <PatientCard
+                        v-for="booking in bookings"
+                        :key="booking.id"
+                        :patient-name="booking.patient_name"
+                        :patient-phone="booking.patient_phone"
+                        :patient-email="booking.patient_email"
                     >
-                        Poslať pacientom email pri zmene alebo odstránení
-                    </label>
+                        <div class="mt-4 grid gap-4">
+                            <FormField
+                                label="Admin poznámka"
+                                :for="`capacity_booking_note_${booking.id}`"
+                            >
+                                <Textarea
+                                    :id="`capacity_booking_note_${booking.id}`"
+                                    v-model="bookingNotes[booking.id]"
+                                    rows="3"
+                                    class="w-full"
+                                    placeholder="Admin poznámka"
+                                />
+                            </FormField>
+
+                            <div>
+                                <Button
+                                    type="button"
+                                    label="Odstrániť rezerváciu pacienta"
+                                    severity="danger"
+                                    outlined
+                                    size="small"
+                                    @click="cancelPatientBooking(booking)"
+                                />
+                            </div>
+                        </div>
+                    </PatientCard>
                 </div>
-
-                <FormField
-                    label="Dôvod zmeny"
-                    for="capacity_notification_reason"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="capacity_notification_reason"
-                        v-model="groupForm.notification_reason"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Napríklad: Termín musíme presunúť z organizačných dôvodov."
-                    />
-                </FormField>
             </FormSection>
-
+            
             <FormSection
                 title="Pridať pacienta"
                 description="Pacienta pridáte priamo do tohto skupinového termínu."
                 columns="md:grid-cols-2"
             >
-                <div
-                    v-if="!hasFreeCapacity"
-                    class="rounded-md bg-red-50 p-4 text-sm text-red-600 md:col-span-2"
-                >
-                    Tento skupinový termín je už naplnený.
-                </div>
-
                 <FormField
                     label="Meno pacienta"
                     for="capacity_new_patient_name"
@@ -528,53 +526,52 @@ const addPatientToCapacityWindow = () => {
             </FormSection>
 
             <FormSection
-                v-if="bookings.length"
-                title="Pacienti v skupinovom termíne"
-                columns="md:grid-cols-1"
+                v-if="capacityWindow"
+                title="Upraviť termín"
+                description="Zmeniť túto udalosť."
+                columns="md:grid-cols-2"
             >
-                <div class="space-y-4">
-                    <PatientCard
-                        v-for="booking in bookings"
-                        :key="booking.id"
-                        :patient-name="booking.patient_name"
-                        :patient-phone="booking.patient_phone"
-                        :patient-email="booking.patient_email"
-                    >
-                        <div class="mt-4 grid gap-4">
-                            <FormField
-                                label="Admin poznámka"
-                                :for="`capacity_booking_note_${booking.id}`"
-                            >
-                                <Textarea
-                                    :id="`capacity_booking_note_${booking.id}`"
-                                    v-model="bookingNotes[booking.id]"
-                                    rows="3"
-                                    class="w-full"
-                                    placeholder="Admin poznámka"
-                                />
-                            </FormField>
+                <div class="flex items-center gap-2 md:col-span-2">
+                    <Checkbox
+                        v-model="groupForm.notify_patient"
+                        binary
+                        input-id="capacity_notify_patient"
+                        :disabled="!bookings.length"
+                    />
 
-                            <div>
-                                <Button
-                                    type="button"
-                                    label="Odstrániť rezerváciu pacienta"
-                                    severity="danger"
-                                    outlined
-                                    size="small"
-                                    @click="cancelPatientBooking(booking)"
-                                />
-                            </div>
-                        </div>
-                    </PatientCard>
+                    <label
+                        for="capacity_notify_patient"
+                        class="cursor-pointer text-sm text-accent"
+                        :class="{ 'opacity-50': !bookings.length }"
+                    >
+                        Poslať pacientom email pri zmene alebo odstránení
+                    </label>
+                </div>
+
+                <FormField
+                    label="Dôvod zmeny"
+                    for="capacity_notification_reason"
+                    span="md:col-span-2"
+                >
+                    <Textarea
+                        id="capacity_notification_reason"
+                        v-model="groupForm.notification_reason"
+                        rows="3"
+                        class="w-full"
+                        placeholder="Napríklad: Termín musíme presunúť z organizačných dôvodov."
+                    />
+                </FormField>
+
+                <div class="flex justify-end md:col-span-2">
+                    <Button
+                        type="button"
+                        label="Upraviť skupinu udalostí"
+                        outlined
+                        @click="emit('edit-capacity-window-rule', capacityWindow)"
+                    />
                 </div>
             </FormSection>
 
-            <div
-                v-else
-                class="rounded-md bg-soft p-4 text-sm text-accent"
-            >
-                V tomto skupinovom termíne zatiaľ nie sú žiadne rezervácie.
-            </div>
         </FormPage>
 
         <div

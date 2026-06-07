@@ -30,6 +30,26 @@ const props = defineProps({
         type: [Date, String],
         default: null,
     },
+    dateId: {
+        type: String,
+        default: 'event_date',
+    },
+    startsAtId: {
+        type: String,
+        default: 'event_starts_at',
+    },
+    endsAtId: {
+        type: String,
+        default: 'event_ends_at',
+    },
+    startsAtPlaceholder: {
+        type: String,
+        default: '',
+    },
+    endsAtPlaceholder: {
+        type: String,
+        default: '',
+    },
     showSave: {
         type: Boolean,
         default: true,
@@ -151,12 +171,17 @@ const deleteAll = () => {
                 v-model:date="dateModel"
                 v-model:starts-at="startsAtModel"
                 v-model:ends-at="endsAtModel"
+                :date-id="dateId"
+                :starts-at-id="startsAtId"
+                :ends-at-id="endsAtId"
+                :starts-at-placeholder="startsAtPlaceholder"
+                :ends-at-placeholder="endsAtPlaceholder"
             />
 
             <slot />
 
-            <div class="flex w-full flex-col-reverse gap-3 border-t border-accent pt-4 sm:flex-row sm:items-center sm:justify-end">
-                <div>
+            <div class="flex w-full flex-col-reverse gap-3 border-t border-accent pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex flex-wrap gap-2">
                     <Button
                         v-if="showDelete"
                         type="button"
@@ -166,9 +191,13 @@ const deleteAll = () => {
                         :disabled="deleteDisabled"
                         @click="openDeleteDialog"
                     />
+
+                    <slot name="footer-start" />
                 </div>
 
-                <div class="flex justify-end gap-2">
+                <div class="flex flex-wrap justify-end gap-2">
+                    <slot name="footer-actions" />
+
                     <Button
                         v-if="showCancel"
                         type="button"
