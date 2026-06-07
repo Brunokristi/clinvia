@@ -124,24 +124,6 @@ const branchAddressLabel = computed(() => {
     return [line1, line2, city, postalCode, country].filter(Boolean).join(', ');
 });
 
-const featuredServicesCountLabel = computed(() => {
-    const count = props.featuredServices.length;
-
-    if (count === 0) {
-        return 'Ponuku služieb priebežne dopĺňame.';
-    }
-
-    if (count === 1) {
-        return '1 zvýraznená služba';
-    }
-
-    if (count > 1 && count < 5) {
-        return `${count} zvýraznené služby`;
-    }
-
-    return `${count} zvýraznených služieb`;
-});
-
 const generatedFaq = computed(() => {
     const customFaqItems = props.branch.public_site?.faq_items ?? [];
 
@@ -192,6 +174,16 @@ const professionalName = (professional) => {
     ].filter(Boolean).join(' ');
 };
 
+const professionalPositions = (professional) => {
+    if (Array.isArray(professional.positions)) {
+        return professional.positions.filter(Boolean);
+    }
+
+    return String(professional.position || '')
+        .split(',')
+        .map((position) => position.trim())
+        .filter(Boolean);
+};
 </script>
 
 <template>
@@ -227,7 +219,7 @@ const professionalName = (professional) => {
                             </Link>
 
                             <Link
-                            v-if="branch.booking_settings?.is_enabled"
+                                v-if="branch.booking_settings?.is_enabled"
                                 :href="route('public.branch.booking', branch.slug)"
                                 class="inline-flex items-center justify-center gap-2 rounded-md border border-soft bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
                             >
@@ -378,11 +370,10 @@ const professionalName = (professional) => {
                 v-if="professionals.length"
                 class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
             >
-                <Link
+                <div
                     v-for="professional in professionals"
                     :key="professional.id"
-                    :href="route('public.branch.contact', branch.slug)"
-                    class="rounded-md bg-soft p-5 text-accent transition hover:scale-[1.01] hover:bg-accent/90"
+                    class="flex h-[17rem] flex-col gap-4 overflow-y-auto rounded-md bg-soft p-5 text-accent transition hover:scale-[1.01] hover:bg-accent/90"
                 >
                     <div class="flex items-center gap-3">
                         <img
@@ -394,34 +385,59 @@ const professionalName = (professional) => {
 
                         <div
                             v-else
-                            class="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-soft text-accent"
+                            class="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-white text-accent"
                         >
                             <span class="font-semibold">
                                 {{ professional.first_name?.charAt(0) }}{{ professional.last_name?.charAt(0) }}
                             </span>
                         </div>
 
-                        <div class="min-w-0">
-                            <h3 class="text-normal font-semibold text-dark">
-                                {{ professionalName(professional) }}
-                            </h3>
+                        <h3 class="text-normal font-semibold text-dark">
+                            {{ professionalName(professional) }}
+                        </h3>
+                    </div>
 
-                            <p
-                                v-if="professional.position"
-                                class="mt-1 text-sm leading-5 text-accent"
-                            >
-                                {{ professional.position }}
-                            </p>
-                        </div>
+                    <div
+                        v-if="professionalPositions(professional).length"
+                        class="flex flex-wrap gap-2"
+                    >
+                        <span
+                            v-for="position in professionalPositions(professional)"
+                            :key="position"
+                            class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
+                        >
+                            {{ position }}
+                        </span>
                     </div>
 
                     <p
                         v-if="professional.bio"
-                        class="mt-3 line-clamp-2 text-sm leading-6 text-white/80"
+                        class="text-sm leading-6 text-accent"
                     >
                         {{ professional.bio }}
                     </p>
-                </Link>
+
+                    <div
+                        v-if="professional.email || professional.phone"
+                        class="mt-auto grid gap-2"
+                    >
+                        <a
+                            v-if="professional.email"
+                            :href="`mailto:${professional.email}`"
+                            class="rounded-md bg-white/70 p-3 text-sm text-accent transition hover:bg-white"
+                        >
+                            {{ professional.email }}
+                        </a>
+
+                        <a
+                            v-if="professional.phone"
+                            :href="`tel:${professional.phone.replace(/\s+/g, '')}`"
+                            class="rounded-md bg-white/70 p-3 text-sm text-accent transition hover:bg-white"
+                        >
+                            {{ professional.phone }}
+                        </a>
+                    </div>
+                </div>
             </div>
 
             <div
@@ -431,7 +447,5 @@ const professionalName = (professional) => {
                 Profesionáli budú čoskoro doplnení.
             </div>
         </section>
-
-
     </PublicBranchLayout>
 </template>
