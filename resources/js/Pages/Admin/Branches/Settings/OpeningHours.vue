@@ -195,6 +195,24 @@ const downloadOpeningHoursPdf = () => {
             submit-label="Uložiť otváracie hodiny"
             :loading="openingHoursForm.processing"
         >
+            <template #actions>
+                <Button
+                    type="button"
+                    label="Vytlačiť PDF"
+                    icon="pi pi-print"
+                    outlined
+                    @click="printOpeningHoursPdf"
+                />
+
+                <Button
+                    type="button"
+                    label="Stiahnuť PDF"
+                    icon="pi pi-download"
+                    outlined
+                    @click="downloadOpeningHoursPdf"
+                />
+            </template>
+
             <FormSection
                 v-for="(day, dayIndex) in openingHoursForm.opening_hours"
                 :key="day.day_of_week"
@@ -308,22 +326,5 @@ const downloadOpeningHoursPdf = () => {
                 </div>
             </FormSection>
         </FormPage>
-
-        <div class="flex flex-wrap justify-end gap-3">
-            <Button
-                type="button"
-                label="Vytlačiť PDF"
-                icon="pi pi-print"
-                outlined
-                @click="printOpeningHoursPdf"
-            />
-
-            <Button
-                type="button"
-                label="Stiahnuť PDF"
-                icon="pi pi-download"
-                @click="downloadOpeningHoursPdf"
-            />
-        </div>
     </form>
 </template>

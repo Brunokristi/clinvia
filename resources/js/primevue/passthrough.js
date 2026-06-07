@@ -803,32 +803,102 @@ export const primevuePt = {
             ],
         },
 
+        inputMultiple: {
+            class: [
+                '!w-full',
+                '!min-h-[42px]',
+                '!rounded-md',
+                '!border !border-soft',
+                '!bg-soft',
+                '!px-3 !py-2',
+                '!shadow-none',
+                'flex flex-wrap items-center gap-2',
+                'transition-all duration-200',
+                'hover:!border-accent',
+                'focus-within:!border-accent',
+                'focus-within:!bg-white',
+                'focus-within:!ring-0',
+            ],
+        },
+
+        chipItem: {
+            class: [
+                '!rounded-md',
+                '!bg-accent',
+                '!px-2.5 !py-1',
+                '!text-normal',
+                '!font-medium',
+                '!text-white',
+                'inline-flex items-center gap-2',
+            ],
+        },
+
+        chipIcon: {
+            class: [
+                '!text-white/80',
+                '!text-[11px]',
+                'cursor-pointer',
+                'transition-colors duration-150',
+                'hover:!text-white',
+            ],
+        },
+
+        inputChip: {
+            class: [
+                '!border-0',
+                '!bg-transparent',
+                '!p-0',
+                '!shadow-none',
+                '!outline-none',
+                '!text-normal',
+                '!text-accent',
+                'placeholder:!text-accent/50',
+                'focus:!ring-0',
+            ],
+        },
+
         pcInputText: {
             root: {
                 class: [
-                    '!w-full !rounded-md',
-                    '!bg-soft px-4 py-2 !border-soft !shadow-none',
-                    '!text-normal !text-accent',
+                    '!w-full',
+                    '!rounded-md',
+                    '!border !border-soft',
+                    '!bg-soft',
+                    '!px-4 !py-2',
+                    '!shadow-none',
+                    '!text-normal',
+                    '!text-accent',
+                    'placeholder:!text-accent/50',
+                    'transition-all duration-200',
                     'hover:!border-accent',
-                    'focus:!border-accent focus:!bg-white',
+                    'focus:!border-accent',
+                    'focus:!bg-white',
+                    'focus:!ring-0',
                 ],
             },
         },
 
         dropdown: {
             class: [
-                '!text-accent',
+                '!w-10',
+                '!rounded-r-md',
+                '!border !border-soft',
                 '!bg-soft',
-                '!border-soft',
+                '!text-accent',
+                'transition-all duration-200',
+                'hover:!border-accent',
                 'hover:!bg-accent',
                 'hover:!text-white',
+                'focus:!outline-none',
+                'focus:!ring-2',
+                'focus:!ring-soft',
             ],
         },
 
         dropdownIcon: {
             class: [
-                '!text-accent',
                 '!text-sm',
+                '!text-current',
             ],
         },
 
@@ -857,18 +927,36 @@ export const primevuePt = {
             ],
         },
 
+        optionGroup: {
+            class: [
+                '!rounded-md',
+                '!bg-dark',
+                '!px-3 !py-2',
+                '!text-normal',
+                '!font-semibold',
+                '!text-white',
+            ],
+        },
+
         option: {
             class: [
                 '!rounded-md',
                 '!px-3 !py-2',
-                '!text-accent !text-normal',
+                '!text-normal',
+                '!text-accent',
                 'transition-all duration-150',
                 'hover:!bg-soft',
-                'hover:!text-accent',
+                'hover:!text-dark',
                 'data-[p-focused=true]:!bg-soft',
-                'data-[p-focused=true]:!text-accent',
+                'data-[p-focused=true]:!text-dark',
                 'data-[p-selected=true]:!bg-accent',
                 'data-[p-selected=true]:!text-white',
+            ],
+        },
+
+        optionLabel: {
+            class: [
+                '!font-medium',
             ],
         },
 

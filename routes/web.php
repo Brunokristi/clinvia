@@ -32,6 +32,7 @@ use App\Http\Controllers\BranchServicesPdfController;
 use App\Http\Controllers\Admin\BranchInboxMessageController;
 use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Admin\BranchReplyTemplateController;
+use App\Http\Controllers\Admin\BranchFaqItemController;
 
 Broadcast::routes(['middleware' => ['auth', 'active']]);
 
@@ -263,6 +264,9 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::delete('/contacts/{contact}', [BranchContactController::class, 'destroy'])
                     ->name('contacts.destroy');
+                
+                Route::put('/faq-items', [BranchFaqItemController::class, 'update'])
+                    ->name('faq-items.update');
 
                 Route::get('/opening-hours', [BranchController::class, 'settings'])
                     ->name('opening-hours.page');

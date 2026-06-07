@@ -3,6 +3,7 @@ import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
+import AutoComplete from 'primevue/autocomplete';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
@@ -61,11 +62,13 @@ const branchBookingEnabled = computed(() => {
 watch(
     () => branchBookingEnabled.value,
     (enabled) => {
-        if (! enabled) {
+        if (!enabled) {
             form.is_bookable = false;
         }
     },
-    { immediate: true },
+    {
+        immediate: true,
+    },
 );
 
 const draggedStepIndex = ref(null);
@@ -95,9 +98,197 @@ const iconOptions = [
     { label: 'Nastavenia', value: 'pi pi-cog' },
 ];
 
-const isCreatingNewCategory = computed(() => {
-    return form.category_id === props.newCategoryValue;
+const filteredCategoryOptions = ref([]);
+const categoryQuery = ref('');
+
+const normalizedCategoryOptions = computed(() => {
+    return props.categories
+        .map((category) => {
+            const id = category.id ?? category.value ?? null;
+            const name = category.name ?? category.label ?? '';
+
+            if (!name) {
+                return null;
+            }
+
+            return {
+                id,
+                value: id,
+                name,
+                label: name,
+                is_custom: Boolean(category.is_custom),
+            };
+        })
+        .filter(Boolean);
 });
+
+watch(
+    () => normalizedCategoryOptions.value,
+    (options) => {
+        filteredCategoryOptions.value = options;
+    },
+    {
+        immediate: true,
+    },
+);
+
+const normalizeText = (value) => {
+    return String(value || '').toLowerCase().trim();
+};
+
+const makeCategoryOption = (category) => {
+    const value = String(category || '').trim();
+
+    if (!value) {
+        return null;
+    }
+
+    return {
+        id: null,
+        value,
+        name: value,
+        label: value,
+        is_custom: true,
+    };
+};
+
+const categoryExists = (category) => {
+    const normalizedCategory = normalizeText(category);
+
+    return normalizedCategoryOptions.value.some((item) => {
+        return normalizeText(item.name) === normalizedCategory;
+    });
+};
+
+const setCategory = (category) => {
+    if (!category) {
+        form.category = null;
+        form.category_id = null;
+        form.new_category_name = '';
+
+        return;
+    }
+
+    if (category.is_custom) {
+        const categoryName = String(
+            category.raw_name
+                ?? category.value
+                ?? category.name
+                ?? category.label
+                ?? '',
+        ).trim();
+
+        form.category = makeCategoryOption(categoryName);
+        form.category_id = null;
+        form.new_category_name = categoryName;
+
+        return;
+    }
+
+    form.category = category;
+    form.category_id = category.value ?? category.id;
+    form.new_category_name = '';
+};
+
+const addCustomCategory = (value) => {
+    const categoryName = String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .pop();
+
+    const customCategory = makeCategoryOption(categoryName);
+
+    if (!customCategory) {
+        return;
+    }
+
+    setCategory(customCategory);
+
+    categoryQuery.value = '';
+    filteredCategoryOptions.value = normalizedCategoryOptions.value;
+};
+
+const searchCategories = (event) => {
+    const query = String(event.query || '').trim();
+
+    categoryQuery.value = query;
+
+    if (!query) {
+        filteredCategoryOptions.value = normalizedCategoryOptions.value;
+        return;
+    }
+
+    const searchQuery = query
+        .split(',')
+        .pop()
+        ?.trim() ?? '';
+
+    if (!searchQuery) {
+        filteredCategoryOptions.value = normalizedCategoryOptions.value;
+        return;
+    }
+
+    const filteredOptions = normalizedCategoryOptions.value.filter((category) => {
+        return normalizeText(category.name).includes(normalizeText(searchQuery));
+    });
+
+    const shouldShowCustomOption = !categoryExists(searchQuery);
+
+    filteredCategoryOptions.value = shouldShowCustomOption
+        ? [
+            {
+                id: null,
+                value: searchQuery,
+                name: `Pridať „${searchQuery}”`,
+                label: `Pridať „${searchQuery}”`,
+                raw_name: searchQuery,
+                is_custom: true,
+            },
+            ...filteredOptions,
+        ]
+        : filteredOptions;
+};
+
+const onCategorySelect = (event) => {
+    setCategory(event.value);
+};
+
+const handleCategoryKeydown = (event) => {
+    if (event.key !== ',') {
+        return;
+    }
+
+    event.preventDefault();
+
+    const value = event.target?.value || categoryQuery.value;
+
+    addCustomCategory(value);
+
+    if (event.target) {
+        event.target.value = '';
+    }
+};
+
+watch(
+    () => form.category,
+    (category) => {
+        if (!category) {
+            form.category_id = null;
+            form.new_category_name = '';
+            return;
+        }
+
+        if (category.is_custom) {
+            form.category_id = null;
+            form.new_category_name = category.value ?? category.name ?? category.label ?? '';
+            return;
+        }
+
+        form.category_id = category.value ?? category.id;
+        form.new_category_name = '';
+    },
+);
 
 const fileNameFor = (item) => {
     return item.file?.name || item.existing_name || 'Vybrať súbor';
@@ -203,12 +394,12 @@ const canSubmit = computed(() => {
         return true;
     }
 
-    const hasCategory = form.category_id !== null && form.category_id !== undefined;
-    const hasNewCategoryName = form.category_id !== props.newCategoryValue
-        || Boolean((form.new_category_name ?? '').trim());
+    const hasExistingCategory = Boolean(form.category_id);
+    const hasNewCategoryName = Boolean((form.new_category_name ?? '').trim());
+    const hasCategory = hasExistingCategory || hasNewCategoryName;
     const hasName = Boolean((form.name ?? '').trim());
 
-    return hasCategory && hasNewCategoryName && hasName;
+    return hasCategory && hasName;
 });
 
 const iconLabel = (value) => {
@@ -244,37 +435,36 @@ const iconLabel = (value) => {
 
                 <FormField
                     label="Kategória"
-                    for="category_id"
+                    for="category"
                     required
-                    :error="form.errors.category_id"
-                    :span="isCreatingNewCategory ? '' : 'md:col-span-2'"
+                    :error="form.errors.category_id || form.errors.new_category_name"
+                    span="md:col-span-2"
                 >
-                    <Select
-                        id="category_id"
-                        v-model="form.category_id"
-                        :options="categories"
-                        option-label="name"
-                        option-value="id"
-                        placeholder="Vyberte kategóriu"
+                    <AutoComplete
+                        id="category"
+                        v-model="form.category"
+                        :suggestions="filteredCategoryOptions"
+                        option-label="label"
+                        dropdown
+                        dropdown-mode="blank"
+                        complete-on-focus
+                        :force-selection="false"
+                        placeholder="Vyberte alebo napíšte kategóriu"
                         class="w-full"
-                        :invalid="Boolean(form.errors.category_id)"
-                    />
-                </FormField>
+                        input-class="w-full"
+                        :invalid="Boolean(form.errors.category_id || form.errors.new_category_name)"
+                        @complete="searchCategories"
+                        @option-select="onCategorySelect"
+                        @keydown="handleCategoryKeydown"
+                    >
+                        <template #option="{ option }">
+                            {{ option.label }}
+                        </template>
+                    </AutoComplete>
 
-                <FormField
-                    v-if="isCreatingNewCategory"
-                    label="Názov novej kategórie"
-                    for="new_category_name"
-                    required
-                    :error="form.errors.new_category_name"
-                >
-                    <InputText
-                        id="new_category_name"
-                        v-model="form.new_category_name"
-                        class="w-full"
-                        placeholder="Napr. Diagnostika"
-                        :invalid="Boolean(form.errors.new_category_name)"
-                    />
+                    <p class="mt-2 text-sm text-accent">
+                        Ak kategória nie je v zozname, napíšte ju a pridajte čiarku.
+                    </p>
                 </FormField>
 
                 <FormField

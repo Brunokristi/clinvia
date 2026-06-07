@@ -38,7 +38,6 @@ const deleteUser = (user) => {
                 :href="route('users.create')"
                 class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-                <i class="pi pi-plus text-xs"></i>
                 Pridať používateľa
             </Link>
         </div>

@@ -1,18 +1,17 @@
 <script setup>
 import ConfirmationDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
-import FormPage from '@/Components/Forms/FormPage.vue';
 import FormField from '@/Components/Forms/FormField.vue';
+import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 import PhoneInput from '@/Components/Forms/PhoneInput.vue';
 import TableCard from '@/Components/Tables/TableCard.vue';
 import { useConfirmationDialog } from '@/Composables/useConfirmationDialog';
 import { router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
-
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     branch: {
@@ -118,140 +117,50 @@ const contactTypes = [
 
 const labelOptionsByType = {
     phone: [
-        {
-            label: 'Hlavný telefón',
-            value: 'Hlavný telefón',
-        },
-        {
-            label: 'Recepcia',
-            value: 'Recepcia',
-        },
-        {
-            label: 'Ambulancia',
-            value: 'Ambulancia',
-        },
-        {
-            label: 'Objednávanie',
-            value: 'Objednávanie',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Hlavný telefón', value: 'Hlavný telefón' },
+        { label: 'Recepcia', value: 'Recepcia' },
+        { label: 'Ambulancia', value: 'Ambulancia' },
+        { label: 'Objednávanie', value: 'Objednávanie' },
+        { label: 'Iné', value: 'other' },
     ],
     email: [
-        {
-            label: 'Hlavný email',
-            value: 'Hlavný email',
-        },
-        {
-            label: 'Recepcia',
-            value: 'Recepcia',
-        },
-        {
-            label: 'Objednávky',
-            value: 'Objednávky',
-        },
-        {
-            label: 'Podpora',
-            value: 'Podpora',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Hlavný email', value: 'Hlavný email' },
+        { label: 'Recepcia', value: 'Recepcia' },
+        { label: 'Objednávky', value: 'Objednávky' },
+        { label: 'Podpora', value: 'Podpora' },
+        { label: 'Iné', value: 'other' },
     ],
     website: [
-        {
-            label: 'Web stránka',
-            value: 'Web stránka',
-        },
-        {
-            label: 'Rezervačný systém',
-            value: 'Rezervačný systém',
-        },
-        {
-            label: 'Cenník',
-            value: 'Cenník',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Web stránka', value: 'Web stránka' },
+        { label: 'Rezervačný systém', value: 'Rezervačný systém' },
+        { label: 'Cenník', value: 'Cenník' },
+        { label: 'Iné', value: 'other' },
     ],
     facebook: [
-        {
-            label: 'Facebook stránka',
-            value: 'Facebook stránka',
-        },
-        {
-            label: 'Facebook profil',
-            value: 'Facebook profil',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Facebook stránka', value: 'Facebook stránka' },
+        { label: 'Facebook profil', value: 'Facebook profil' },
+        { label: 'Iné', value: 'other' },
     ],
     instagram: [
-        {
-            label: 'Instagram profil',
-            value: 'Instagram profil',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Instagram profil', value: 'Instagram profil' },
+        { label: 'Iné', value: 'other' },
     ],
     booking_phone: [
-        {
-            label: 'Objednávanie',
-            value: 'Objednávanie',
-        },
-        {
-            label: 'Recepcia',
-            value: 'Recepcia',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Objednávanie', value: 'Objednávanie' },
+        { label: 'Recepcia', value: 'Recepcia' },
+        { label: 'Iné', value: 'other' },
     ],
     billing_email: [
-        {
-            label: 'Fakturácia',
-            value: 'Fakturácia',
-        },
-        {
-            label: 'Účtovníctvo',
-            value: 'Účtovníctvo',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'Fakturácia', value: 'Fakturácia' },
+        { label: 'Účtovníctvo', value: 'Účtovníctvo' },
+        { label: 'Iné', value: 'other' },
     ],
     other: [
-        {
-            label: 'WhatsApp',
-            value: 'WhatsApp',
-        },
-        {
-            label: 'LinkedIn',
-            value: 'LinkedIn',
-        },
-        {
-            label: 'YouTube',
-            value: 'YouTube',
-        },
-        {
-            label: 'TikTok',
-            value: 'TikTok',
-        },
-        {
-            label: 'Iné',
-            value: 'other',
-        },
+        { label: 'WhatsApp', value: 'WhatsApp' },
+        { label: 'LinkedIn', value: 'LinkedIn' },
+        { label: 'YouTube', value: 'YouTube' },
+        { label: 'TikTok', value: 'TikTok' },
+        { label: 'Iné', value: 'other' },
     ],
 };
 
@@ -330,12 +239,24 @@ const contactTypeIcon = (type) => {
 };
 
 const contactRows = computed(() => {
-    return (props.branch.contacts ?? []).map((contact) => ({
-        ...contact,
-        type_label: contactTypeLabel(contact.type),
-        label_text: contact.label || 'Bez názvu',
-        value_text: contact.value || '—',
-    }));
+    return [...(props.branch.contacts ?? [])]
+        .sort((first, second) => {
+            if (first.is_primary && !second.is_primary) {
+                return -1;
+            }
+
+            if (!first.is_primary && second.is_primary) {
+                return 1;
+            }
+
+            return Number(first.sort_order ?? 0) - Number(second.sort_order ?? 0);
+        })
+        .map((contact) => ({
+            ...contact,
+            type_label: contactTypeLabel(contact.type),
+            label_text: contact.label || 'Bez názvu',
+            value_text: contact.value || '—',
+        }));
 });
 
 const contactColumns = [
@@ -370,6 +291,14 @@ const resetContactForm = () => {
     phoneFullValue.value = '';
 };
 
+const textareaRows = (value) => {
+    const text = String(value ?? '');
+    const lineCount = text.split('\n').length;
+    const characterRows = Math.ceil(text.length / 90);
+
+    return Math.max(3, lineCount, characterRows);
+};
+
 watch(() => contactForm.type, (newType) => {
     contactForm.value = '';
     contactForm.custom_label = '';
@@ -398,6 +327,11 @@ const addContact = () => {
             preserveScroll: true,
             onSuccess: () => {
                 resetContactForm();
+
+                router.reload({
+                    only: ['branch'],
+                    preserveScroll: true,
+                });
             },
         });
 };
@@ -411,6 +345,14 @@ const deleteContact = (contact) => {
         onConfirm: () => {
             router.delete(route('branches.contacts.destroy', [props.branch.id, contact.id]), {
                 preserveScroll: true,
+                onSuccess: () => {
+                    closeDialog();
+
+                    router.reload({
+                        only: ['branch'],
+                        preserveScroll: true,
+                    });
+                },
             });
         },
     });
@@ -425,6 +367,12 @@ const makePrimaryContact = (contact) => {
         sort_order: contact.sort_order ?? 0,
     }, {
         preserveScroll: true,
+        onSuccess: () => {
+            router.reload({
+                only: ['branch'],
+                preserveScroll: true,
+            });
+        },
     });
 };
 
@@ -453,6 +401,12 @@ const saveFaqItems = () => {
             .filter((item) => item.question && item.answer),
     }, {
         preserveScroll: true,
+        onSuccess: () => {
+            router.reload({
+                only: ['branch'],
+                preserveScroll: true,
+            });
+        },
     });
 };
 </script>
@@ -560,7 +514,6 @@ const saveFaqItems = () => {
                         <Button
                             type="submit"
                             label="Pridať kontakt"
-                            icon="pi pi-plus"
                             :loading="contactForm.processing"
                             :disabled="!canSubmit || contactForm.processing"
                         />
@@ -574,6 +527,7 @@ const saveFaqItems = () => {
             description="Zoznam kontaktov priradených k tejto pobočke."
             :rows="contactRows"
             :columns="contactColumns"
+            :search-fields="['type', 'type_label', 'label_text', 'value_text']"
             empty-message="Táto pobočka zatiaľ nemá žiadne kontakty."
             show-row-actions
         >
@@ -597,13 +551,6 @@ const saveFaqItems = () => {
                     <span class="text-sm text-accent">
                         {{ row.label_text }}
                     </span>
-
-                    <span
-                        v-if="row.is_primary"
-                        class="rounded-md bg-soft px-2 py-1 text-[11px] font-semibold text-accent"
-                    >
-                        Hlavný
-                    </span>
                 </div>
             </template>
 
@@ -614,24 +561,45 @@ const saveFaqItems = () => {
             </template>
 
             <template #row-actions="{ row }">
-                <Button
-                    v-if="!row.is_primary"
-                    label="Nastaviť ako hlavný"
-                    size="small"
-                    severity="secondary"
-                    outlined
-                    icon="pi pi-star"
-                    class="mr-2"
-                    @click="makePrimaryContact(row)"
-                />
+                <div class="flex items-center justify-end gap-2">
+                    <Button
+                        v-if="row.is_primary"
+                        v-tooltip.top="'Primárny kontakt'"
+                        type="button"
+                        icon="pi pi-star-fill"
+                        size="small"
+                        severity="warn"
+                        text
+                        rounded
+                        disabled
+                        aria-label="Primárny kontakt"
+                    />
 
-                <Button
-                    label="Odstrániť"
-                    size="small"
-                    severity="danger"
-                    outlined
-                    @click="deleteContact(row)"
-                />
+                    <Button
+                        v-else
+                        v-tooltip.top="'Nastaviť ako hlavný kontakt'"
+                        type="button"
+                        icon="pi pi-star"
+                        size="small"
+                        severity="secondary"
+                        text
+                        rounded
+                        aria-label="Nastaviť ako hlavný kontakt"
+                        @click="makePrimaryContact(row)"
+                    />
+
+                    <Button
+                        v-tooltip.top="'Odstrániť kontakt'"
+                        type="button"
+                        icon="pi pi-trash"
+                        size="small"
+                        severity="danger"
+                        text
+                        rounded
+                        aria-label="Odstrániť kontakt"
+                        @click="deleteContact(row)"
+                    />
+                </div>
             </template>
         </TableCard>
 
@@ -671,7 +639,8 @@ const saveFaqItems = () => {
                                         <Textarea
                                             v-model="item.answer"
                                             class="w-full"
-                                            rows="3"
+                                            auto-resize
+                                            :rows="textareaRows(item.answer)"
                                             placeholder="Napr. Zavolajte nám na hlavný kontakt alebo použite kontaktný formulár."
                                         />
                                     </FormField>
@@ -679,13 +648,17 @@ const saveFaqItems = () => {
 
                                 <div class="flex items-start justify-end">
                                     <Button
+                                        v-tooltip.top="'Odstrániť otázku'"
+                                        type="button"
                                         severity="danger"
                                         size="small"
                                         icon="pi pi-trash"
                                         outlined
+                                        rounded
                                         :disabled="faqItems.length === 1"
-                                        @click="removeFaqItem(index)"
                                         class="!border-0"
+                                        aria-label="Odstrániť otázku"
+                                        @click="removeFaqItem(index)"
                                     />
                                 </div>
                             </div>
@@ -696,7 +669,6 @@ const saveFaqItems = () => {
                         <Button
                             type="button"
                             label="Pridať otázku"
-                            icon="pi pi-plus"
                             severity="secondary"
                             outlined
                             @click="addFaqItem"

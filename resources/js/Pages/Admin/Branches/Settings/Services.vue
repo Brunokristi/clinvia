@@ -27,11 +27,54 @@ const createDialogVisible = ref(false);
 const editDialogVisible = ref(false);
 const editingService = ref(null);
 
-const newCategoryValue = '__new_category__';
-
 const { dialog, openDialog, closeDialog, confirmDialog } = useConfirmationDialog();
 
+const makeCategoryOption = (category) => {
+    if (!category) {
+        return null;
+    }
+
+    const id = category.id ?? category.value ?? null;
+    const name = category.name ?? category.label ?? '';
+
+    if (!name) {
+        return null;
+    }
+
+    return {
+        id,
+        value: id,
+        name,
+        label: name,
+        is_custom: Boolean(category.is_custom),
+    };
+};
+
+const categoryPayload = (form) => {
+    const selectedCategory = form.category;
+
+    if (selectedCategory?.is_custom) {
+        const categoryName = String(
+            selectedCategory.value
+                ?? selectedCategory.name
+                ?? selectedCategory.label
+                ?? '',
+        ).trim();
+
+        return {
+            category_id: null,
+            new_category_name: categoryName,
+        };
+    }
+
+    return {
+        category_id: selectedCategory?.value ?? selectedCategory?.id ?? form.category_id ?? null,
+        new_category_name: '',
+    };
+};
+
 const makeEmptyServiceData = () => ({
+    category: null,
     category_id: null,
     new_category_name: '',
     name: '',
@@ -57,13 +100,9 @@ const createForm = useForm(makeEmptyServiceData());
 const editForm = useForm(makeEmptyServiceData());
 
 const categoryOptions = computed(() => {
-    return [
-        ...props.categories,
-        {
-            id: newCategoryValue,
-            name: 'Pridať novú kategóriu',
-        },
-    ];
+    return props.categories
+        .map((category) => makeCategoryOption(category))
+        .filter(Boolean);
 });
 
 const slugify = (value) => {
@@ -217,6 +256,10 @@ const closeCreateDialog = () => {
 const fillEditForm = (service) => {
     editForm.clearErrors();
 
+    editForm.category = makeCategoryOption(service.category ?? {
+        id: service.category_id,
+        name: service.category?.name,
+    });
     editForm.category_id = service.category_id ?? service.category?.id ?? null;
     editForm.new_category_name = '';
     editForm.name = service.name ?? '';
@@ -254,9 +297,10 @@ const closeEditDialog = () => {
 };
 
 const createService = () => {
+    const category = categoryPayload(createForm);
+
     const payload = {
-        category_id: createForm.category_id === newCategoryValue ? null : createForm.category_id,
-        new_category_name: createForm.new_category_name,
+        ...category,
         name: createForm.name,
         slug: generatedCreateSlug.value,
         short_description: createForm.short_description,
@@ -282,13 +326,6 @@ const createService = () => {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {
-                toast.add({
-                    severity: 'success',
-                    summary: 'Úspech',
-                    detail: 'Služba bola vytvorená.',
-                    life: 3000,
-                });
-
                 closeCreateDialog();
             },
             onError: () => {
@@ -307,9 +344,10 @@ const updateService = () => {
         return;
     }
 
+    const category = categoryPayload(editForm);
+
     const payload = {
-        category_id: editForm.category_id === newCategoryValue ? null : editForm.category_id,
-        new_category_name: editForm.new_category_name,
+        ...category,
         name: editForm.name,
         short_description: editForm.short_description,
         description: editForm.description,
@@ -424,7 +462,6 @@ const downloadServicesPdf = () => {
 
                 <Button
                     label="Pridať službu"
-                    icon="pi pi-plus"
                     @click="openCreateDialog"
                 />
             </template>
@@ -471,15 +508,6 @@ const downloadServicesPdf = () => {
                 </span>
             </template>
 
-            <template #cell-availability_label="{ row }">
-                <span
-                    class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
-                    :class="row.is_active ? 'bg-soft text-accent' : 'bg-soft/70 text-accent/60'"
-                >
-                    {{ row.availability_label }}
-                </span>
-            </template>
-
             <template #row-actions="{ row }">
                 <div class="flex justify-end gap-2">
                     <Button
@@ -513,7 +541,6 @@ const downloadServicesPdf = () => {
                 :branch="branch"
                 mode="create"
                 :categories="categoryOptions"
-                :new-category-value="newCategoryValue"
                 submit-label="Vytvoriť službu"
                 :loading="createForm.processing"
                 @submit="createService"
@@ -534,7 +561,6 @@ const downloadServicesPdf = () => {
                 :branch="branch"
                 mode="edit"
                 :categories="categoryOptions"
-                :new-category-value="newCategoryValue"
                 title="Upraviť službu"
                 :description="serviceTitle(editingService)"
                 submit-label="Uložiť zmeny"

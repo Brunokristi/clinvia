@@ -46,7 +46,7 @@ const props = defineProps({
         type: Array,
         default: () => [
             'legal_name',
-            'company_id_number',
+            'id_number',
             'tax_id',
             'address_line_1',
             'city',
@@ -178,14 +178,14 @@ watch(phoneFullValue, (value) => {
 
             <FormField
                 label="IČO"
-                :for="fieldKey('company_id_number')"
-                    :required="isRequired('company_id_number')"
-                    :error="errorMessage('company_id_number', 'IČO')"
+                :for="fieldKey('id_number')"
+                :required="isRequired('id_number')"
+                :error="errorMessage('id_number', 'IČO')"
             >
                 <InputText
-                        :id="fieldKey('company_id_number')"
-                        v-model="form[fieldKey('company_id_number')]"
-                        :class="inputClasses('company_id_number')"
+                    :id="fieldKey('id_number')"
+                    v-model="form[fieldKey('id_number')]"
+                    :class="inputClasses('id_number')"
                 />
             </FormField>
 

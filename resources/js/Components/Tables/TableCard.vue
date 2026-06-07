@@ -150,7 +150,7 @@ const resolveCellValue = (row, column) => {
 
 <template>
     <section>
-        <div class="border-b border-slate-200">
+        <div class="">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                     <h2 class="text-normal font-semibold text-dark">
@@ -195,7 +195,6 @@ const resolveCellValue = (row, column) => {
 
         <div class="overflow-hidden">
             <DataTable
-                lazy
                 paginator
                 class="table-card-datatable"
                 :value="rows"

@@ -52,6 +52,7 @@ const canCreateCompanies = computed(() => {
             :branches="branches"
             title="Pobočky"
             description="Spravujte svoje pobočky a otvárajte ich nastavenia."
+            empty-message="Zatiaľ nemáte priradené žiadne pobočky."
         />
     </AdminLayout>
 </template>

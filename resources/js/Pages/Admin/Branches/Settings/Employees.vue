@@ -30,7 +30,7 @@ const createEmployeeForm = useForm({
     last_name: '',
     title_before: '',
     title_after: '',
-    position: '',
+    position: [],
     bio: '',
     email: '',
     phone: '',
@@ -43,13 +43,58 @@ const editEmployeeForm = useForm({
     last_name: '',
     title_before: '',
     title_after: '',
-    position: '',
+    position: [],
     bio: '',
     email: '',
     phone: '',
     photo: null,
     sort_order: 0,
 });
+
+const makePositionOption = (position) => {
+    const value = String(position || '').trim();
+
+    if (!value) {
+        return null;
+    }
+
+    return {
+        label: value,
+        value,
+    };
+};
+
+const parsePositions = (position) => {
+    if (Array.isArray(position)) {
+        return position
+            .map((item) => {
+                return makePositionOption(item?.value ?? item?.label ?? item);
+            })
+            .filter(Boolean);
+    }
+
+    return String(position || '')
+        .split(',')
+        .map((item) => {
+            return makePositionOption(item);
+        })
+        .filter(Boolean);
+};
+
+const normalizePositions = (positions) => {
+    return positions
+        .map((position) => {
+            return position?.value ?? position?.label ?? position;
+        })
+        .map((position) => {
+            return String(position || '').trim();
+        })
+        .filter(Boolean)
+        .filter((position, index, positions) => {
+            return positions.indexOf(position) === index;
+        })
+        .join(', ');
+};
 
 const employeeDisplayName = (employee) => {
     return [
@@ -86,12 +131,15 @@ const resetCreateEmployeeForm = () => {
     createEmployeeForm.clearErrors();
 
     createEmployeeForm.create_new = true;
+    createEmployeeForm.position = [];
     createEmployeeForm.sort_order = 0;
 };
 
 const resetEditEmployeeForm = () => {
     editEmployeeForm.reset();
     editEmployeeForm.clearErrors();
+
+    editEmployeeForm.position = [];
 };
 
 const openCreateEmployeeDialog = () => {
@@ -109,7 +157,7 @@ const fillEditEmployeeForm = (employee) => {
     editEmployeeForm.last_name = employee.last_name ?? '';
     editEmployeeForm.title_before = employee.title_before ?? '';
     editEmployeeForm.title_after = employee.title_after ?? '';
-    editEmployeeForm.position = employee.position ?? '';
+    editEmployeeForm.position = parsePositions(employee.position);
     editEmployeeForm.bio = employee.bio ?? '';
     editEmployeeForm.email = employee.email ?? '';
     editEmployeeForm.phone = employee.phone ?? '';
@@ -134,21 +182,26 @@ const closeEditEmployeeDialog = () => {
 const addEmployee = () => {
     createEmployeeForm.sort_order = 0;
 
-    createEmployeeForm.post(route('branches.employees.store', props.branch.id), {
-        preserveScroll: true,
-        forceFormData: true,
-        onSuccess: () => {
-            closeCreateEmployeeDialog();
-        },
-        onError: () => {
-            toast.add({
-                severity: 'error',
-                summary: 'Chyba',
-                detail: 'Nepodarilo sa pridať zamestnanca.',
-                life: 3000,
-            });
-        },
-    });
+    createEmployeeForm
+        .transform((data) => ({
+            ...data,
+            position: normalizePositions(data.position),
+        }))
+        .post(route('branches.employees.store', props.branch.id), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => {
+                closeCreateEmployeeDialog();
+            },
+            onError: () => {
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: 'Nepodarilo sa pridať zamestnanca.',
+                    life: 3000,
+                });
+            },
+        });
 };
 
 const saveEmployee = () => {
@@ -159,6 +212,7 @@ const saveEmployee = () => {
     editEmployeeForm
         .transform((data) => ({
             ...data,
+            position: normalizePositions(data.position),
             _method: 'put',
         }))
         .post(route('branches.employees.update', [props.branch.id, editingEmployee.value.id]), {
@@ -244,7 +298,7 @@ const removeEmployee = (employee) => {
 
                             <p
                                 v-if="employee.position"
-                                class="mt-2 text-sm text-white/80"
+                                class="mt-2 text-sm text-accent"
                             >
                                 {{ employee.position }}
                             </p>
@@ -272,7 +326,7 @@ const removeEmployee = (employee) => {
 
             <div
                 v-else
-                class=" p-6 text-center"
+                class="p-6 text-center"
             >
                 <p class="text-sm text-accent">
                     Táto pobočka zatiaľ nemá priradených zamestnancov.

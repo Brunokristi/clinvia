@@ -28,11 +28,14 @@ defineProps({
         </div>
 
         <div
-            v-if="showSubmit"
-            class="flex"
+            v-if="showSubmit || $slots.actions"
+            class="flex flex-wrap items-center gap-3"
             :class="submitAlign === 'end' ? 'justify-end' : 'justify-start'"
         >
+            <slot name="actions" />
+
             <Button
+                v-if="showSubmit"
                 type="submit"
                 :label="submitLabel"
                 :loading="loading"

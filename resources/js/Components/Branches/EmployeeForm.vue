@@ -131,6 +131,7 @@ const positionOptions = [
 ];
 
 const filteredPositionOptions = ref(positionOptions);
+const positionQuery = ref('');
 
 const phoneDialCodes = {
     SK: '+421',
@@ -144,26 +145,154 @@ const normalizeText = (value) => {
     return String(value || '').toLowerCase().trim();
 };
 
+const makePositionOption = (position) => {
+    const value = String(position || '').trim();
+
+    if (!value) {
+        return null;
+    }
+
+    return {
+        label: value,
+        value,
+    };
+};
+
+const allPositionItems = () => {
+    return positionOptions.flatMap((group) => group.items);
+};
+
+const positionExists = (position) => {
+    const normalizedPosition = normalizeText(position);
+
+    return allPositionItems().some((item) => {
+        return normalizeText(item.value) === normalizedPosition;
+    });
+};
+
+const selectedPositionExists = (position) => {
+    const normalizedPosition = normalizeText(position);
+
+    return props.form.position.some((item) => {
+        return normalizeText(item?.value ?? item?.label ?? item) === normalizedPosition;
+    });
+};
+
+const addCustomPositions = (value) => {
+    const positions = String(value || '')
+        .split(',')
+        .map((position) => position.trim())
+        .filter(Boolean);
+
+    if (!positions.length) {
+        return;
+    }
+
+    const newPositions = positions
+        .filter((position) => {
+            return !selectedPositionExists(position);
+        })
+        .map((position) => {
+            return makePositionOption(position);
+        })
+        .filter(Boolean);
+
+    if (!newPositions.length) {
+        return;
+    }
+
+    props.form.position = [
+        ...props.form.position,
+        ...newPositions,
+    ];
+
+    positionQuery.value = '';
+    filteredPositionOptions.value = positionOptions;
+};
+
 const searchPositions = (event) => {
-    const query = normalizeText(event.query);
+    const query = String(event.query || '').trim();
+
+    positionQuery.value = query;
 
     if (!query) {
         filteredPositionOptions.value = positionOptions;
         return;
     }
 
-    filteredPositionOptions.value = positionOptions
+    const searchQuery = query
+        .split(',')
+        .pop()
+        ?.trim() ?? '';
+
+    if (!searchQuery) {
+        filteredPositionOptions.value = positionOptions;
+        return;
+    }
+
+    const filteredGroups = positionOptions
         .map((group) => ({
             ...group,
             items: group.items.filter((item) => {
-                return normalizeText(item.label).includes(query);
+                return normalizeText(item.label).includes(normalizeText(searchQuery));
             }),
         }))
-        .filter((group) => group.items.length > 0);
+        .filter((group) => {
+            return group.items.length > 0;
+        });
+
+    const shouldShowCustomOption = !positionExists(searchQuery)
+        && !selectedPositionExists(searchQuery);
+
+    filteredPositionOptions.value = shouldShowCustomOption
+        ? [
+            {
+                label: 'Vlastná pozícia',
+                items: [
+                    {
+                        label: `Pridať „${searchQuery}”`,
+                        value: searchQuery,
+                        is_custom: true,
+                    },
+                ],
+            },
+            ...filteredGroups,
+        ]
+        : filteredGroups;
 };
 
-const selectPosition = (event) => {
-    props.form.position = event.value?.value ?? event.value?.label ?? event.value ?? '';
+const onPositionSelect = (event) => {
+    const selectedPosition = event.value;
+
+    if (!selectedPosition?.is_custom) {
+        return;
+    }
+
+    props.form.position = props.form.position.map((position) => {
+        const value = position?.value ?? position?.label ?? position;
+
+        if (value === selectedPosition.value || position?.is_custom) {
+            return makePositionOption(selectedPosition.value);
+        }
+
+        return position;
+    });
+};
+
+const handlePositionKeydown = (event) => {
+    if (event.key !== ',') {
+        return;
+    }
+
+    event.preventDefault();
+
+    const value = event.target?.value || positionQuery.value;
+
+    addCustomPositions(value);
+
+    if (event.target) {
+        event.target.value = '';
+    }
 };
 
 const stripDialCode = (phone) => {
@@ -302,18 +431,20 @@ const handleEmployeePhoto = (event) => {
                     option-label="label"
                     option-group-label="label"
                     option-group-children="items"
+                    multiple
                     dropdown
                     dropdown-mode="blank"
                     complete-on-focus
-                    placeholder="Vyberte alebo napíšte pozíciu"
+                    placeholder="Vyberte alebo napíšte pozície"
                     class="w-full"
                     input-class="w-full"
                     :invalid="Boolean(form.errors.position)"
                     @complete="searchPositions"
-                    @option-select="selectPosition"
+                    @option-select="onPositionSelect"
+                    @keydown="handlePositionKeydown"
                 >
                     <template #optiongroup="{ option }">
-                        <div class="bg-dark rounded-md p-2 text-normal font-semibold text-white">
+                        <div class="rounded-md bg-dark p-2 text-normal font-semibold text-white">
                             {{ option.label }}
                         </div>
                     </template>

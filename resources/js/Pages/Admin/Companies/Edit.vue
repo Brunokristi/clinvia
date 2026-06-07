@@ -10,7 +10,7 @@ const props = defineProps({
 
 const form = useForm({
     legal_name: props.company.legal_name ?? '',
-    company_id_number: props.company.company_id_number ?? props.company.id_number ?? '',
+    id_number: props.company.company_id_number ?? props.company.id_number ?? '',
     tax_id: props.company.tax_id ?? '',
     vat_id: props.company.vat_id ?? '',
     address_line_1: props.company.address_line_1 ?? '',
@@ -28,10 +28,22 @@ const form = useForm({
 const toast = useToast();
 
 const submit = () => {
-    form.put(route('companies.update', props.company.id), {
-        preserveScroll: true,
-        onError: () => { toast.add({ severity: 'error', summary: 'Chyba', detail: 'Nepodarilo sa upraviť firmu.', life: 3000 }); },
-    });
+    form
+        .transform((data) => ({
+            ...data,
+            company_id_number: data.id_number,
+        }))
+        .put(route('companies.update', props.company.id), {
+            preserveScroll: true,
+            onError: () => {
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: 'Nepodarilo sa upraviť firmu.',
+                    life: 3000,
+                });
+            },
+        });
 };
 
 </script>

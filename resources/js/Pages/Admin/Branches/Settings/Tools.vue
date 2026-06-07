@@ -345,7 +345,6 @@ const publicUrl = `/p/${props.branch.slug}`;
 
                             <Button
                                 type="button"
-                                icon="pi pi-plus"
                                 label="Pridať e-mail"
                                 outlined
                                 @click="addNotificationEmail"
