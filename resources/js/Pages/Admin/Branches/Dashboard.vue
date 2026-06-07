@@ -57,50 +57,72 @@ const reloadBranchPage = () => {
 
 useBranchBroadcasting(props.branch.id, reloadBranchPage);
 
+const goToAgenda = () => {
+    router.visit(route('branches.booking.agenda.page', {
+        branch: props.branch.id,
+    }));
+};
+
+const goToInbox = () => {
+    router.visit(route('branches.inbox.index', {
+        branch: props.branch.id,
+    }));
+};
+
 const overviewCards = computed(() => [
     {
         title: 'Dnešné rezervácie',
         value: props.todayBookingsCount,
         description: 'Počet rezervácií naplánovaných na dnešný deň.',
+        onClick: goToAgenda,
     },
     {
         title: 'Čakajúce žiadosti',
         value: props.pendingAppointmentRequestsCount,
         description: 'Žiadosti o rezerváciu, ktoré je potrebné spracovať.',
+        onClick: goToAgenda,
     },
     {
         title: 'Nečítané správy',
         value: props.unreadMessagesCount,
         description: 'Počet správ v inboxe, ktoré ešte neboli prečítané.',
+        onClick: goToInbox,
     },
 ]);
-
-const goToCalendar = () => {
-    router.visit(route('branches.booking.agenda.page', {
-        branch: props.branch.id,
-    }));
-};
 </script>
 
 <template>
     <AdminLayout>
         <div class="space-y-6">
             <section class="grid gap-4 sm:grid-cols-1 xl:grid-cols-3">
-                <article
+                <button
                     v-for="card in overviewCards"
                     :key="card.title"
-                    class="rounded-md bg-soft text-accent p-5"
+                    type="button"
+                    class="rounded-md bg-soft text-left text-accent p-5"
+                    @click="card.onClick"
                 >
-                    <p class="text-normal font-semibold text-accent">{{ card.title }}</p>
-                    <p class="mt-4 text-heading text-dark font-semibold">{{ card.value }}</p>
-                    <p class="mt-3 text-normal leading-6 text-muted">{{ card.description }}</p>
-                </article>
+                    <p class="text-normal font-semibold text-accent">
+                        {{ card.title }}
+                    </p>
+
+                    <p class="mt-4 text-heading text-dark font-semibold">
+                        {{ card.value }}
+                    </p>
+
+                    <p class="mt-3 text-normal leading-6 text-muted">
+                        {{ card.description }}
+                    </p>
+                </button>
             </section>
 
             <section>
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h2 class="text-normal font-semibold text-dark">Dnešná agenda</h2>
+                        <h2 class="text-normal font-semibold text-dark">
+                            Dnešná agenda
+                        </h2>
+
                         <p class="mt-1 text-normal text-accent">
                             Prehľad dnešných rezervácií v tejto pobočke.
                         </p>
@@ -109,7 +131,7 @@ const goToCalendar = () => {
                     <Button
                         type="button"
                         label="Otvoriť kalendár"
-                        @click="goToCalendar"
+                        @click="goToAgenda"
                     />
                 </div>
 
@@ -149,6 +171,7 @@ const goToCalendar = () => {
                     <p class="text-normal font-semibold text-dark">
                         Dnes nie sú naplánované žiadne rezervácie.
                     </p>
+
                     <p class="mt-2 text-normal text-accent">
                         Agenda sa tu zobrazí automaticky, keď bude na dnešný deň vytvorená rezervácia.
                     </p>

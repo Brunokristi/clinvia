@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Validation\ValidationException;
 
 class BranchController extends Controller
 {
@@ -122,6 +123,18 @@ class BranchController extends Controller
         }
 
         $data['slug'] = Str::slug($data['name']);
+
+        $branchExists = Branch::query()
+            ->where('company_id', $data['company_id'])
+            ->where('slug', $data['slug'])
+            ->exists();
+
+        if ($branchExists) {
+            throw ValidationException::withMessages([
+                'name' => 'Pobočka s týmto názvom už v tejto firme existuje.',
+            ]);
+        }
+
         $data['is_active'] = true;
         $data['sort_order'] = 0;
 
@@ -134,17 +147,28 @@ class BranchController extends Controller
 
         $branch = Branch::create($data);
 
+        $invitationSent = false;
+
         if (! empty($data['invite_email'])) {
-            app(UserInvitationService::class)->sendBranchInvitation(
-                $branch,
-                $data['invite_email'],
-                $request->user(),
-            );
+            try {
+                app(UserInvitationService::class)->sendBranchInvitation(
+                    $branch,
+                    $data['invite_email'],
+                    $request->user(),
+                );
+
+                $invitationSent = true;
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
         }
 
         return redirect()
-            ->route('branches.edit', $branch)
-            ->with('success', 'Pobočka bola vytvorená' . (! empty($data['invite_email']) ? ' a pozvánka bola odoslaná.' : '.'));
+            ->route('branches.booking.dashboard.page', ['branch' => $branch->id])
+            ->with(
+                'success',
+                'Pobočka bola vytvorená' . ($invitationSent ? ' a pozvánka bola odoslaná.' : '.')
+            );
     }
 
     public function edit(Branch $branch): Response

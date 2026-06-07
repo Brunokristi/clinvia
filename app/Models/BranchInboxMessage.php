@@ -56,4 +56,9 @@ class BranchInboxMessage extends Model
             ]);
         }
     }
+
+    public function replies()
+    {
+        return $this->hasMany(BranchInboxMessageReply::class);
+    }
 }

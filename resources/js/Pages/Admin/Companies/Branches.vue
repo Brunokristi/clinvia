@@ -55,7 +55,6 @@ const deleteBranch = (branch) => {
                     <Button
                         type="button"
                         label="Pridať pobočku"
-                        icon="pi pi-plus"
                     />
                 </Link>
             </template>

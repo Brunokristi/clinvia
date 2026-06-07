@@ -67,22 +67,21 @@ export const primevuePt = {
         item: {
             class: [
                 'flex items-center',
+                
             ],
         },
 
         itemLink: {
             class: [
-                '!rounded-md !px-2 !py-1',
                 '!text-normal !font-medium',
-                '!text-accent',
-                'transition-all duration-200',
-                'hover:!bg-soft hover:!text-accent',
+                '!text-white',
+                
             ],
         },
 
         itemIcon: {
             class: [
-                '!text-accent',
+                '!text-white',
             ],
         },
 
@@ -90,6 +89,7 @@ export const primevuePt = {
             class: [
                 '!text-normal',
                 '!text-accent',
+                'hover:!text-dark',
             ],
         },
 
@@ -541,10 +541,11 @@ export const primevuePt = {
         root: {
             class: [
                 '!w-full !rounded-md',
-                '!bg-soft px-4 py-2 !border-soft shadow-0',
+                '!bg-soft px-4 py-2 !border-soft !shadow-none',
                 '!text-normal !text-accent',
                 'hover:!border-accent',
                 'focus:!border-accent focus:!bg-white',
+                'focus:!ring-0',
             ],
         },
     },
@@ -806,7 +807,7 @@ export const primevuePt = {
             root: {
                 class: [
                     '!w-full !rounded-md',
-                    '!bg-soft px-4 py-2 !border-soft shadow-0',
+                    '!bg-soft px-4 py-2 !border-soft !shadow-none',
                     '!text-normal !text-accent',
                     'hover:!border-accent',
                     'focus:!border-accent focus:!bg-white',
@@ -946,7 +947,7 @@ export const primevuePt = {
         root: {
             class: [
                 '!w-full !rounded-md',
-                '!bg-soft px-4 py-2 !border-soft shadow-0',
+                '!bg-soft px-4 py-2 !border-soft shadow-none',
                 '!text-normal !text-accent',
                 'hover:!border-accent',
                 'focus:!border-accent focus:!bg-white',
@@ -975,7 +976,7 @@ export const primevuePt = {
             root: {
                 class: [
                     '!w-full !rounded-md',
-                    '!bg-soft px-4 py-2 !border-soft shadow-0',
+                    '!bg-soft px-4 py-2 !border-soft !shadow-none',
                     '!text-normal !text-accent',
                     'placeholder:!text-accent/50',
                     'hover:!border-accent',
@@ -1466,7 +1467,7 @@ export const primevuePt = {
             root: {
                 class: [
                     '!w-full !rounded-md',
-                    '!bg-white px-3 py-1.5 !border-soft shadow-0',
+                    '!bg-white px-3 py-1.5 !border-soft shadow-none',
                     '!text-sm !text-accent',
                     'hover:!border-accent',
                     'focus:!border-accent',

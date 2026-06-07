@@ -6,7 +6,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class BranchContactReplyNotification extends Notification
+class ContactReplyNotification extends Notification
 {
     use Queueable;
 
@@ -14,6 +14,7 @@ class BranchContactReplyNotification extends Notification
         protected string $subject,
         protected string $bodyText,
         protected ?string $branchName = null,
+        protected ?string $originalMessage = null,
     ) {
     }
 
@@ -30,6 +31,7 @@ class BranchContactReplyNotification extends Notification
                 'subject' => $this->subject,
                 'bodyText' => $this->bodyText,
                 'branchName' => $this->branchName,
+                'originalMessage' => $this->originalMessage,
             ]);
     }
 }

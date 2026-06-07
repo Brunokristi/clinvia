@@ -4,14 +4,14 @@ import { Head } from '@inertiajs/vue3';
 </script>
 
 <template>
-    <Head title="Dashboard" />
+    <Head title="Prehľad" />
 
     <AuthenticatedLayout>
         <template #header>
             <h2
                 class="text-xl font-semibold leading-tight text-gray-800"
             >
-                Dashboard
+                Prehľad
             </h2>
         </template>
 

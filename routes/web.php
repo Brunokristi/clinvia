@@ -31,6 +31,7 @@ use App\Http\Controllers\BranchOpeningHoursPdfController;
 use App\Http\Controllers\BranchServicesPdfController;
 use App\Http\Controllers\Admin\BranchInboxMessageController;
 use Illuminate\Support\Facades\Broadcast;
+use App\Http\Controllers\Admin\BranchReplyTemplateController;
 
 Broadcast::routes(['middleware' => ['auth', 'active']]);
 
@@ -328,6 +329,15 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::put('/public-site', [BranchPublicSiteController::class, 'update'])
                     ->name('public-site.update');
+
+                Route::post('/reply-templates', [BranchReplyTemplateController::class, 'store'])
+                    ->name('reply-templates.store');
+
+                Route::put('reply-templates/{replyTemplate}', [BranchReplyTemplateController::class, 'update'])
+                    ->name('reply-templates.update');
+
+                Route::delete('reply-templates/{replyTemplate}', [BranchReplyTemplateController::class, 'destroy'])
+                    ->name('reply-templates.destroy');
                 
             });
     });

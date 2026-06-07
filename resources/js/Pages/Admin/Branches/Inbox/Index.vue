@@ -196,7 +196,7 @@ const deleteMessage = (message) => {
 
 <template>
     <AdminLayout>
-        <Head :title="`Inbox | ${branch.name}`" />
+        <Head :title="`Správy | ${branch.name}`" />
 
         <div class="space-y-6">
             <TableCard

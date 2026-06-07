@@ -7,6 +7,7 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
+import ReplyTemplateDialog from '@/Components/Branches/ReplyTemplateDialog.vue';
 
 const props = defineProps({
     branch: {
@@ -25,6 +26,7 @@ const props = defineProps({
 
 const selectedTemplateId = ref(null);
 const reply = ref(false);
+const templateDialogVisible = ref(false);
 
 const replyForm = useForm({
     subject: `Re: ${props.message.title || 'Správa'}`,
@@ -41,6 +43,10 @@ const periodLabels = {
     popoludni: 'Popoludní',
     vecer: 'Večer',
 };
+
+const replies = computed(() => {
+    return props.message.replies ?? [];
+});
 
 const isContactForm = computed(() => {
     return props.message.type === 'contact_form';
@@ -65,6 +71,14 @@ const booking = computed(() => {
 const appointmentRequest = computed(() => {
     return props.message.appointment_request ?? props.message.appointmentRequest ?? null;
 });
+
+const openTemplateDialog = () => {
+    templateDialogVisible.value = true;
+};
+
+const clearSelectedTemplate = () => {
+    selectedTemplateId.value = null;
+};
 
 const typeLabel = (type) => {
     return {
@@ -259,6 +273,7 @@ const sendReply = () => {
         preserveScroll: true,
         onSuccess: () => {
             selectedTemplateId.value = null;
+            reply.value = false;
             replyForm.reset('body');
         },
     });
@@ -289,27 +304,25 @@ const deleteMessage = () => {
                         {{ typeLabel(message.type) }} · {{ statusLabel(message) }}
                     </p>
                 </div>
-                
-                <div class="flex gap-2">
-                <Button
-                    label="Späť na správy"
-                    severity="secondary"
-                    outlined
-                    @click="goBack"
-                />
 
-                <Button
-                    label="Zmazať"
-                    severity="danger"
-                    outlined
-                    @click="deleteMessage"
-                />
+                <div class="flex gap-2">
+                    <Button
+                        label="Späť na správy"
+                        severity="secondary"
+                        outlined
+                        @click="goBack"
+                    />
+
+                    <Button
+                        label="Zmazať"
+                        severity="danger"
+                        outlined
+                        @click="deleteMessage"
+                    />
                 </div>
             </div>
 
-            <section
-                v-if="isBooking"
-            >
+            <section v-if="isBooking">
                 <div class="flex flex-wrap items-start justify-end gap-4">
                     <Button
                         label="Otvoriť kalendár"
@@ -387,10 +400,7 @@ const deleteMessage = () => {
                 </article>
             </section>
 
-            <section
-                v-if="isAppointmentRequest"
-                class=""
-            >
+            <section v-if="isAppointmentRequest">
                 <div class="flex flex-wrap items-start justify-end gap-4">
                     <Button
                         label="Otvoriť kalendár"
@@ -468,10 +478,7 @@ const deleteMessage = () => {
                 </article>
             </section>
 
-            <section
-                v-if="!isBooking && !isAppointmentRequest"
-                class=""
-            >
+            <section v-if="!isBooking && !isAppointmentRequest">
                 <div class="flex items-start gap-1">
                     <h1 class="text-normal font-semibold text-dark">
                         {{ patientName }}
@@ -480,28 +487,85 @@ const deleteMessage = () => {
                     <span class="text-accent text-normal">
                         •
                     </span>
-                    
+
                     <a
+                        v-if="patientEmail"
                         class="text-normal text-accent"
                         :href="`mailto:${patientEmail}`"
                     >
                         {{ patientEmail }}
                     </a>
+
+                    <span
+                        v-else
+                        class="text-normal text-accent"
+                    >
+                        Bez e-mailu
+                    </span>
                 </div>
 
-                <div class="py-4 pb-8">
-                    <div class="border-l border-accent pl-5">
+                <div class="mt-6 space-y-4">
+                    <article class="rounded-md border border-soft bg-soft p-4">
+                        <div class="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-semibold text-dark">
+                                    {{ patientName }}
+                                </p>
+
+                                <p class="text-xs text-accent">
+                                    {{ createdLabel(message) }}
+                                </p>
+                            </div>
+
+                            <span class="rounded-md bg-white px-2 py-1 text-xs font-semibold text-accent">
+                                Pôvodná správa
+                            </span>
+                        </div>
+
                         <p class="whitespace-pre-line text-normal leading-7 text-accent">
                             {{ message.body }}
                         </p>
-                    </div>
+                    </article>
+
+                    <article
+                        v-for="replyItem in replies"
+                        :key="replyItem.id"
+                        class="rounded-md border border-soft bg-white p-4"
+                    >
+                        <div class="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-semibold text-dark">
+                                    {{ branch.name }}
+                                </p>
+
+                                <p class="text-xs text-accent">
+                                    {{ formatDateTime(replyItem.sent_at ?? replyItem.created_at) }}
+                                </p>
+                            </div>
+
+                            <span class="rounded-md bg-soft px-2 py-1 text-xs font-semibold text-accent">
+                                Odoslaná odpoveď
+                            </span>
+                        </div>
+
+                        <p class="mb-2 text-sm font-semibold text-dark">
+                            {{ replyItem.subject }}
+                        </p>
+
+                        <p class="whitespace-pre-line text-normal leading-7 text-accent">
+                            {{ replyItem.body }}
+                        </p>
+                    </article>
                 </div>
                 
-                <Button
-                    v-if="isContactForm"
-                    label="Odpovedať"
-                    @click="reply = true"
-                />
+                <div class="flex justify-end">
+                    <Button
+                        v-if="isContactForm && !reply"
+                        class="mt-6"
+                        label="Odpovedať"
+                        @click="reply = true"
+                    />
+                </div>
             </section>
 
             <section
@@ -532,7 +596,20 @@ const deleteMessage = () => {
                         placeholder="Použiť predvolenú odpoveď"
                         show-clear
                         class="w-full"
-                    />
+                    >
+                        <template #footer>
+                            <div class="border-t border-soft p-2">
+                                <Button
+                                    type="button"
+                                    label="Spravovať šablóny odpovedí"
+                                    text
+                                    class="w-full justify-start"
+                                    @mousedown.prevent.stop
+                                    @click.prevent.stop="openTemplateDialog"
+                                />
+                            </div>
+                        </template>
+                    </Select>
 
                     <div>
                         <label
@@ -594,7 +671,6 @@ const deleteMessage = () => {
                         <Button
                             type="submit"
                             label="Odoslať odpoveď"
-                            icon="pi pi-send"
                             :loading="replyForm.processing"
                             :disabled="replyForm.processing || !canReply"
                         />
@@ -602,6 +678,15 @@ const deleteMessage = () => {
                 </form>
             </section>
         </div>
+
+        <ReplyTemplateDialog
+            v-model:visible="templateDialogVisible"
+            label="Šablóny odpovedí"
+            :branch="branch"
+            :templates="replyTemplates"
+            :selected-template-id="selectedTemplateId"
+            @deleted-selected-template="clearSelectedTemplate"
+        />
     </AdminLayout>
 </template>
 

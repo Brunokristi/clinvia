@@ -5,13 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
+use App\Notifications\ContactReplyNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Notifications\BranchAdminNotification;
-use App\Notifications\BranchContactReplyNotification;
-use Illuminate\Support\Facades\Notification;
 
 class BranchInboxMessageController extends Controller
 {
@@ -75,6 +74,9 @@ class BranchInboxMessageController extends Controller
                 'booking.service',
                 'booking.services',
                 'appointmentRequest.services',
+                'replies' => function ($query) {
+                    $query->oldest();
+                },
             ]),
             'replyTemplates' => $branch->replyTemplates()
                 ->orderBy('name')
@@ -141,11 +143,19 @@ class BranchInboxMessageController extends Controller
         }
 
         Notification::route('mail', $message->sender_email)
-            ->notify(new BranchContactReplyNotification(
+            ->notify(new ContactReplyNotification(
                 subject: $validated['subject'],
                 bodyText: $validated['body'],
                 branchName: $branch->name,
+                originalMessage: $message->body,
             ));
+
+        $message->replies()->create([
+            'subject' => $validated['subject'],
+            'body' => $validated['body'],
+            'recipient_email' => $message->sender_email,
+            'sent_at' => now(),
+        ]);
 
         $message->update([
             'read_at' => now(),

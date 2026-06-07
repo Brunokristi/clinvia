@@ -31,10 +31,16 @@ const form = useForm({
 const toast = useToast();
 
 const submit = () => {
+    console.log('Submitting', form.data());
+
     form.post(route('branches.store'), {
         preserveScroll: true,
-        // success handled via server flash message (rendered by layout)
-        onError: () => {
+        onSuccess: () => {
+            console.log('Branch created successfully');
+        },
+        onError: (errors) => {
+            console.log('Validation errors', errors);
+
             toast.add({
                 severity: 'error',
                 summary: 'Chyba',

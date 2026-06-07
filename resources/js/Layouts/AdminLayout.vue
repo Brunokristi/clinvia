@@ -32,7 +32,7 @@ const breadcrumbs = computed(() => {
         items.push(breadcrumbItem('Hlavné', route('dashboard')));
 
         if (route().current('dashboard')) {
-            items.push(breadcrumbItem('Dashboard'));
+            items.push(breadcrumbItem('Prehľad'));
         }
 
         if (route().current('companies.index')) {
@@ -40,7 +40,7 @@ const breadcrumbs = computed(() => {
         }
 
         if (route().current('companies.onboard')) {
-            items.push(breadcrumbItem('Dashboard', route('dashboard')));
+            items.push(breadcrumbItem('Prehľad', route('dashboard')));
             items.push(breadcrumbItem('Onboarding'));
         }
 
@@ -76,7 +76,7 @@ const breadcrumbs = computed(() => {
         items.push(breadcrumbItem(branch.value.name, route('branches.edit', branch.value)));
 
         if (route().current('branches.booking.dashboard.page')) {
-            items.push(breadcrumbItem('Dashboard'));
+            items.push(breadcrumbItem('Prehľad'));
         }
 
         if (route().current('branches.booking.agenda.page') || route().current('branches.booking.inbox.page')) {
@@ -91,7 +91,7 @@ const breadcrumbs = computed(() => {
             route().current('branches.inbox.index')
             || route().current('branches.inbox.show')
         ) {
-            items.push(breadcrumbItem('Inbox', route('branches.inbox.index', branch.value)));
+            items.push(breadcrumbItem('Správy', route('branches.inbox.index', branch.value)));
 
             if (route().current('branches.inbox.show')) {
                 items.push(breadcrumbItem('Detail správy'));
@@ -138,7 +138,7 @@ const homeBreadcrumb = computed(() => ({
 }));
 
 const pageTitle = computed(() => {
-    return breadcrumbs.value[breadcrumbs.value.length - 1]?.label ?? 'Dashboard';
+    return breadcrumbs.value[breadcrumbs.value.length - 1]?.label ?? 'Prehľad';
 });
 
 watch(
@@ -170,10 +170,9 @@ watch(
         <Toast />
 
         <main class="min-w-0 flex-1 overflow-y-auto">
-            <header class="bg-white px-8 py-2 sticky top-0 z-10 border-b border-accent">
+            <header class="bg-soft px-8 py-4 sticky top-0 z-10">
                 <Breadcrumb
                     v-if="breadcrumbs.length"
-                    :home="homeBreadcrumb"
                     :model="breadcrumbs"
                 />
             </header>
