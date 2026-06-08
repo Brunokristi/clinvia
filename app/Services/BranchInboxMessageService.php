@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\BranchInboxUpdated;
 use App\Models\AppointmentRequest;
 use App\Models\Booking;
 use App\Models\Branch;
@@ -28,6 +29,8 @@ class BranchInboxMessageService
             'sender_phone' => $senderPhone,
             'read_at' => null,
         ]);
+
+        $this->broadcastInboxUpdated($message, 'created');
 
         $this->notifyBranchRecipients(
             branch: $branch,
@@ -80,6 +83,8 @@ class BranchInboxMessageService
             'read_at' => null,
         ]);
 
+        $this->broadcastInboxUpdated($message, 'created');
+
         $this->notifyBranchRecipients(
             branch: $booking->branch,
             settingKey: 'notify_new_booking',
@@ -129,6 +134,8 @@ class BranchInboxMessageService
             'read_at' => null,
         ]);
 
+        $this->broadcastInboxUpdated($message, 'created');
+
         $this->notifyBranchRecipients(
             branch: $appointmentRequest->branch,
             settingKey: 'notify_new_appointment_request',
@@ -145,6 +152,15 @@ class BranchInboxMessageService
         );
 
         return $message;
+    }
+
+    private function broadcastInboxUpdated(BranchInboxMessage $message, string $action): void
+    {
+        BranchInboxUpdated::dispatch(
+            branchId: $message->branch_id,
+            messageId: $message->id,
+            action: $action,
+        );
     }
 
     private function notifyBranchRecipients(

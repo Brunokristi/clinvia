@@ -5,6 +5,7 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import { computed } from 'vue';
 import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
+import { useBranchInboxBroadcasting } from '@/Composables/useBranchInboxBroadcasting';
 
 const props = defineProps({
     branch: {
@@ -45,17 +46,42 @@ const props = defineProps({
     },
 });
 
-const branchTitle = computed(() => props.branch.name || 'Pobočka');
-const companyName = computed(() => props.branch.company?.legal_name || 'Spoločnosť');
+const reloadCalendarData = (event = {}) => {
+    if (event.action === 'appointment_request_created') {
+        router.reload({
+            only: [
+                'pendingAppointmentRequestsCount',
+            ],
+            preserveState: true,
+            preserveScroll: true,
+        });
 
-const reloadBranchPage = () => {
+        return;
+    }
+
     router.reload({
+        only: [
+            'todayBookingsCount',
+            'pendingAppointmentRequestsCount',
+            'todayAgenda',
+        ],
         preserveState: true,
         preserveScroll: true,
     });
 };
 
-useBranchBroadcasting(props.branch.id, reloadBranchPage);
+const reloadInboxData = () => {
+    router.reload({
+        only: [
+            'unreadMessagesCount',
+        ],
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+useBranchBroadcasting(props.branch.id, reloadCalendarData);
+useBranchInboxBroadcasting(props.branch.id, reloadInboxData);
 
 const goToAgenda = () => {
     router.visit(route('branches.booking.agenda.page', {

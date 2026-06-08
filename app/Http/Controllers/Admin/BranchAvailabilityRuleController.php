@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Events\BranchCalendarUpdated;
 
 class BranchAvailabilityRuleController extends Controller
 {
@@ -100,6 +101,11 @@ class BranchAvailabilityRuleController extends Controller
 
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'availability_rules_updated',
+        );
+
         return back()->with('success', 'Pravidlá dostupnosti boli uložené.');
     }
 
@@ -118,6 +124,11 @@ class BranchAvailabilityRuleController extends Controller
         $rule->delete();
 
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'availability_rule_deleted',
+        );
 
         return back()->with('success', 'Pravidlo bolo vymazané.');
     }
@@ -160,6 +171,11 @@ class BranchAvailabilityRuleController extends Controller
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'availability_rule_occurrence_deleted',
+        );
+
         return back()->with('success', 'Tento deň bol vymazaný z opakovania.');
     }
 
@@ -191,6 +207,11 @@ class BranchAvailabilityRuleController extends Controller
 
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'availability_rule_future_deleted',
+        );
 
         return back()->with('success', 'Opakovanie bolo ukončené.');
     }

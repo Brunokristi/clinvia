@@ -87,6 +87,17 @@ const settingsTabs = computed(() => [
             companies: props.companies,
         },
     },
+        {
+        value: 'publicSite',
+        label: 'Nástroje',
+        description: 'Nastavte nástroje tejto pobočky.',
+        stats: props.branch.public_site || props.publicSite ? 'Aktívna' : 'Nie je aktívna',
+        component: PublicSite,
+        componentProps: {
+            branch: props.branch,
+            templates: props.templates,
+        },
+    },
     {
         value: 'contacts',
         label: 'Kontakty',
@@ -140,17 +151,6 @@ const settingsTabs = computed(() => [
         componentProps: {
             branch: props.branch,
             availableUsers: props.availableUsers,
-        },
-    },
-    {
-        value: 'publicSite',
-        label: 'Nástroje',
-        description: 'Nastavte nástroje tejto pobočky.',
-        stats: props.branch.public_site || props.publicSite ? 'Aktívna' : 'Nie je aktívna',
-        component: PublicSite,
-        componentProps: {
-            branch: props.branch,
-            templates: props.templates,
         },
     },
 ]);

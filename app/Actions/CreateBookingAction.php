@@ -2,7 +2,7 @@
 
 namespace App\Actions;
 
-use App\Events\BranchBookingCreated;
+use App\Events\BranchCalendarUpdated;
 use App\Models\Booking;
 use App\Models\BookingSlot;
 use App\Models\Branch;
@@ -66,7 +66,11 @@ class CreateBookingAction
             'bookingSlot',
         ]);
 
-        event(new BranchBookingCreated($booking));
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_created',
+            bookingId: $booking->id,
+        );
 
         if ($booking->patient_email && ($data['notify_patient'] ?? true)) {
             Notification::route('mail', $booking->patient_email)

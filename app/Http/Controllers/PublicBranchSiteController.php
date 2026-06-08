@@ -9,7 +9,7 @@ use App\Models\BookingAvailabilityRule;
 use App\Models\BookingSlot;
 use App\Models\Branch;
 use App\Models\Service;
-use App\Events\BranchAppointmentRequestCreated;
+use App\Events\BranchCalendarUpdated;
 use App\Notifications\BookingCreatedNotification;
 use App\Notifications\RequestCreatedNotification;
 use Carbon\Carbon;
@@ -951,7 +951,11 @@ class PublicBranchSiteController extends Controller
                 ->notify(new RequestCreatedNotification($appointmentRequest));
         }
 
-        event(new BranchAppointmentRequestCreated($appointmentRequest));
+        BranchCalendarUpdated::dispatch(
+            branchId: $appointmentRequest->branch_id,
+            action: 'appointment_request_created',
+            appointmentRequestId: $appointmentRequest->id,
+        );
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])

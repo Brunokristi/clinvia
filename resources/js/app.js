@@ -13,14 +13,30 @@ import Tooltip from 'primevue/tooltip';
 import { primevuePt } from './primevue/passthrough';
 import { sk } from './primevue/locales/sk';
 
+import Echo from 'laravel-echo';
+import Pusher from 'pusher-js';
 
+window.Pusher = Pusher;
+
+window.Echo = new Echo({
+    broadcaster: 'reverb',
+    key: import.meta.env.VITE_REVERB_APP_KEY,
+    wsHost: import.meta.env.VITE_REVERB_HOST ?? window.location.hostname,
+    wsPort: import.meta.env.VITE_REVERB_PORT ?? 8080,
+    wssPort: import.meta.env.VITE_REVERB_PORT ?? 8080,
+    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'http') === 'https',
+    enabledTransports: [
+        'ws',
+        'wss',
+    ],
+});
 
 createInertiaApp({
     title: (title) => title ? `${title} - Clinvia` : 'Clinvia',
     resolve: async (name) => {
         const page = await resolvePageComponent(
             `./Pages/${name}.vue`,
-            import.meta.glob('./Pages/**/*.vue')
+            import.meta.glob('./Pages/**/*.vue'),
         );
 
         // If a page doesn't export a title, generate a readable default from the component name

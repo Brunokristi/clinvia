@@ -122,14 +122,18 @@ const bookingCalendar = ref(null);
 const requestSidebar = ref(null);
 const requestSidebarHeight = ref(null);
 
-const reloadBranchPage = () => {
+const reloadPendingRequests = () => {
     router.reload({
+        only: [
+            'pendingAppointmentRequests',
+            'unreadMessagesCount',
+        ],
         preserveState: true,
         preserveScroll: true,
     });
 };
 
-useBranchBroadcasting(props.branch.id, reloadBranchPage);
+useBranchBroadcasting(props.branch.id, reloadPendingRequests);
 
 const requestToCancel = ref(null);
 

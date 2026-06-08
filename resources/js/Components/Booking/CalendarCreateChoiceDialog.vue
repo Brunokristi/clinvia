@@ -35,15 +35,15 @@ const form = reactive({
 
 const createTypeOptions = [
     {
-        label: 'Rezervácia',
+        label: 'Nová rezervácia',
         value: 'booking',
     },
     {
-        label: 'Pravidlo rezervácií',
+        label: 'Pravidlo online rezercácií',
         value: 'rule',
     },
     {
-        label: 'Skupinová rezervácia',
+        label: 'Skupinový termín',
         value: 'group_event',
     },
 ];
@@ -222,7 +222,7 @@ const submit = () => {
         ends-at-id="create_choice_ends_at"
         starts-at-placeholder="Vyberte čas"
         ends-at-placeholder="Vyberte čas"
-        save-label="Uložiť"
+        save-label="Pokračovať"
         :save-disabled="!canContinue"
         :show-delete="false"
         @update:visible="emit('update:visible', $event)"

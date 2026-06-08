@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Events\BranchInboxUpdated;
 
 class BranchInboxMessageController extends Controller
 {
@@ -92,6 +93,12 @@ class BranchInboxMessageController extends Controller
             $message->update([
                 'read_at' => now(),
             ]);
+
+            BranchInboxUpdated::dispatch(
+                branchId: $branch->id,
+                messageId: $message->id,
+                action: 'read',
+            );
         }
 
         return back()->with('success', 'Správa bola označená ako prečítaná.');
@@ -105,6 +112,12 @@ class BranchInboxMessageController extends Controller
             $message->update([
                 'read_at' => null,
             ]);
+
+            BranchInboxUpdated::dispatch(
+                branchId: $branch->id,
+                messageId: $message->id,
+                action: 'unread',
+            );
         }
 
         return back()->with('success', 'Správa bola označená ako neprečítaná.');
@@ -114,7 +127,15 @@ class BranchInboxMessageController extends Controller
     {
         abort_unless($message->branch_id === $branch->id, 404);
 
+        $messageId = $message->id;
+
         $message->delete();
+
+        BranchInboxUpdated::dispatch(
+            branchId: $branch->id,
+            messageId: $messageId,
+            action: 'deleted',
+        );
 
         return redirect()
             ->route('branches.inbox.index', [
@@ -160,6 +181,12 @@ class BranchInboxMessageController extends Controller
         $message->update([
             'read_at' => now(),
         ]);
+
+        BranchInboxUpdated::dispatch(
+            branchId: $branch->id,
+            messageId: $message->id,
+            action: 'replied',
+        );
 
         return back()->with('success', 'Odpoveď bola odoslaná.');
     }

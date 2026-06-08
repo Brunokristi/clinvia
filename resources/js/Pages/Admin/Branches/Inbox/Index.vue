@@ -2,7 +2,7 @@
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import TableCard from '@/Components/Tables/TableCard.vue';
 import { Head, router } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 
 import Button from 'primevue/button';
 import Select from 'primevue/select';
@@ -192,6 +192,28 @@ const deleteMessage = (message) => {
         },
     );
 };
+
+const refreshMessages = () => {
+    router.reload({
+        only: [
+            'messages',
+            'filters',
+        ],
+        preserveScroll: true,
+    });
+};
+
+onMounted(() => {
+    window.Echo
+        .private(`branches.${props.branch.id}.inbox`)
+        .listen('.inbox.updated', () => {
+            refreshMessages();
+        });
+});
+
+onBeforeUnmount(() => {
+    window.Echo?.leave(`branches.${props.branch.id}.inbox`);
+});
 </script>
 
 <template>

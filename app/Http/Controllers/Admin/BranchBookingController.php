@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Service;
-use App\Events\BranchBookingCreated;
+use App\Events\BranchCalendarUpdated;
 use App\Services\AdminBookingCalendarService;
 use App\Services\AdminBookingNotificationService;
 use Carbon\Carbon;
@@ -51,7 +51,18 @@ class BranchBookingController extends Controller
         ]);
 
         $booking->load(['branch', 'service', 'bookingSlot']);
-        event(new BranchBookingCreated($booking));
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_created',
+            bookingId: $booking->id,
+        );
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_created',
+            bookingId: $booking->id,
+        );
 
         if ($validated['notify_patient'] ?? true) {
             $notificationService->sendCreatedNotification($booking);
@@ -82,6 +93,14 @@ class BranchBookingController extends Controller
             'status' => $validated['status'],
             'admin_note' => $validated['admin_note'] ?? null,
         ]);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: $validated['status'] === 'cancelled'
+                ? 'booking_cancelled'
+                : 'booking_updated',
+            bookingId: $booking->id,
+        );
 
         if (
             $oldStatus !== 'cancelled'
@@ -120,6 +139,12 @@ class BranchBookingController extends Controller
             'status' => 'cancelled',
             'admin_note' => $validated['admin_note'] ?? $booking->admin_note,
         ]);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_cancelled',
+            bookingId: $booking->id,
+        );
 
         if (
             $oldStatus !== 'cancelled'
@@ -253,6 +278,12 @@ class BranchBookingController extends Controller
         ]);
 
         $booking->services()->sync($serviceIds->all());
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_rescheduled',
+            bookingId: $booking->id,
+        );
 
         if ($validated['notify_patient'] ?? true) {
             $booking->refresh()->load(['branch', 'service', 'services', 'bookingSlot']);

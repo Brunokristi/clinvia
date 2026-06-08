@@ -45,3 +45,34 @@
 .p-autocomplete-dropdown {
     display: none !important;
 }
+
+.p-tooltip {
+    z-index: 9999;
+}
+
+.p-tooltip .p-tooltip-text {
+    background: #ffffff !important;
+    color: #a75a5a !important;
+    border-radius: 0.375rem !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.875rem !important;
+    font-weight: 600 !important;
+    line-height: 1.4 !important;
+    box-shadow: 0 10px 25px rgb(0 0 0 / 0.12) !important;
+}
+
+.p-tooltip.p-tooltip-top .p-tooltip-arrow {
+    border-top-color: #ffffff !important;
+}
+
+.p-tooltip.p-tooltip-bottom .p-tooltip-arrow {
+    border-bottom-color: #ffffff !important;
+}
+
+.p-tooltip.p-tooltip-left .p-tooltip-arrow {
+    border-left-color: #ffffff !important;
+}
+
+.p-tooltip.p-tooltip-right .p-tooltip-arrow {
+    border-right-color: #ffffff !important;
+}

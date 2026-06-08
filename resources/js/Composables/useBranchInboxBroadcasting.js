@@ -1,12 +1,12 @@
 import { onBeforeUnmount, onMounted } from 'vue';
 
-export function useBranchBroadcasting(branchId, callback) {
-    const channelName = `branches.${branchId}.calendar`;
+export function useBranchInboxBroadcasting(branchId, callback) {
+    const channelName = `branches.${branchId}.inbox`;
 
     onMounted(() => {
         window.Echo
             .private(channelName)
-            .listen('.calendar.updated', (event) => {
+            .listen('.inbox.updated', (event) => {
                 callback(event);
             });
     });

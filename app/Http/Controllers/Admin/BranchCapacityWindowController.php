@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Events\BranchBookingCreated;
+use App\Events\BranchCalendarUpdated;
 use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
@@ -47,6 +47,11 @@ class BranchCapacityWindowController extends Controller
 
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_cancelled',
+        );
 
         return back()->with('success', 'Kapacitné okno bolo zrušené.');
     }
@@ -136,6 +141,11 @@ class BranchCapacityWindowController extends Controller
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $oldDate);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_rescheduled',
+        );
+
         return back()->with('success', 'Kapacitné okno bolo presunuté.');
     }
 
@@ -168,6 +178,11 @@ class BranchCapacityWindowController extends Controller
 
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_occurrence_deleted',
+        );
 
         return back()->with('success', 'Tento skupinový termín bol vymazaný.');
     }
@@ -204,6 +219,11 @@ class BranchCapacityWindowController extends Controller
         app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_future_deleted',
+        );
+
         return back()->with('success', 'Budúce skupinové termíny boli vymazané.');
     }
 
@@ -239,6 +259,11 @@ class BranchCapacityWindowController extends Controller
         $rule->delete();
 
         app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_series_deleted',
+        );
 
         return back()->with('success', 'Celá skupinová séria bola vymazaná.');
     }
@@ -322,7 +347,12 @@ class BranchCapacityWindowController extends Controller
         ]);
 
         $booking->load(['branch', 'service', 'bookingSlot']);
-        event(new BranchBookingCreated($booking));
+        
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_created',
+            bookingId: $booking->id,
+        );
 
         if ($validated['notify_patient'] ?? true) {
             $notificationService->sendCreatedNotification($booking);
