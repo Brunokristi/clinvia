@@ -17,6 +17,7 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     const selectedRuleIndex = ref(null);
     const selectedBooking = ref(null);
     const selectedCapacityWindow = ref(null);
+    const selectedGroupEvent = ref(null);
     const selectedRuleOccurrence = ref(null);
     const pendingCalendarSelection = ref(null);
 
@@ -102,6 +103,10 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         selectedRuleIndex.value = null;
         selectedRuleOccurrence.value = null;
         availabilityRuleDialogVisible.value = false;
+    };
+
+    const closeGroupEventDialog = () => {
+        selectedGroupEvent.value = null;
         groupEventDialogVisible.value = false;
     };
 
@@ -125,6 +130,7 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         selectedRuleIndex,
         selectedBooking,
         selectedCapacityWindow,
+        selectedGroupEvent,
         selectedRuleOccurrence,
         pendingCalendarSelection,
 
@@ -135,6 +141,7 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         closeCreateBookingDialog,
         openCreateChoiceFromButton,
         closeRuleDialog,
+        closeGroupEventDialog,
         openDeleteRuleDialog,
         closeDeleteRuleDialog,
     };

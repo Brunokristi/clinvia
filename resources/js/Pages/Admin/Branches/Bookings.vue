@@ -21,8 +21,32 @@ import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Tag from 'primevue/tag';
+import Toast from 'primevue/toast';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useToast } from 'primevue/usetoast';
+
+const toast = useToast();
+
+const showSuccess = (message) => {
+    toast.add({
+        severity: 'success',
+        summary: 'Hotovo',
+        detail: message,
+        life: 3500,
+    });
+};
+
+const showError = (fallback, errors = {}) => {
+    const firstError = Object.values(errors ?? {})?.[0];
+
+    toast.add({
+        severity: 'error',
+        summary: 'Chyba',
+        detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
+        life: 5000,
+    });
+};
 
 const props = defineProps({
     branch: {
@@ -62,6 +86,7 @@ const props = defineProps({
 const {
     showAvailabilityRules,
     showReservations,
+    showGroupEvents,
 
     createChoiceDialogVisible,
 
@@ -74,6 +99,7 @@ const {
 
     selectedBooking,
     selectedCapacityWindow,
+    selectedGroupEvent,
     selectedRuleOccurrence,
     pendingCalendarSelection,
 
@@ -96,6 +122,7 @@ const {
     continueFromCreateChoice,
 
     closeRuleDialog,
+    closeGroupEventDialog,
     saveRules,
 
     createAdminBooking,
@@ -109,23 +136,27 @@ const {
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
+    saveCapacityWindow,
 
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
     deleteCapacityWindowSeries,
     addPatientToCapacityWindow,
 
-    openCapacityWindowRuleEditor,
+    openCapacityWindowEditor,
 } = useBookingCalendar(props);
 
 const bookingCalendar = ref(null);
 const requestSidebar = ref(null);
 const requestSidebarHeight = ref(null);
 
-const reloadPendingRequests = () => {
+const reloadCalendarData = () => {
     router.reload({
         only: [
+            'calendarBookings',
+            'calendarCapacityWindows',
             'pendingAppointmentRequests',
+            'todayBookingsCount',
             'unreadMessagesCount',
         ],
         preserveState: true,
@@ -133,7 +164,7 @@ const reloadPendingRequests = () => {
     });
 };
 
-useBranchBroadcasting(props.branch.id, reloadPendingRequests);
+useBranchBroadcasting(props.branch.id, reloadCalendarData);
 
 const requestToCancel = ref(null);
 
@@ -194,6 +225,12 @@ const confirmCancelAppointmentRequest = () => {
     ]), {
         preserveScroll: true,
         preserveState: true,
+        onSuccess: () => {
+            showSuccess('Žiadosť bola zrušená.');
+        },
+        onError: (errors) => {
+            showError('Žiadosť sa nepodarilo zrušiť.', errors);
+        },
         onFinish: () => {
             closeCancelAppointmentRequestDialog();
         },
@@ -302,6 +339,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+    <Toast />
+
     <AdminLayout>
                 <div class="space-y-4">
                     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -321,6 +360,11 @@ onBeforeUnmount(() => {
                                     <label class="flex items-center gap-2 text-sm text-dark">
                                         <ToggleSwitch v-model="showReservations" />
                                         Zobraziť rezervácie
+                                    </label>
+
+                                    <label class="flex items-center gap-2 text-sm text-dark">
+                                        <ToggleSwitch v-model="showGroupEvents" />
+                                        Zobraziť skupinové udalosti
                                     </label>
                                 </div>
 
@@ -463,6 +507,7 @@ onBeforeUnmount(() => {
                 :get-repeat-label="getRepeatLabel"
                 @close="closeRuleDialog"
                 @save="saveRules"
+                @save-scope="saveRules"
                 @delete-occurrence="deleteCurrentRuleOccurrence"
                 @delete-from-now-on="deleteCurrentRuleFromNowOn"
                 @delete-all="deleteCurrentRuleEverywhere"
@@ -470,25 +515,19 @@ onBeforeUnmount(() => {
 
             <GroupEventCreateEditDialog
                 v-model:visible="groupEventDialogVisible"
-                :current-rule="currentRule"
-                :selected-rule-occurrence="selectedRuleOccurrence"
+                :group-event="selectedGroupEvent"
                 :services="services"
                 :repeat-unit-options="repeatUnitOptions"
                 :loading="ruleForm.processing"
-                :get-rule-title="getRuleTitle"
-                :get-repeat-label="getRepeatLabel"
-                @close="closeRuleDialog"
-                @save="saveRules"
-                @delete-occurrence="deleteCurrentRuleOccurrence"
-                @delete-from-now-on="deleteCurrentRuleFromNowOn"
-                @delete-all="deleteCurrentRuleEverywhere"
+                @close="closeGroupEventDialog"
+                @save="saveCapacityWindow"
             />
 
             <GroupEventOccurrenceDialog
                 v-model:visible="groupEventOccurrenceDialogVisible"
                 :capacity-window="selectedCapacityWindow"
                 :booking-notes="bookingNotes"
-                @edit-capacity-window-rule="openCapacityWindowRuleEditor"
+                @edit-capacity-window="openCapacityWindowEditor"
                 @reschedule-capacity-window="rescheduleCapacityWindow"
                 @cancel-capacity-window="cancelCapacityWindow"
                 @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"

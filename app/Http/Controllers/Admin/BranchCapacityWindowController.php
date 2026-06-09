@@ -2,286 +2,370 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
+use App\Actions\CreateBookingAction;
 use App\Events\BranchCalendarUpdated;
-use App\Models\Booking;
-use App\Models\BookingAvailabilityRule;
+use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\CapacityWindow;
 use App\Models\Service;
-use App\Services\AdminBookingCalendarService;
 use App\Services\AdminBookingNotificationService;
-use App\Services\BookingSlotGenerator;
+use App\Services\CapacityWindowService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class BranchCapacityWindowController extends Controller
 {
-    public function cancel(
-        Request $request,
-        Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
-        AdminBookingNotificationService $notificationService,
-    ): RedirectResponse {
+    public function store(Request $request, Branch $branch): RedirectResponse
+    {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
 
         $validated = $request->validate([
-            'date' => ['required', 'date'],
-            'notify_patient' => ['nullable', 'boolean'],
-            'notification_reason' => ['nullable', 'string', 'max:1000'],
+            'service_id' => ['required', 'integer', 'exists:services,id'],
+            'starts_at' => ['required', 'date'],
+            'ends_at' => ['required', 'date', 'after:starts_at'],
+            'capacity' => ['required', 'integer', 'min:1'],
+            'admin_note' => ['nullable', 'string'],
+
+            'repeats' => ['nullable', 'boolean'],
+            'repeat_every' => ['nullable', 'integer', 'min:1'],
+            'repeat_unit' => ['nullable', 'in:days,weeks,months'],
+            'repeat_ends_on' => ['nullable', 'required_if:repeats,true', 'date'],
         ]);
 
-        $date = Carbon::parse($validated['date'])->startOfDay();
+        $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
 
-        $this->cancelBookings(
-            bookings: $calendarService->getCapacityWindowBookingsForDate($branch, $rule, $date),
-            notifyPatient: $validated['notify_patient'] ?? true,
-            reason: $validated['notification_reason'] ?? null,
-            notificationService: $notificationService,
-        );
+        $createdCount = DB::transaction(function () use ($branch, $service, $validated): int {
+            $startsAt = Carbon::parse($validated['starts_at']);
+            $endsAt = Carbon::parse($validated['ends_at']);
 
-        $this->excludeRuleDate($rule, $date);
+            if (! ($validated['repeats'] ?? false)) {
+                $this->createWindow($branch, $service, $startsAt, $endsAt, $validated, null);
 
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
-        app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+                return 1;
+            }
+
+            if (blank($validated['repeat_ends_on'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'repeat_ends_on' => 'Vyberte dátum ukončenia opakovania.',
+                ]);
+            }
+
+            $repeatEvery = max(1, (int) ($validated['repeat_every'] ?? 1));
+            $repeatUnit = $validated['repeat_unit'] ?? 'weeks';
+            $repeatEndsOn = Carbon::parse($validated['repeat_ends_on'])->endOfDay();
+
+            if ($repeatEndsOn->lt($startsAt->copy()->startOfDay())) {
+                throw ValidationException::withMessages([
+                    'repeat_ends_on' => 'Dátum ukončenia opakovania nemôže byť pred prvým termínom.',
+                ]);
+            }
+
+            $seriesUuid = (string) Str::uuid();
+            $cursorStart = $startsAt->copy();
+            $cursorEnd = $endsAt->copy();
+            $createdCount = 0;
+
+            while ($cursorStart->lte($repeatEndsOn)) {
+                $this->createWindow($branch, $service, $cursorStart, $cursorEnd, $validated, $seriesUuid);
+
+                $createdCount++;
+
+                if ($createdCount > 370) {
+                    throw ValidationException::withMessages([
+                        'repeat_ends_on' => 'Opakovanie je príliš dlhé. Skráťte dátum ukončenia.',
+                    ]);
+                }
+
+                match ($repeatUnit) {
+                    'days' => $this->addDays($cursorStart, $cursorEnd, $repeatEvery),
+                    'months' => $this->addMonths($cursorStart, $cursorEnd, $repeatEvery),
+                    default => $this->addWeeks($cursorStart, $cursorEnd, $repeatEvery),
+                };
+            }
+
+            return $createdCount;
+        });
 
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'capacity_window_cancelled',
+            action: 'capacity_window_created',
         );
 
-        return back()->with('success', 'Kapacitné okno bolo zrušené.');
+        return back()->with(
+            'success',
+            $createdCount > 1
+                ? "Séria skupinových termínov bola vytvorená ({$createdCount} termínov)."
+                : 'Skupinový termín bol vytvorený.',
+        );
+    }
+
+    public function update(Request $request, Branch $branch, CapacityWindow $capacityWindow): RedirectResponse
+    {
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
+
+        $validated = $request->validate([
+            'service_id' => ['required', 'integer', 'exists:services,id'],
+            'capacity' => ['required', 'integer', 'min:1'],
+            'admin_note' => ['nullable', 'string'],
+            'apply_to_series' => ['nullable', 'boolean'],
+        ]);
+
+        $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
+
+        DB::transaction(function () use ($capacityWindow, $service, $validated): void {
+            $applyToSeries = ($validated['apply_to_series'] ?? false) && filled($capacityWindow->series_uuid);
+
+            $query = CapacityWindow::query()
+                ->where('branch_id', $capacityWindow->branch_id);
+
+            if ($applyToSeries) {
+                $query->where('series_uuid', $capacityWindow->series_uuid);
+            } else {
+                $query->whereKey($capacityWindow->id);
+            }
+
+            $windows = $query->lockForUpdate()->get();
+
+            foreach ($windows as $window) {
+                $activeBookingsCount = $window->bookings()
+                    ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
+                    ->count();
+
+                if ((int) $validated['capacity'] < $activeBookingsCount) {
+                    throw ValidationException::withMessages([
+                        'capacity' => 'Kapacita nemôže byť menšia ako počet existujúcich rezervácií.',
+                    ]);
+                }
+
+                $window->update([
+                    'service_id' => $service->id,
+                    'capacity' => (int) $validated['capacity'],
+                    'admin_note' => $validated['admin_note'] ?? null,
+                ]);
+            }
+        });
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'capacity_window_updated',
+            capacityWindowId: $capacityWindow->id,
+        );
+
+        return back()->with('success', 'Skupinový termín bol upravený.');
     }
 
     public function reschedule(
         Request $request,
         Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
+        CapacityWindow $capacityWindow,
+        CapacityWindowService $capacityWindowService,
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
 
         $validated = $request->validate([
-            'date' => ['required', 'date'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
+            'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'from_date' => ['nullable', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $oldDate = Carbon::parse($validated['date'])->startOfDay();
+        $scope = $validated['reschedule_scope'] ?? 'occurrence';
+
+        if ($scope !== 'occurrence' && blank($capacityWindow->series_uuid)) {
+            $scope = 'occurrence';
+        }
+
         $newStartsAt = Carbon::parse($validated['starts_at']);
         $newEndsAt = Carbon::parse($validated['ends_at']);
+        $notifyPatient = $request->boolean('notify_patient', true);
+        $reason = $validated['notification_reason'] ?? null;
 
-        $bookings = $calendarService->getCapacityWindowBookingsForDate($branch, $rule, $oldDate);
-        $service = $rule->services->first();
-
-        if (! $service && $rule->service_id) {
-            $service = Service::query()
-                ->where('branch_id', $branch->id)
-                ->whereKey($rule->service_id)
-                ->first();
+        if ($scope === 'occurrence') {
+            $capacityWindowService->rescheduleWindow(
+                capacityWindow: $capacityWindow,
+                newStartsAt: $newStartsAt,
+                newEndsAt: $newEndsAt,
+                notifyPatient: $notifyPatient,
+                reason: $reason,
+                notificationService: $notificationService,
+            );
+        } else {
+            $this->rescheduleCapacityWindowSeries(
+                capacityWindow: $capacityWindow,
+                scope: $scope,
+                fromDate: $validated['from_date'] ?? null,
+                newStartsAt: $newStartsAt,
+                newEndsAt: $newEndsAt,
+                notifyPatient: $notifyPatient,
+                reason: $reason,
+                capacityWindowService: $capacityWindowService,
+                notificationService: $notificationService,
+            );
         }
-
-        if (! $service) {
-            throw ValidationException::withMessages([
-                'service_id' => 'Služba pre toto kapacitné okno neexistuje.',
-            ]);
-        }
-
-        $targetRule = $calendarService->moveCapacityWindowOccurrence(
-            branch: $branch,
-            rule: $rule,
-            oldDate: $oldDate,
-            newStartsAt: $newStartsAt,
-            newEndsAt: $newEndsAt,
-            serviceId: (int) $service->id,
-        );
-
-        $newSlot = $calendarService->createOrEnableCapacitySlot(
-            branch: $branch,
-            service: $service,
-            startsAt: $newStartsAt,
-            endsAt: $newEndsAt,
-            capacity: max(1, (int) ($targetRule->bookable_places ?? $service->capacity ?? 1)),
-        );
-
-        foreach ($bookings as $booking) {
-            $booking->loadMissing('bookingSlot');
-
-            $oldSlot = $booking->bookingSlot;
-            $oldStartsAt = $oldSlot?->starts_at?->copy();
-            $oldEndsAt = $oldSlot?->ends_at?->copy();
-
-            $booking->update([
-                'booking_slot_id' => $newSlot->id,
-                'service_id' => $service->id,
-                'starts_at' => $newStartsAt,
-                'ends_at' => $newEndsAt,
-                'status' => 'confirmed',
-            ]);
-
-            if ($validated['notify_patient'] ?? true) {
-                $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
-
-                $notificationService->sendRescheduledNotification(
-                    booking: $booking,
-                    oldStartsAt: $oldStartsAt,
-                    oldEndsAt: $oldEndsAt,
-                    reason: $validated['notification_reason'] ?? null,
-                );
-            }
-        }
-
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $oldDate);
-        app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
 
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'capacity_window_rescheduled',
+            action: match ($scope) {
+                'from_date' => 'capacity_window_series_rescheduled_from_date',
+                'series' => 'capacity_window_series_rescheduled',
+                default => 'capacity_window_rescheduled',
+            },
+            capacityWindowId: $capacityWindow->id,
         );
 
-        return back()->with('success', 'Kapacitné okno bolo presunuté.');
+        return back()->with(
+            'success',
+            match ($scope) {
+                'from_date' => 'Tento a nasledujúce skupinové termíny boli presunuté.',
+                'series' => 'Celá séria skupinových termínov bola presunutá.',
+                default => 'Skupinový termín bol presunutý.',
+            },
+        );
     }
 
-    public function deleteOccurrence(
+    public function cancel(
         Request $request,
         Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
+        CapacityWindow $capacityWindow,
+        CapacityWindowService $capacityWindowService,
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
 
         $validated = $request->validate([
-            'date' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $date = Carbon::parse($validated['date'])->startOfDay();
-
-        $this->cancelBookings(
-            bookings: $calendarService->getCapacityWindowBookingsForDate($branch, $rule, $date),
-            notifyPatient: $validated['notify_patient'] ?? true,
+        $capacityWindowService->cancelWindow(
+            capacityWindow: $capacityWindow,
+            notifyPatient: $request->boolean('notify_patient', true),
             reason: $validated['notification_reason'] ?? null,
             notificationService: $notificationService,
         );
 
-        $this->excludeRuleDate($rule, $date);
-
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleDate($rule, $date);
-        app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
-
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'capacity_window_occurrence_deleted',
+            action: 'capacity_window_cancelled',
+            capacityWindowId: $capacityWindow->id,
         );
 
-        return back()->with('success', 'Tento skupinový termín bol vymazaný.');
+        return back()->with('success', 'Skupinový termín bol zrušený.');
     }
 
-    public function deleteFutureOccurrences(
+    public function destroy(
         Request $request,
         Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
+        CapacityWindow $capacityWindow,
+        CapacityWindowService $capacityWindowService,
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
 
         $validated = $request->validate([
-            'date' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $date = Carbon::parse($validated['date'])->startOfDay();
-
-        $this->cancelBookings(
-            bookings: $calendarService->getCapacityWindowBookingsFromDate($branch, $rule, $date),
-            notifyPatient: $validated['notify_patient'] ?? true,
+        $capacityWindowService->cancelWindow(
+            capacityWindow: $capacityWindow,
+            notifyPatient: $request->boolean('notify_patient', true),
             reason: $validated['notification_reason'] ?? null,
             notificationService: $notificationService,
         );
 
-        $rule->update([
-            'repeat_ends_on' => $date->copy()->subDay()->toDateString(),
-        ]);
-
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
-        app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
-
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'capacity_window_future_deleted',
+            action: 'capacity_window_deleted',
+            capacityWindowId: $capacityWindow->id,
         );
 
-        return back()->with('success', 'Budúce skupinové termíny boli vymazané.');
+        return back()->with('success', 'Skupinový termín bol vymazaný.');
     }
 
-    public function deleteSeries(
+    public function destroySeries(
         Request $request,
         Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
+        CapacityWindow $capacityWindow,
+        CapacityWindowService $capacityWindowService,
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
 
         $validated = $request->validate([
-            'date' => ['nullable', 'date'],
+            'delete_scope' => ['nullable', 'in:series,from_date'],
+            'from_date' => ['nullable', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $date = isset($validated['date'])
-            ? Carbon::parse($validated['date'])->startOfDay()
-            : now()->startOfDay();
+        if (blank($capacityWindow->series_uuid)) {
+            return $this->destroy(
+                request: $request,
+                branch: $branch,
+                capacityWindow: $capacityWindow,
+                capacityWindowService: $capacityWindowService,
+                notificationService: $notificationService,
+            );
+        }
 
-        $this->cancelBookings(
-            bookings: $calendarService->getCapacityWindowBookingsFromDate($branch, $rule, $date),
-            notifyPatient: $validated['notify_patient'] ?? true,
-            reason: $validated['notification_reason'] ?? null,
-            notificationService: $notificationService,
-        );
+        $deleteScope = $validated['delete_scope'] ?? 'series';
+        $fromDate = $deleteScope === 'from_date'
+            ? Carbon::parse($validated['from_date'] ?? $capacityWindow->starts_at)->startOfDay()
+            : null;
 
-        app(BookingSlotGenerator::class)->disableSlotsWithoutBookingsForRuleFromDate($rule, $date);
+        $windowsQuery = CapacityWindow::query()
+            ->where('branch_id', $capacityWindow->branch_id)
+            ->where('series_uuid', $capacityWindow->series_uuid)
+            ->where('status', 'active');
 
-        $rule->delete();
+        if ($fromDate) {
+            $windowsQuery->where('starts_at', '>=', $fromDate);
+        }
 
-        app(BookingSlotGenerator::class)->generateForBranch($branch->id, 60);
+        $windows = $windowsQuery
+            ->orderBy('starts_at')
+            ->get();
+
+        foreach ($windows as $window) {
+            $capacityWindowService->cancelWindow(
+                capacityWindow: $window,
+                notifyPatient: $request->boolean('notify_patient', true),
+                reason: $validated['notification_reason'] ?? null,
+                notificationService: $notificationService,
+            );
+        }
 
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'capacity_window_series_deleted',
+            action: $fromDate ? 'capacity_window_series_deleted_from_date' : 'capacity_window_series_deleted',
+            capacityWindowId: $capacityWindow->id,
         );
 
-        return back()->with('success', 'Celá skupinová séria bola vymazaná.');
+        return back()->with(
+            'success',
+            $fromDate
+                ? 'Skupinové termíny od vybraného dátumu boli vymazané.'
+                : 'Séria skupinových termínov bola vymazaná.',
+        );
     }
 
     public function storeBooking(
         Request $request,
         Branch $branch,
-        BookingAvailabilityRule $rule,
-        AdminBookingCalendarService $calendarService,
-        AdminBookingNotificationService $notificationService,
+        CapacityWindow $capacityWindow,
+        CreateBookingAction $createBookingAction,
     ): RedirectResponse {
-        abort_if(! $request->user()->canAccessBranch($branch), 403);
-        abort_unless((int) $rule->branch_id === (int) $branch->id, 404);
+        $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
 
         $validated = $request->validate([
-            'date' => ['required', 'date'],
-            'starts_at' => ['required', 'date'],
-            'ends_at' => ['required', 'date', 'after:starts_at'],
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_email' => ['nullable', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
@@ -290,114 +374,136 @@ class BranchCapacityWindowController extends Controller
             'notify_patient' => ['nullable', 'boolean'],
         ]);
 
-        $date = Carbon::parse($validated['date'])->startOfDay();
-        $startsAt = Carbon::parse($validated['starts_at']);
-        $endsAt = Carbon::parse($validated['ends_at']);
-
-        $service = $rule->services->first();
-
-        if (! $service && $rule->service_id) {
-            $service = Service::query()
-                ->where('branch_id', $branch->id)
-                ->whereKey($rule->service_id)
-                ->first();
-        }
-
-        if (! $service) {
-            throw ValidationException::withMessages([
-                'service_id' => 'Služba pre toto kapacitné okno neexistuje.',
-            ]);
-        }
-
-        $capacity = max(1, (int) ($rule->bookable_places ?? $service->capacity ?? 1));
-
-        $currentBookingsCount = $calendarService
-            ->getCapacityWindowBookingsForDate($branch, $rule, $date)
-            ->filter(function (Booking $booking) {
-                return $booking->status !== 'cancelled';
-            })
-            ->count();
-
-        if ($currentBookingsCount >= $capacity) {
-            throw ValidationException::withMessages([
-                'capacity_window' => 'Skupinový termín je už naplnený.',
-            ]);
-        }
-
-        $slot = $calendarService->createOrEnableCapacitySlot(
-            branch: $branch,
-            service: $service,
-            startsAt: $startsAt,
-            endsAt: $endsAt,
-            capacity: $capacity,
-        );
-
-        $booking = Booking::query()->create([
-            'branch_id' => $branch->id,
-            'service_id' => $service->id,
-            'booking_slot_id' => $slot->id,
-            'starts_at' => $startsAt,
-            'ends_at' => $endsAt,
+        $createBookingAction->execute($branch, [
+            'capacity_window_id' => $capacityWindow->id,
+            'service_id' => $capacityWindow->service_id,
+            'starts_at' => $capacityWindow->starts_at,
+            'ends_at' => $capacityWindow->ends_at,
             'patient_name' => $validated['patient_name'],
             'patient_email' => $validated['patient_email'] ?? null,
             'patient_phone' => $validated['patient_phone'] ?? null,
             'patient_note' => $validated['patient_note'] ?? null,
             'admin_note' => $validated['admin_note'] ?? null,
             'status' => 'confirmed',
+            'notify_patient' => $request->boolean('notify_patient', true),
         ]);
 
-        $booking->load(['branch', 'service', 'bookingSlot']);
-        
         BranchCalendarUpdated::dispatch(
-            branchId: $booking->branch_id,
-            action: 'booking_created',
-            bookingId: $booking->id,
+            branchId: $branch->id,
+            action: 'capacity_window_booking_created',
+            capacityWindowId: $capacityWindow->id,
         );
-
-        if ($validated['notify_patient'] ?? true) {
-            $notificationService->sendCreatedNotification($booking);
-        }
 
         return back()->with('success', 'Pacient bol pridaný do skupinového termínu.');
     }
 
-    private function cancelBookings(
-        iterable $bookings,
+    private function rescheduleCapacityWindowSeries(
+        CapacityWindow $capacityWindow,
+        string $scope,
+        ?string $fromDate,
+        Carbon $newStartsAt,
+        Carbon $newEndsAt,
         bool $notifyPatient,
         ?string $reason,
+        CapacityWindowService $capacityWindowService,
         AdminBookingNotificationService $notificationService,
     ): void {
-        foreach ($bookings as $booking) {
-            $oldStatus = $booking->status;
+        $originalStartsAt = $capacityWindow->starts_at->copy();
+        $newDurationMinutes = $newStartsAt->diffInMinutes($newEndsAt);
 
-            $booking->update([
-                'status' => 'cancelled',
-            ]);
+        $dayDiff = $originalStartsAt
+            ->copy()
+            ->startOfDay()
+            ->diffInDays($newStartsAt->copy()->startOfDay(), false);
 
-            if (
-                $oldStatus !== 'cancelled'
-                && $notifyPatient
-            ) {
-                $booking->refresh()->load(['branch', 'service', 'bookingSlot']);
+        $minuteOfDayDiff = (($newStartsAt->hour * 60) + $newStartsAt->minute)
+            - (($originalStartsAt->hour * 60) + $originalStartsAt->minute);
 
-                $notificationService->sendCancelledNotification($booking, $reason);
-            }
+        $windowsQuery = CapacityWindow::query()
+            ->where('branch_id', $capacityWindow->branch_id)
+            ->where('series_uuid', $capacityWindow->series_uuid)
+            ->where('status', 'active');
+
+        if ($scope === 'from_date') {
+            $windowsQuery->where(
+                'starts_at',
+                '>=',
+                Carbon::parse($fromDate ?? $capacityWindow->starts_at)->startOfDay(),
+            );
+        }
+
+        $windows = $windowsQuery
+            ->orderBy('starts_at')
+            ->get();
+
+        foreach ($windows as $window) {
+            $updatedStartsAt = $window->starts_at
+                ->copy()
+                ->addDays($dayDiff)
+                ->addMinutes($minuteOfDayDiff);
+
+            $updatedEndsAt = $updatedStartsAt->copy()->addMinutes($newDurationMinutes);
+
+            $capacityWindowService->rescheduleWindow(
+                capacityWindow: $window,
+                newStartsAt: $updatedStartsAt,
+                newEndsAt: $updatedEndsAt,
+                notifyPatient: $notifyPatient,
+                reason: $reason,
+                notificationService: $notificationService,
+            );
         }
     }
 
-    private function excludeRuleDate(BookingAvailabilityRule $rule, Carbon $date): void
+    private function authorizeCapacityWindow(Request $request, Branch $branch, CapacityWindow $capacityWindow): void
     {
-        $excludedDates = $rule->excluded_dates ?? [];
-        $dateString = $date->toDateString();
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $capacityWindow->branch_id !== (int) $branch->id, 404);
+    }
 
-        if (! in_array($dateString, $excludedDates, true)) {
-            $excludedDates[] = $dateString;
-        }
+    private function resolveBranchService(Branch $branch, int $serviceId): Service
+    {
+        return Service::query()
+            ->where('branch_id', $branch->id)
+            ->whereKey($serviceId)
+            ->firstOrFail();
+    }
 
-        sort($excludedDates);
-
-        $rule->update([
-            'excluded_dates' => $excludedDates,
+    private function createWindow(
+        Branch $branch,
+        Service $service,
+        Carbon $startsAt,
+        Carbon $endsAt,
+        array $validated,
+        ?string $seriesUuid,
+    ): void {
+        CapacityWindow::query()->create([
+            'branch_id' => $branch->id,
+            'service_id' => $service->id,
+            'series_uuid' => $seriesUuid,
+            'starts_at' => $startsAt->copy(),
+            'ends_at' => $endsAt->copy(),
+            'capacity' => (int) $validated['capacity'],
+            'status' => 'active',
+            'admin_note' => $validated['admin_note'] ?? null,
         ]);
+    }
+
+    private function addDays(Carbon $startsAt, Carbon $endsAt, int $days): void
+    {
+        $startsAt->addDays($days);
+        $endsAt->addDays($days);
+    }
+
+    private function addWeeks(Carbon $startsAt, Carbon $endsAt, int $weeks): void
+    {
+        $startsAt->addWeeks($weeks);
+        $endsAt->addWeeks($weeks);
+    }
+
+    private function addMonths(Carbon $startsAt, Carbon $endsAt, int $months): void
+    {
+        $startsAt->addMonths($months);
+        $endsAt->addMonths($months);
     }
 }

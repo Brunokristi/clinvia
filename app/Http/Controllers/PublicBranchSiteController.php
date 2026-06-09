@@ -6,7 +6,7 @@ use App\Actions\CreateBookingAction;
 use App\Models\AppointmentRequest;
 use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
-use App\Models\BookingSlot;
+use App\Models\CapacityWindow;
 use App\Models\Branch;
 use App\Models\Service;
 use App\Events\BranchCalendarUpdated;
@@ -182,15 +182,16 @@ class PublicBranchSiteController extends Controller
             'canBookExactSlots' => $canBookExactSlots,
             'canSubmitGeneralRequest' => $canSubmitGeneralRequest,
             'availableSlots' => $availableSlots
-                ->map(fn (BookingSlot $slot) => [
-                    'id' => $slot->id,
-                    'service_id' => $slot->service_id,
-                    'service_name' => $slot->service?->name,
-                    'starts_at' => $slot->starts_at->toDateTimeString(),
-                    'ends_at' => $slot->ends_at->toDateTimeString(),
-                    'capacity' => (int) $slot->capacity,
-                    'confirmed_bookings_count' => (int) $slot->confirmed_bookings_count,
-                    'free_capacity' => max(0, (int) $slot->capacity - (int) $slot->confirmed_bookings_count),
+                ->map(fn (CapacityWindow $capacityWindow) => [
+                    'id' => $capacityWindow->id,
+                    'capacity_window_id' => $capacityWindow->id,
+                    'service_id' => $capacityWindow->service_id,
+                    'service_name' => $capacityWindow->service?->name,
+                    'starts_at' => $capacityWindow->starts_at->toDateTimeString(),
+                    'ends_at' => $capacityWindow->ends_at->toDateTimeString(),
+                    'capacity' => (int) $capacityWindow->capacity,
+                    'confirmed_bookings_count' => (int) $capacityWindow->confirmed_bookings_count,
+                    'free_capacity' => max(0, (int) $capacityWindow->capacity - (int) $capacityWindow->confirmed_bookings_count),
                 ])
                 ->values(),
             'availableOptions' => $availableOptions->values(),
@@ -215,7 +216,7 @@ class PublicBranchSiteController extends Controller
             'request_type' => ['nullable', 'string', 'in:preferred_period,general'],
             'service_ids' => ['required', 'array', 'min:1'],
             'service_ids.*' => ['integer', 'exists:services,id'],
-            'booking_slot_id' => ['nullable', 'integer', 'exists:booking_slots,id'],
+            'capacity_window_id' => ['nullable', 'integer', 'exists:capacity_windows,id'],
             'preferred_option_id' => ['nullable', 'string'],
             'preferred_date' => ['nullable', 'date'],
             'preferred_period' => ['nullable', 'string', 'in:morning,forenoon,afternoon,evening'],
@@ -238,7 +239,7 @@ class PublicBranchSiteController extends Controller
         }
 
         if ($validated['mode'] === 'exact_slot') {
-            return $this->storeExactSlotBooking(
+            return $this->storeExactCapacityWindowBooking(
                 branch: $branch,
                 validated: $validated,
                 createBookingAction: $createBookingAction,
@@ -286,56 +287,6 @@ class PublicBranchSiteController extends Controller
         return back()->with('success', 'Správa bola odoslaná.');
     }
 
-    private function serviceHasGroupAvailabilityRule(Branch $branch, Service $service): bool
-    {
-        return BookingAvailabilityRule::query()
-            ->where('branch_id', $branch->id)
-            ->where('is_enabled', true)
-            ->where('slot_mode', 'single_service_many_clients')
-            ->where(function ($query) use ($service) {
-                $query
-                    ->where('service_id', $service->id)
-                    ->orWhereHas('services', function ($serviceQuery) use ($service) {
-                        $serviceQuery->whereKey($service->id);
-                    });
-            })
-            ->exists();
-    }
-
-    private function bookingSlotBelongsToGroupAvailability(BookingSlot $slot): bool
-    {
-        $rules = BookingAvailabilityRule::query()
-            ->where('branch_id', $slot->branch_id)
-            ->where('is_enabled', true)
-            ->where('slot_mode', 'single_service_many_clients')
-            ->where(function ($query) use ($slot) {
-                $query
-                    ->where('service_id', $slot->service_id)
-                    ->orWhereHas('services', function ($serviceQuery) use ($slot) {
-                        $serviceQuery->whereKey($slot->service_id);
-                    });
-            })
-            ->get();
-
-        foreach ($rules as $rule) {
-            if (! $this->ruleAppliesOnDate($rule, $slot->starts_at->copy()->startOfDay())) {
-                continue;
-            }
-
-            $ruleStartsAt = Carbon::parse($slot->starts_at->toDateString() . ' ' . $rule->starts_at);
-            $ruleEndsAt = Carbon::parse($slot->starts_at->toDateString() . ' ' . $rule->ends_at);
-
-            if (
-                $ruleStartsAt->equalTo($slot->starts_at)
-                && $ruleEndsAt->equalTo($slot->ends_at)
-            ) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private function normalizeSelectedServiceIds(Request $request): array
     {
         $services = $request->input('services', []);
@@ -367,90 +318,26 @@ class PublicBranchSiteController extends Controller
 
         $end = $start->copy()->addDays(60);
 
-        $rules = BookingAvailabilityRule::query()
+        return CapacityWindow::query()
+            ->with('service')
+            ->withCount([
+                'bookings as confirmed_bookings_count' => function ($query) {
+                    $query->whereNotIn('status', ['cancelled', 'rejected', 'no_show']);
+                },
+            ])
             ->where('branch_id', $branch->id)
-            ->where('is_enabled', true)
-            ->where('slot_mode', 'single_service_many_clients')
-            ->where(function ($query) use ($service) {
+            ->where('service_id', $service->id)
+            ->where('status', 'active')
+            ->where('starts_at', '>=', $start)
+            ->where('starts_at', '<=', $end)
+            ->whereHas('service', function ($query) {
                 $query
-                    ->where('service_id', $service->id)
-                    ->orWhereHas('services', function ($serviceQuery) use ($service) {
-                        $serviceQuery->whereKey($service->id);
-                    });
+                    ->where('is_active', true)
+                    ->where('is_bookable', true);
             })
-            ->with('services')
-            ->get();
-
-        if ($rules->isEmpty()) {
-            return collect();
-        }
-
-        $slots = collect();
-
-        for ($date = $start->copy()->startOfDay(); $date->lte($end); $date->addDay()) {
-            foreach ($rules as $rule) {
-                if (! $this->ruleAppliesOnDate($rule, $date)) {
-                    continue;
-                }
-
-                $startsAt = Carbon::parse($date->toDateString() . ' ' . $rule->starts_at);
-                $endsAt = Carbon::parse($date->toDateString() . ' ' . $rule->ends_at);
-
-                if ($startsAt->isPast()) {
-                    continue;
-                }
-
-                if ($endsAt->lessThanOrEqualTo($startsAt)) {
-                    continue;
-                }
-
-                $capacity = max(1, (int) ($rule->bookable_places ?? $service->capacity ?? 1));
-
-                $bookingSlot = BookingSlot::query()
-                    ->firstOrCreate(
-                        [
-                            'branch_id' => $branch->id,
-                            'service_id' => $service->id,
-                            'starts_at' => $startsAt,
-                            'ends_at' => $endsAt,
-                        ],
-                        [
-                            'capacity' => $capacity,
-                            'is_enabled' => true,
-                        ],
-                    );
-
-                if (! $bookingSlot->is_enabled) {
-                    continue;
-                }
-
-                if ((int) $bookingSlot->capacity !== $capacity) {
-                    $bookingSlot->forceFill([
-                        'capacity' => $capacity,
-                    ])->save();
-                }
-
-                $confirmedBookingsCount = Booking::query()
-                    ->where('branch_id', $branch->id)
-                    ->where('booking_slot_id', $bookingSlot->id)
-                    ->where('service_id', $service->id)
-                    ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-                    ->count();
-
-                if ($confirmedBookingsCount >= $capacity) {
-                    continue;
-                }
-
-                $bookingSlot->setRelation('service', $service);
-                $bookingSlot->confirmed_bookings_count = $confirmedBookingsCount;
-                $bookingSlot->capacity = $capacity;
-
-                $slots->push($bookingSlot);
-            }
-        }
-
-        return $slots
-            ->sortBy('starts_at')
+            ->orderBy('starts_at')
+            ->get()
+            ->filter(fn (CapacityWindow $window) => (int) $window->confirmed_bookings_count < (int) $window->capacity)
             ->values()
             ->take(30);
     }
@@ -659,20 +546,16 @@ class PublicBranchSiteController extends Controller
         return Booking::query()
             ->where('branch_id', $branch->id)
             ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-            ->whereHas('bookingSlot', function ($query) use ($periodStartsAt, $periodEndsAt) {
-                $query
-                    ->where('starts_at', '<', $periodEndsAt)
-                    ->where('ends_at', '>', $periodStartsAt);
-            })
-            ->with('bookingSlot')
+            ->where('starts_at', '<', $periodEndsAt)
+            ->where('ends_at', '>', $periodStartsAt)
             ->get()
             ->sum(function (Booking $booking) use ($periodStartsAt, $periodEndsAt) {
-                if (! $booking->bookingSlot) {
+                $bookingStartsAt = $booking->starts_at;
+                $bookingEndsAt = $booking->ends_at;
+
+                if (! $bookingStartsAt || ! $bookingEndsAt) {
                     return 0;
                 }
-
-                $bookingStartsAt = $booking->bookingSlot->starts_at;
-                $bookingEndsAt = $booking->bookingSlot->ends_at;
 
                 $overlapStartsAt = $bookingStartsAt->greaterThan($periodStartsAt)
                     ? $bookingStartsAt
@@ -743,85 +626,55 @@ class PublicBranchSiteController extends Controller
         };
     }
 
-    private function groupSlotCanBeShownToPatient(BookingSlot $slot): bool
-    {
-        $slot->loadMissing('service');
-
-        $service = $slot->service;
-
-        if (! $service) {
-            return false;
-        }
-
-        if (! $slot->is_enabled) {
-            return false;
-        }
-
-        if ($slot->starts_at->isPast()) {
-            return false;
-        }
-
-        if (! $service->is_active || ! $service->is_bookable) {
-            return false;
-        }
-
-        if (! $this->bookingSlotBelongsToGroupAvailability($slot)) {
-            return false;
-        }
-
-        $sameSlotBookingsCount = Booking::query()
-            ->where('branch_id', $slot->branch_id)
-            ->where('booking_slot_id', $slot->id)
-            ->where('service_id', $slot->service_id)
-            ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-            ->count();
-
-        $capacity = max(1, (int) ($slot->capacity ?? $service->capacity ?? 1));
-
-        return $sameSlotBookingsCount < $capacity;
-    }
-
-    private function storeExactSlotBooking(
+    private function storeExactCapacityWindowBooking(
         Branch $branch,
         array $validated,
         CreateBookingAction $createBookingAction,
         BranchInboxMessageService $inboxMessageService,
     ): RedirectResponse {
-        if (empty($validated['booking_slot_id'])) {
+        if (empty($validated['capacity_window_id'])) {
             throw ValidationException::withMessages([
-                'booking_slot_id' => 'Vyberte termín.',
+                'capacity_window_id' => 'Vyberte termín.',
             ]);
         }
 
-        $slot = $branch->bookingSlots()
+        $capacityWindow = CapacityWindow::query()
             ->with('service')
-            ->whereKey($validated['booking_slot_id'])
-            ->where('is_enabled', true)
+            ->where('branch_id', $branch->id)
+            ->whereKey($validated['capacity_window_id'])
+            ->where('status', 'active')
+            ->lockForUpdate()
             ->firstOrFail();
 
-        if (! $this->bookingSlotBelongsToGroupAvailability($slot)) {
+        if (! $capacityWindow->service || ! $capacityWindow->service->is_active || ! $capacityWindow->service->is_bookable) {
             throw ValidationException::withMessages([
-                'booking_slot_id' => 'Tento termín nie je skupinový termín dostupný na priamu rezerváciu.',
+                'capacity_window_id' => 'Tento termín nie je dostupný na priamu rezerváciu.',
             ]);
         }
 
-        if (! in_array((int) $slot->service_id, collect($validated['service_ids'])->map(fn ($id) => (int) $id)->all(), true)) {
+        if ($capacityWindow->starts_at->isPast()) {
+            throw ValidationException::withMessages([
+                'capacity_window_id' => 'Tento termín už nie je dostupný.',
+            ]);
+        }
+
+        if (! in_array((int) $capacityWindow->service_id, collect($validated['service_ids'])->map(fn ($id) => (int) $id)->all(), true)) {
             throw ValidationException::withMessages([
                 'service_ids' => 'Vybraný termín nepatrí k vybranej službe.',
             ]);
         }
 
-        if (! $this->groupSlotCanBeShownToPatient($slot)) {
-            throw ValidationException::withMessages([
-                'booking_slot_id' => 'Tento termín už nie je dostupný.',
-            ]);
-        }
-
-        $booking = $createBookingAction->execute($branch, $slot, [
+        $booking = $createBookingAction->execute($branch, [
+            'capacity_window_id' => $capacityWindow->id,
+            'service_id' => $capacityWindow->service_id,
+            'starts_at' => $capacityWindow->starts_at,
+            'ends_at' => $capacityWindow->ends_at,
             'patient_name' => $validated['patient_name'],
             'patient_email' => $validated['patient_email'],
             'patient_phone' => $validated['patient_phone'] ?? null,
             'patient_note' => $validated['patient_note'] ?? null,
+            'status' => 'confirmed',
+            'notify_patient' => true,
         ]);
 
         $inboxMessageService->createForBooking($booking);

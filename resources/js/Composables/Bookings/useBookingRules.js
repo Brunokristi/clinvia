@@ -1,7 +1,43 @@
 import { router, useForm } from '@inertiajs/vue3';
+import { useToast } from 'primevue/usetoast';
 import { computed } from 'vue';
 
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours }) {
+    const toast = useToast();
+
+    const showSuccess = (message) => {
+        toast.add({
+            severity: 'success',
+            summary: 'Hotovo',
+            detail: message,
+            life: 3500,
+        });
+    };
+
+    const showError = (fallback, errors = {}) => {
+        const firstError = Object.values(errors ?? {})?.[0];
+
+        toast.add({
+            severity: 'error',
+            summary: 'Chyba',
+            detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
+            life: 5000,
+        });
+    };
+
+    const reloadRuleState = () => {
+        router.reload({
+            preserveScroll: true,
+            preserveState: false,
+        });
+    };
+
+    const reloadRuleStateSoon = () => {
+        window.setTimeout(() => {
+            reloadRuleState();
+        }, 250);
+    };
+
     const {
         formatDate,
         formatTime,
@@ -12,7 +48,6 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const {
         availabilityRuleDialogVisible,
         deleteRuleDialogVisible,
-        groupEventDialogVisible,
         pendingCalendarSelection,
         selectedRuleIndex,
         selectedRuleOccurrence,
@@ -41,12 +76,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         starts_at: '08:00',
         ends_at: '16:00',
 
-        slot_mode: 'free_bookable_time',
-
-        service_id: null,
         service_ids: [],
-
-        bookable_places: 1,
 
         repeats: false,
         repeat_every: 1,
@@ -65,15 +95,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             starts_at: formatTime(rule.starts_at),
             ends_at: formatTime(rule.ends_at),
 
-            slot_mode: rule.slot_mode ?? rule.booking_mode ?? 'free_bookable_time',
-
-            service_id: rule.service_id
-                ?? rule.selected_service_id
-                ?? (rule.services?.length === 1 ? rule.services[0].id : null),
-
             service_ids: (rule.services ?? []).map((service) => service.id),
-
-            bookable_places: rule.bookable_places ?? rule.capacity ?? 1,
 
             repeats: Boolean(rule.repeats),
             repeat_every: rule.repeat_every ?? rule.repeat_interval ?? 1,
@@ -93,14 +115,6 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         return ruleForm.rules[selectedRuleIndex.value] ?? null;
     });
 
-    const getRuleServiceIds = (rule) => {
-        if (rule.slot_mode === 'single_service_many_clients') {
-            return rule.service_id ? [rule.service_id] : [];
-        }
-
-        return rule.service_ids ?? [];
-    };
-
     const getServiceNames = (serviceIds) => {
         return props.services
             .filter((service) => serviceIds.includes(service.id))
@@ -109,11 +123,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const getRuleTitle = (rule) => {
-        const services = getServiceNames(getRuleServiceIds(rule)) || 'Bez služby';
-
-        if (rule.slot_mode === 'single_service_many_clients') {
-            return `${services} · ${rule.bookable_places} miest`;
-        }
+        const services = getServiceNames(rule.service_ids ?? []) || 'Bez služby';
 
         return `${services} · voľný čas`;
     };
@@ -211,7 +221,6 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             }))
             .filter((rule) => {
                 return rule.is_enabled
-                    && rule.slot_mode !== 'single_service_many_clients'
                     && rule.date
                     && rule.starts_at
                     && rule.ends_at;
@@ -226,17 +235,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             starts_at: rule.starts_at,
             ends_at: rule.ends_at,
 
-            slot_mode: rule.slot_mode,
-
-            service_id: rule.slot_mode === 'single_service_many_clients'
-                ? rule.service_id
-                : null,
-
-            service_ids: getRuleServiceIds(rule),
-
-            bookable_places: rule.slot_mode === 'single_service_many_clients'
-                ? rule.bookable_places
-                : 1,
+            service_ids: rule.service_ids ?? [],
 
             repeats: rule.repeats,
             repeat_every: rule.repeats ? rule.repeat_every : 1,
@@ -258,11 +257,90 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             });
     };
 
-    const saveRules = () => {
+    const restorePendingRuleReschedule = () => {
+        if (selectedRuleOccurrence.value?.originalRule && currentRule.value) {
+            Object.assign(currentRule.value, {
+                ...selectedRuleOccurrence.value.originalRule,
+                service_ids: [...(selectedRuleOccurrence.value.originalRule.service_ids ?? [])],
+                excluded_dates: [...(selectedRuleOccurrence.value.originalRule.excluded_dates ?? [])],
+            });
+        }
+    };
+
+    const closeRuleDialogSafely = () => {
+        restorePendingRuleReschedule();
+        closeRuleDialog();
+        pendingCalendarSelection.value = null;
+    };
+
+    const closeRuleAfterSave = () => {
+        closeRuleDialog();
+        pendingCalendarSelection.value = null;
+    };
+
+    const getRuleRescheduleTargetDate = (rule, scope) => {
+        if (scope === 'series') {
+            return rule.date;
+        }
+
+        const occurrence = selectedRuleOccurrence.value;
+
+        if (!occurrence?.occurrenceDate) {
+            return rule.date;
+        }
+
+        if (!occurrence.originalRule) {
+            return rule.date === occurrence.occurrenceDate
+                ? rule.date
+                : occurrence.occurrenceDate;
+        }
+
+        return rule.date === occurrence.originalRule.date
+            ? occurrence.occurrenceDate
+            : rule.date;
+    };
+
+    const saveRules = (options = {}) => {
+        const scope = typeof options === 'string'
+            ? options
+            : options.reschedule_scope ?? null;
+
+        const rule = currentRule.value;
+
+        if (scope && rule?.id && selectedRuleOccurrence.value?.occurrenceDate) {
+            router.post(route('branches.booking.rules.reschedule', [
+                props.branch.id,
+                rule.id,
+            ]), {
+                occurrence_date: selectedRuleOccurrence.value.occurrenceDate,
+                date: getRuleRescheduleTargetDate(rule, scope),
+                starts_at: rule.starts_at,
+                ends_at: rule.ends_at,
+                reschedule_scope: scope,
+            }, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    closeRuleAfterSave();
+                    showSuccess('Voľný čas bol presunutý.');
+                    reloadRuleStateSoon();
+                },
+                onError: (errors) => {
+                    restorePendingRuleReschedule();
+                    showError('Voľný čas sa nepodarilo presunúť.', errors);
+                },
+            });
+
+            return;
+        }
+
         submitRules({
             onSuccess: () => {
-                closeRuleDialog();
-                pendingCalendarSelection.value = null;
+                closeRuleAfterSave();
+                showSuccess('Voľný čas bol uložený.');
+            },
+            onError: (errors) => {
+                showError('Voľný čas sa nepodarilo uložiť.', errors);
             },
         });
     };
@@ -277,19 +355,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         selectedRuleIndex.value = null;
         selectedRuleOccurrence.value = null;
         availabilityRuleDialogVisible.value = false;
-        groupEventDialogVisible.value = false;
     };
 
     const updateRuleFromDrop = (changeInfo) => {
         const type = changeInfo.event.extendedProps.type;
 
         if (type !== 'rule') {
-            return;
-        }
-
-        if (changeInfo.event.extendedProps.isRepeatedOccurrence) {
-            changeInfo.revert();
-
             return;
         }
 
@@ -314,14 +385,47 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             excluded_dates: [...(rule.excluded_dates ?? [])],
         };
 
-        rule.date = getDateFromDate(changeInfo.event.start);
-        rule.starts_at = getTimeFromDate(changeInfo.event.start);
-        rule.ends_at = getTimeFromDate(changeInfo.event.end);
+        const nextRule = {
+            date: getDateFromDate(changeInfo.event.start),
+            starts_at: getTimeFromDate(changeInfo.event.start),
+            ends_at: getTimeFromDate(changeInfo.event.end),
+        };
+
+        if (rule.repeats) {
+            changeInfo.revert();
+
+            Object.assign(rule, nextRule);
+
+            selectedRuleIndex.value = index;
+            selectedRuleOccurrence.value = {
+                ruleIndex: index,
+                occurrenceDate: changeInfo.event.extendedProps.occurrenceDate,
+                isRepeatedOccurrence: true,
+                originalRule: previousRule,
+            };
+
+            availabilityRuleDialogVisible.value = true;
+
+            toast.add({
+                severity: 'info',
+                summary: 'Opakovaná dostupnosť',
+                detail: 'Vyberte, či chcete presunúť iba tento výskyt, nasledujúce výskyty alebo celú sériu.',
+                life: 4500,
+            });
+
+            return;
+        }
+
+        Object.assign(rule, nextRule);
 
         submitRules({
-            onError: () => {
+            onError: (errors) => {
                 Object.assign(rule, previousRule);
                 changeInfo.revert();
+                showError('Voľný čas sa nepodarilo presunúť.', errors);
+            },
+            onSuccess: () => {
+                showSuccess('Voľný čas bol presunutý.');
             },
         });
     };
@@ -329,7 +433,6 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const closeRuleDeletes = () => {
         deleteRuleDialogVisible.value = false;
         availabilityRuleDialogVisible.value = false;
-        groupEventDialogVisible.value = false;
         selectedRuleOccurrence.value = null;
         selectedRuleIndex.value = null;
     };
@@ -352,7 +455,14 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }, {
             preserveScroll: true,
             preserveState: true,
-            onSuccess: closeRuleDeletes,
+            onSuccess: () => {
+                closeRuleDeletes();
+                showSuccess('Výskyt voľného času bol vymazaný.');
+                reloadRuleStateSoon();
+            },
+            onError: (errors) => {
+                showError('Výskyt voľného času sa nepodarilo vymazať.', errors);
+            },
         });
     };
 
@@ -374,7 +484,14 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }, {
             preserveScroll: true,
             preserveState: true,
-            onSuccess: closeRuleDeletes,
+            onSuccess: () => {
+                closeRuleDeletes();
+                showSuccess('Opakovanie voľného času bolo ukončené.');
+                reloadRuleStateSoon();
+            },
+            onError: (errors) => {
+                showError('Opakovanie voľného času sa nepodarilo ukončiť.', errors);
+            },
         });
     };
 
@@ -394,7 +511,14 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         router.delete(route('branches.booking.rules.destroy', [props.branch.id, rule.id]), {
             preserveScroll: true,
             preserveState: true,
-            onSuccess: closeRuleDeletes,
+            onSuccess: () => {
+                closeRuleDeletes();
+                showSuccess('Voľný čas bol vymazaný.');
+                reloadRuleStateSoon();
+            },
+            onError: (errors) => {
+                showError('Voľný čas sa nepodarilo vymazať.', errors);
+            },
         });
     };
 
@@ -408,6 +532,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         repeatUnitOptions,
         ruleForm,
 
+        closeRuleDialogSafely,
         deleteCurrentRule,
         deleteCurrentRuleEverywhere,
         deleteCurrentRuleFromNowOn,

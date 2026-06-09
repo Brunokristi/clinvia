@@ -16,11 +16,7 @@ const props = defineProps({
         type: Boolean,
         required: true,
     },
-    currentRule: {
-        type: Object,
-        default: null,
-    },
-    selectedRuleOccurrence: {
+    groupEvent: {
         type: Object,
         default: null,
     },
@@ -36,23 +32,12 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
-    getRuleTitle: {
-        type: Function,
-        required: true,
-    },
-    getRepeatLabel: {
-        type: Function,
-        required: true,
-    },
 });
 
 const emit = defineEmits([
     'update:visible',
     'close',
     'save',
-    'delete-occurrence',
-    'delete-from-now-on',
-    'delete-all',
 ]);
 
 const dialogVisible = computed({
@@ -63,11 +48,6 @@ const dialogVisible = computed({
 const notificationForm = reactive({
     notify_patient: true,
     notification_reason: '',
-});
-
-const notificationPayload = () => ({
-    notify_patient: notificationForm.notify_patient,
-    notification_reason: notificationForm.notification_reason,
 });
 
 watch(() => props.visible, (visible) => {
@@ -86,7 +66,13 @@ const createTimeDate = (value) => {
         return value;
     }
 
-    const [hours, minutes] = String(value).slice(0, 5).split(':');
+    const stringValue = String(value);
+
+    if (stringValue.includes('T') || stringValue.includes(' ')) {
+        return new Date(stringValue.replace(' ', 'T'));
+    }
+
+    const [hours, minutes] = stringValue.slice(0, 5).split(':');
     const date = new Date();
 
     date.setHours(Number(hours), Number(minutes), 0, 0);
@@ -127,57 +113,77 @@ const formatTimeForBackend = (value) => {
 
 const datePickerModel = computed({
     get: () => {
-        if (!props.currentRule?.date) {
+        if (!props.groupEvent?.date) {
             return null;
         }
 
-        if (props.currentRule.date instanceof Date) {
-            return props.currentRule.date;
+        if (props.groupEvent.date instanceof Date) {
+            return props.groupEvent.date;
         }
 
-        return new Date(`${props.currentRule.date}T00:00:00`);
+        return new Date(`${props.groupEvent.date}T00:00:00`);
     },
     set: (value) => {
-        if (!props.currentRule) {
+        if (!props.groupEvent) {
             return;
         }
 
-        props.currentRule.date = formatDateForBackend(value);
+        props.groupEvent.date = formatDateForBackend(value);
     },
 });
 
 const startsAtPickerModel = computed({
     get: () => {
-        return createTimeDate(props.currentRule?.starts_at);
+        return createTimeDate(props.groupEvent?.starts_at);
     },
     set: (value) => {
-        if (!props.currentRule) {
+        if (!props.groupEvent) {
             return;
         }
 
-        props.currentRule.starts_at = formatTimeForBackend(value);
+        props.groupEvent.starts_at = formatTimeForBackend(value);
     },
 });
 
 const endsAtPickerModel = computed({
     get: () => {
-        return createTimeDate(props.currentRule?.ends_at);
+        return createTimeDate(props.groupEvent?.ends_at);
     },
     set: (value) => {
-        if (!props.currentRule) {
+        if (!props.groupEvent) {
             return;
         }
 
-        props.currentRule.ends_at = formatTimeForBackend(value);
+        props.groupEvent.ends_at = formatTimeForBackend(value);
     },
 });
 
+const isEditing = computed(() => {
+    return Boolean(props.groupEvent?.capacity_window_id ?? props.groupEvent?.id);
+});
+
 const dialogTitle = computed(() => {
-    if (!props.currentRule) {
-        return 'Skupinová rezervácia';
+    if (!props.groupEvent) {
+        return 'Skupinový termín';
     }
 
-    return props.getRuleTitle(props.currentRule) || 'Skupinová rezervácia';
+    const service = props.services.find((item) => {
+        return Number(item.id) === Number(props.groupEvent.service_id);
+    });
+
+    return service?.name
+        ? `${service.name} · skupinový termín`
+        : 'Skupinový termín';
+});
+
+const canSave = computed(() => {
+    return Boolean(props.groupEvent)
+        && Boolean(props.groupEvent.service_id)
+        && Boolean(props.groupEvent.date)
+        && Boolean(props.groupEvent.starts_at)
+        && Boolean(props.groupEvent.ends_at)
+        && Number(props.groupEvent.capacity ?? props.groupEvent.bookable_places ?? 0) > 0
+        && (!props.groupEvent.repeats || Boolean(props.groupEvent.repeat_ends_on));
 });
 
 const closeDialog = () => {
@@ -185,22 +191,16 @@ const closeDialog = () => {
     emit('close');
 };
 
-const deleteCurrentRuleOccurrence = () => {
-    if (props.currentRule?.repeats) {
-        emit('delete-occurrence', notificationPayload());
-
+const saveGroupEvent = () => {
+    if (!canSave.value) {
         return;
     }
 
-    emit('delete-all', notificationPayload());
-};
-
-const deleteCurrentRuleFromNowOn = () => {
-    emit('delete-from-now-on', notificationPayload());
-};
-
-const deleteCurrentRuleEverywhere = () => {
-    emit('delete-all', notificationPayload());
+    emit('save', {
+        ...props.groupEvent,
+        notify_patient: notificationForm.notify_patient,
+        notification_reason: notificationForm.notification_reason,
+    });
 };
 </script>
 
@@ -212,28 +212,23 @@ const deleteCurrentRuleEverywhere = () => {
         v-model:starts-at="startsAtPickerModel"
         v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
-        save-label="Pokračovať"
+        save-label="Uložiť"
         :loading="loading"
-        :save-disabled="loading || !currentRule"
-        :show-save="Boolean(currentRule)"
-        show-delete
-        :is-repeatable="Boolean(currentRule?.repeats)"
-        :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
+        :save-disabled="loading || !canSave"
+        :show-save="Boolean(groupEvent)"
+        :show-delete="false"
         @close="closeDialog"
-        @save="emit('save', notificationPayload())"
-        @delete-occurrence="deleteCurrentRuleOccurrence"
-        @delete-from-now-on="deleteCurrentRuleFromNowOn"
-        @delete-all="deleteCurrentRuleEverywhere"
+        @save="saveGroupEvent"
     >
         <FormPage
-            v-if="currentRule"
+            v-if="groupEvent"
             submit-label="Uložiť"
             :loading="loading"
             :show-submit="false"
         >
             <FormSection
                 title="Kapacita a služba"
-                description="Pacienti sa budú prihlasovať do rovnakého času až do naplnenia kapacity."
+                description="Toto vytvorí alebo upraví reálny skupinový termín v tabuľke capacity_windows."
                 columns="md:grid-cols-1"
             >
                 <FormField
@@ -243,7 +238,7 @@ const deleteCurrentRuleEverywhere = () => {
                 >
                     <Select
                         id="group_service_id"
-                        v-model="currentRule.service_id"
+                        v-model="groupEvent.service_id"
                         :options="services"
                         option-label="name"
                         option-value="id"
@@ -254,36 +249,72 @@ const deleteCurrentRuleEverywhere = () => {
 
                 <FormField
                     label="Počet rezervovateľných miest"
-                    for="group_bookable_places"
+                    for="group_capacity"
                     required
                 >
                     <InputNumber
-                        id="group_bookable_places"
-                        v-model="currentRule.bookable_places"
+                        id="group_capacity"
+                        v-model="groupEvent.capacity"
                         :min="1"
                         class="w-full"
                         input-class="w-full"
                         placeholder="Napr. 10"
                     />
                 </FormField>
+
+                <FormField
+                    label="Interná poznámka"
+                    for="group_admin_note"
+                >
+                    <Textarea
+                        id="group_admin_note"
+                        v-model="groupEvent.admin_note"
+                        rows="3"
+                        class="w-full"
+                        placeholder="Voliteľná poznámka pre administráciu"
+                    />
+                </FormField>
             </FormSection>
 
             <RepeatingSection
-                :model="currentRule"
+                v-if="!isEditing"
+                :model="groupEvent"
                 :repeat-unit-options="repeatUnitOptions"
                 title="Opakovanie"
-                description="Nastavte platnosť, prípadnú periodickú opakovateľnosť skupinovej rezervácie."
-                enabled-id="group_rule_is_enabled"
-                repeats-id="group_rule_repeats"
+                description="Pri opakovaní sa vytvoria samostatné capacity_windows záznamy v jednej sérii."
+                enabled-id="group_window_is_enabled"
+                repeats-id="group_window_repeats"
                 repeat-every-id="group_repeat_every"
                 repeat-unit-id="group_repeat_unit"
-                enabled-label="Skupinová rezervácia je aktívna a viditeľná pre pacientov"
-                repeats-label="Opakovať túto skupinovú rezerváciu periodicky"
+                enabled-label="Skupinový termín je aktívny a viditeľný pre pacientov"
+                repeats-label="Opakovať tento skupinový termín periodicky"
             />
 
             <FormSection
+                v-if="isEditing && groupEvent.series_uuid"
+                title="Séria"
+                description="Použite len pri zmene služby alebo kapacity celej série."
+                columns="md:grid-cols-1"
+            >
+                <div class="flex items-center gap-2">
+                    <Checkbox
+                        v-model="groupEvent.apply_to_series"
+                        binary
+                        input-id="group_apply_to_series"
+                    />
+
+                    <label
+                        for="group_apply_to_series"
+                        class="cursor-pointer text-sm font-medium text-dark"
+                    >
+                        Použiť zmenu služby, kapacity a poznámky na celú sériu
+                    </label>
+                </div>
+            </FormSection>
+
+            <FormSection
                 title="Upozornenie pacientov"
-                description="Ak zmeníte alebo zrušíte skupinovú rezerváciu s pacientmi, pacientom sa odošle email."
+                description="Pri presune a rušení pacientom môžete poslať email v detaile konkrétneho skupinového termínu."
                 columns="md:grid-cols-1"
             >
                 <div class="flex items-center gap-2">
@@ -297,7 +328,7 @@ const deleteCurrentRuleEverywhere = () => {
                         for="group_notify_patient"
                         class="cursor-pointer text-sm font-medium text-dark"
                     >
-                        Poslať pacientom email pri zmene alebo zrušení
+                        Pripraviť upozornenie pacientom
                     </label>
                 </div>
 
@@ -322,7 +353,7 @@ const deleteCurrentRuleEverywhere = () => {
             class="rounded-xl border border-soft bg-white p-6 text-center text-sm text-accent"
         >
             <i class="pi pi-exclamation-circle mb-2 block text-2xl text-red-400"></i>
-            Skupinovú rezerváciu sa nepodarilo úspešne načítať.
+            Skupinový termín sa nepodarilo načítať.
         </div>
     </EventDialog>
 </template>

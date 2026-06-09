@@ -1,6 +1,8 @@
 <script setup>
+import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
 import MultiSelect from 'primevue/multiselect';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
@@ -47,14 +49,25 @@ const emit = defineEmits([
     'update:visible',
     'close',
     'save',
+    'save-scope',
     'delete-occurrence',
     'delete-from-now-on',
     'delete-all',
 ]);
 
+const rescheduleChoiceVisible = ref(false);
+
 const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value),
+});
+
+const isExistingRepeatedRule = computed(() => {
+    return Boolean(
+        props.currentRule?.id
+            && props.currentRule?.repeats
+            && props.selectedRuleOccurrence?.occurrenceDate,
+    );
 });
 
 const createTimeDate = (value) => {
@@ -162,8 +175,30 @@ const dialogTitle = computed(() => {
 });
 
 const closeDialog = () => {
+    rescheduleChoiceVisible.value = false;
     emit('update:visible', false);
     emit('close');
+};
+
+const saveCurrentRule = () => {
+    if (isExistingRepeatedRule.value) {
+        rescheduleChoiceVisible.value = true;
+
+        return;
+    }
+
+    emit('save');
+};
+
+const submitRescheduleScope = (scope) => {
+    rescheduleChoiceVisible.value = false;
+    emit('save-scope', {
+        reschedule_scope: scope,
+    });
+};
+
+const closeRescheduleChoice = () => {
+    rescheduleChoiceVisible.value = false;
 };
 
 const deleteCurrentRuleOccurrence = () => {
@@ -200,7 +235,7 @@ const deleteCurrentRuleEverywhere = () => {
         :is-repeatable="Boolean(currentRule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate"
         @close="closeDialog"
-        @save="emit('save')"
+        @save="saveCurrentRule"
         @delete-occurrence="deleteCurrentRuleOccurrence"
         @delete-from-now-on="deleteCurrentRuleFromNowOn"
         @delete-all="deleteCurrentRuleEverywhere"
@@ -255,4 +290,53 @@ const deleteCurrentRuleEverywhere = () => {
             Pravidlo sa nepodarilo načítať.
         </div>
     </EventDialog>
+
+    <Dialog
+        v-model:visible="rescheduleChoiceVisible"
+        modal
+        header="Presunúť opakovanie"
+        class="w-full max-w-md"
+    >
+        <div class="space-y-4">
+            <p class="text-sm leading-6 text-accent">
+                Toto pravidlo dostupnosti je opakované. Čo chcete presunúť?
+            </p>
+
+            <div class="grid gap-3">
+                <Button
+                    type="button"
+                    label="Iba tento výskyt"
+                    icon="pi pi-calendar"
+                    outlined
+                    @click="submitRescheduleScope('occurrence')"
+                />
+
+                <Button
+                    type="button"
+                    label="Tento a nasledujúce výskyty"
+                    icon="pi pi-calendar-plus"
+                    outlined
+                    @click="submitRescheduleScope('from_date')"
+                />
+
+                <Button
+                    type="button"
+                    label="Celú sériu"
+                    icon="pi pi-refresh"
+                    severity="danger"
+                    outlined
+                    @click="submitRescheduleScope('series')"
+                />
+            </div>
+        </div>
+
+        <template #footer>
+            <Button
+                type="button"
+                label="Zrušiť"
+                text
+                @click="closeRescheduleChoice"
+            />
+        </template>
+    </Dialog>
 </template>

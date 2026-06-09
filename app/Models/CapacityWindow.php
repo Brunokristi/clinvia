@@ -2,19 +2,24 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class BookingSlot extends Model
+class CapacityWindow extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'branch_id',
         'service_id',
+        'series_uuid',
         'starts_at',
         'ends_at',
         'capacity',
-        'is_enabled',
+        'status',
+        'admin_note',
     ];
 
     protected function casts(): array
@@ -23,7 +28,6 @@ class BookingSlot extends Model
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'capacity' => 'integer',
-            'is_enabled' => 'boolean',
         ];
     }
 
@@ -40,5 +44,16 @@ class BookingSlot extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    public function activeBookings(): HasMany
+    {
+        return $this->hasMany(Booking::class)
+            ->whereNotIn('status', ['cancelled', 'rejected', 'no_show']);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
     }
 }

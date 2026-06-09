@@ -14,6 +14,7 @@ import { useCapacityWindowActions } from './useCapacityWindowActions';
 export function useBookingCalendar(props) {
     const showAvailabilityRules = ref(true);
     const showReservations = ref(true);
+    const showGroupEvents = ref(true);
 
     const currentCalendarDate = ref(new Date().toISOString().slice(0, 10));
     const currentCalendarView = ref('timeGridWeek');
@@ -47,17 +48,38 @@ export function useBookingCalendar(props) {
         props,
         dateTime,
         dialogs,
-        ruleForm: rules.ruleForm,
     });
 
     const events = useBookingCalendarEvents({
         props,
         showAvailabilityRules,
         showReservations,
+        showGroupEvents,
         freeTimeRules: rules.freeTimeRules,
         getDateTime: dateTime.getDateTime,
         getRuleOccurrences: rules.getRuleOccurrences,
         getRuleTitle: rules.getRuleTitle,
+    });
+
+    const createGroupEventDraft = (data) => ({
+        id: null,
+        capacity_window_id: null,
+
+        date: data.date,
+        starts_at: data.starts_at,
+        ends_at: data.ends_at,
+
+        service_id: null,
+        capacity: 5,
+        bookable_places: 5,
+        admin_note: '',
+
+        repeats: false,
+        repeat_every: 1,
+        repeat_unit: 'weeks',
+        repeat_ends_on: null,
+        apply_to_series: false,
+        is_enabled: true,
     });
 
     const continueFromCreateChoice = (data) => {
@@ -88,7 +110,6 @@ export function useBookingCalendar(props) {
                 date: data.date,
                 starts_at: data.starts_at,
                 ends_at: data.ends_at,
-                slot_mode: 'free_bookable_time',
             });
 
             dialogs.selectedRuleIndex.value = rules.ruleForm.rules.length - 1;
@@ -104,24 +125,21 @@ export function useBookingCalendar(props) {
         }
 
         if (data.create_type === 'group_event') {
-            rules.ruleForm.rules.push({
-                ...rules.emptyRule(),
-                date: data.date,
-                starts_at: data.starts_at,
-                ends_at: data.ends_at,
-                slot_mode: 'single_service_many_clients',
-                bookable_places: 5,
-            });
-
-            dialogs.selectedRuleIndex.value = rules.ruleForm.rules.length - 1;
-            dialogs.selectedRuleOccurrence.value = {
-                ruleIndex: dialogs.selectedRuleIndex.value,
-                occurrenceDate: data.date,
-                isRepeatedOccurrence: false,
-            };
-
+            dialogs.selectedGroupEvent.value = createGroupEventDraft(data);
             dialogs.groupEventDialogVisible.value = true;
         }
+    };
+
+    const cloneRuleForRestore = (rule) => {
+        if (!rule) {
+            return null;
+        }
+
+        return {
+            ...rule,
+            service_ids: [...(rule.service_ids ?? [])],
+            excluded_dates: [...(rule.excluded_dates ?? [])],
+        };
     };
 
     const openEventDialog = (clickInfo) => {
@@ -130,19 +148,14 @@ export function useBookingCalendar(props) {
         if (type === 'rule') {
             dialogs.selectedRuleIndex.value = clickInfo.event.extendedProps.ruleIndex;
 
+            const rule = rules.ruleForm.rules[clickInfo.event.extendedProps.ruleIndex];
+
             dialogs.selectedRuleOccurrence.value = {
                 ruleIndex: clickInfo.event.extendedProps.ruleIndex,
                 occurrenceDate: clickInfo.event.extendedProps.occurrenceDate,
                 isRepeatedOccurrence: clickInfo.event.extendedProps.isRepeatedOccurrence,
+                originalRule: cloneRuleForRestore(rule),
             };
-
-            const rule = rules.ruleForm.rules[dialogs.selectedRuleIndex.value];
-
-            if (rule?.slot_mode === 'single_service_many_clients') {
-                dialogs.groupEventDialogVisible.value = true;
-
-                return;
-            }
 
             dialogs.availabilityRuleDialogVisible.value = true;
 
@@ -300,6 +313,7 @@ export function useBookingCalendar(props) {
     return {
         showAvailabilityRules,
         showReservations,
+        showGroupEvents,
 
         createChoiceDialogVisible: dialogs.createChoiceDialogVisible,
 
@@ -314,6 +328,7 @@ export function useBookingCalendar(props) {
 
         selectedBooking: dialogs.selectedBooking,
         selectedCapacityWindow: dialogs.selectedCapacityWindow,
+        selectedGroupEvent: dialogs.selectedGroupEvent,
         selectedRuleOccurrence: dialogs.selectedRuleOccurrence,
         pendingCalendarSelection: dialogs.pendingCalendarSelection,
 
@@ -335,7 +350,8 @@ export function useBookingCalendar(props) {
         closeCreateChoiceDialog: dialogs.closeCreateChoiceDialog,
         continueFromCreateChoice,
 
-        closeRuleDialog: dialogs.closeRuleDialog,
+        closeRuleDialog: rules.closeRuleDialogSafely,
+        closeGroupEventDialog: dialogs.closeGroupEventDialog,
         deleteCurrentRule: rules.deleteCurrentRule,
         saveRules: rules.saveRules,
 
@@ -343,8 +359,10 @@ export function useBookingCalendar(props) {
         updateBooking: bookingActions.updateBooking,
         cancelBooking: bookingActions.cancelBooking,
         rescheduleBooking: bookingActions.rescheduleBooking,
+
         cancelCapacityWindow: capacityWindowActions.cancelCapacityWindow,
         rescheduleCapacityWindow: capacityWindowActions.rescheduleCapacityWindow,
+        saveCapacityWindow: capacityWindowActions.saveCapacityWindow,
 
         openDeleteRuleDialog: dialogs.openDeleteRuleDialog,
         closeDeleteRuleDialog: dialogs.closeDeleteRuleDialog,
@@ -357,6 +375,6 @@ export function useBookingCalendar(props) {
         deleteCapacityWindowSeries: capacityWindowActions.deleteCapacityWindowSeries,
         addPatientToCapacityWindow: capacityWindowActions.addPatientToCapacityWindow,
 
-        openCapacityWindowRuleEditor: capacityWindowActions.openCapacityWindowRuleEditor,
+        openCapacityWindowEditor: capacityWindowActions.openCapacityWindowEditor,
     };
 }

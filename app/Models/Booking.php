@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
 class Booking extends Model
 {
     use HasFactory;
@@ -14,6 +16,9 @@ class Booking extends Model
         'booking_slot_id',
         'branch_id',
         'service_id',
+        'capacity_window_id',
+        'starts_at',
+        'ends_at',
         'patient_name',
         'patient_email',
         'patient_phone',
@@ -22,9 +27,27 @@ class Booking extends Model
         'admin_note',
     ];
 
+    protected function casts(): array
+    {
+        return [
+            'starts_at' => 'datetime',
+            'ends_at' => 'datetime',
+        ];
+    }
+
     public function bookingSlot(): BelongsTo
     {
         return $this->belongsTo(BookingSlot::class);
+    }
+
+    public function capacityWindow(): BelongsTo
+    {
+        return $this->belongsTo(CapacityWindow::class);
+    }
+
+    public function appointmentRequest(): HasOne
+    {
+        return $this->hasOne(AppointmentRequest::class);
     }
 
     public function branch(): BelongsTo

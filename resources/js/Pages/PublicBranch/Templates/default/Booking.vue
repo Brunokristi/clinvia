@@ -66,7 +66,7 @@ const bookingForm = useForm({
     mode: '',
     request_type: '',
     service_ids: [...props.selectedServiceIds],
-    booking_slot_id: '',
+    capacity_window_id: '',
     preferred_option_id: '',
     preferred_date: '',
     preferred_period: '',
@@ -179,9 +179,9 @@ const shouldShowGeneralRequest = computed(() => {
         && !hasPreferredOptions.value;
 });
 
-const selectedSlot = computed(() => {
+const selectedCapacityWindow = computed(() => {
     return props.availableSlots.find((slot) => {
-        return Number(slot.id) === Number(bookingForm.booking_slot_id);
+        return Number(slot.capacity_window_id ?? slot.id) === Number(bookingForm.capacity_window_id);
     }) ?? null;
 });
 
@@ -191,12 +191,12 @@ const selectedOption = computed(() => {
     }) ?? null;
 });
 
-const selectedSlotLabel = computed(() => {
-    if (!selectedSlot.value) {
+const selectedCapacityWindowLabel = computed(() => {
+    if (!selectedCapacityWindow.value) {
         return null;
     }
 
-    return `${formatDate(selectedSlot.value.starts_at)} · ${formatTime(selectedSlot.value.starts_at)} – ${formatTime(selectedSlot.value.ends_at)}`;
+    return `${formatDate(selectedCapacityWindow.value.starts_at)} · ${formatTime(selectedCapacityWindow.value.starts_at)} – ${formatTime(selectedCapacityWindow.value.ends_at)}`;
 });
 
 const selectedOptionLabel = computed(() => {
@@ -226,7 +226,7 @@ const canContinueFromServices = computed(() => {
 
 const canContinueFromAvailability = computed(() => {
     if (bookingForm.mode === 'exact_slot') {
-        return Boolean(bookingForm.booking_slot_id);
+        return Boolean(bookingForm.capacity_window_id);
     }
 
     if (bookingForm.mode === 'appointment_request' && bookingForm.request_type === 'preferred_period') {
@@ -382,7 +382,7 @@ const formatTime = (value) => {
 const clearAvailabilitySelection = () => {
     bookingForm.mode = '';
     bookingForm.request_type = '';
-    bookingForm.booking_slot_id = '';
+    bookingForm.capacity_window_id = '';
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
     bookingForm.preferred_period = '';
@@ -436,10 +436,10 @@ const onPageChange = (event) => {
     applyFilters(pageNumber, 2);
 };
 
-const selectSlot = (slot) => {
+const selectCapacityWindow = (capacityWindow) => {
     bookingForm.mode = 'exact_slot';
     bookingForm.request_type = '';
-    bookingForm.booking_slot_id = slot.id;
+    bookingForm.capacity_window_id = capacityWindow.capacity_window_id ?? capacityWindow.id;
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
     bookingForm.preferred_period = '';
@@ -451,7 +451,7 @@ const selectOption = (option) => {
     bookingForm.preferred_option_id = option.id;
     bookingForm.preferred_date = option.date;
     bookingForm.preferred_period = option.period;
-    bookingForm.booking_slot_id = '';
+    bookingForm.capacity_window_id = '';
 };
 
 const selectGeneralRequest = () => {
@@ -463,7 +463,7 @@ const selectGeneralRequest = () => {
 
     bookingForm.mode = 'appointment_request';
     bookingForm.request_type = 'general';
-    bookingForm.booking_slot_id = '';
+    bookingForm.capacity_window_id = '';
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = preferredDate;
     bookingForm.preferred_period = '';
@@ -479,7 +479,7 @@ const resetBookingFlow = () => {
         'mode',
         'request_type',
         'service_ids',
-        'booking_slot_id',
+        'capacity_window_id',
         'preferred_option_id',
         'preferred_date',
         'preferred_period',
@@ -627,31 +627,31 @@ const submitBooking = () => {
                                 class="space-y-3"
                             >
                                 <button
-                                    v-for="slot in availableSlots"
-                                    :key="slot.id"
+                                    v-for="capacityWindow in availableSlots"
+                                    :key="capacityWindow.capacity_window_id ?? capacityWindow.id"
                                     type="button"
                                     class="w-full rounded-md border px-4 py-3 text-left transition"
-                                    :class="Number(bookingForm.booking_slot_id) === Number(slot.id)
+                                    :class="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id)
                                         ? 'border-accent bg-accent text-white'
                                         : 'border-soft bg-white text-dark hover:bg-soft'"
-                                    @click="selectSlot(slot)"
+                                    @click="selectCapacityWindow(capacityWindow)"
                                 >
                                     <span class="flex items-center justify-between gap-4">
                                         <span>
                                             <span class="block font-semibold">
-                                                {{ formatDate(slot.starts_at) }} · {{ formatTime(slot.starts_at) }} – {{ formatTime(slot.ends_at) }}
+                                                {{ formatDate(capacityWindow.starts_at) }} · {{ formatTime(capacityWindow.starts_at) }} – {{ formatTime(capacityWindow.ends_at) }}
                                             </span>
 
                                             <span
                                                 class="mt-1 block text-xs"
-                                                :class="Number(bookingForm.booking_slot_id) === Number(slot.id) ? 'text-white/80' : 'text-accent'"
+                                                :class="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'text-white/80' : 'text-accent'"
                                             >
-                                                {{ slot.free_capacity }} voľné miesta z {{ slot.capacity }}
+                                                {{ capacityWindow.free_capacity ?? capacityWindow.available_count }} voľné miesta z {{ capacityWindow.capacity }}
                                             </span>
                                         </span>
 
                                         <Tag
-                                            :value="Number(bookingForm.booking_slot_id) === Number(slot.id) ? 'Vybrané' : 'Vybrať'"
+                                            :value="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'Vybrané' : 'Vybrať'"
                                         />
                                     </span>
                                 </button>
@@ -905,10 +905,10 @@ const submitBooking = () => {
                                 </small>
 
                                 <small
-                                    v-if="bookingForm.errors.booking_slot_id"
+                                    v-if="bookingForm.errors.capacity_window_id"
                                     class="block text-red-600"
                                 >
-                                    {{ bookingForm.errors.booking_slot_id }}
+                                    {{ bookingForm.errors.capacity_window_id }}
                                 </small>
 
                                 <small
@@ -962,12 +962,12 @@ const submitBooking = () => {
                                 približne {{ totalDurationMinutes }} min
                             </p>
 
-                            <p v-if="selectedSlotLabel">
+                            <p v-if="selectedCapacityWindowLabel">
                                 <strong class="text-white">
                                     Termín:
                                 </strong>
 
-                                {{ selectedSlotLabel }}
+                                {{ selectedCapacityWindowLabel }}
                             </p>
 
                             <p v-if="selectedOptionLabel">

@@ -17,6 +17,7 @@ class BranchCalendarUpdated implements ShouldBroadcastNow
         public string $action = 'updated',
         public ?int $bookingId = null,
         public ?int $appointmentRequestId = null,
+        public ?int $capacityWindowId = null,
     ) {
     }
 
@@ -37,6 +38,7 @@ class BranchCalendarUpdated implements ShouldBroadcastNow
             'action' => $this->action,
             'booking_id' => $this->bookingId,
             'appointment_request_id' => $this->appointmentRequestId,
+            'capacity_window_id' => $this->capacityWindowId,
         ];
     }
 }

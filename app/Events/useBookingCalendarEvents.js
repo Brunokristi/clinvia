@@ -4,7 +4,6 @@ export function useBookingCalendarEvents({
     props,
     showAvailabilityRules,
     showReservations,
-    showGroupEvents,
     freeTimeRules,
     getDateTime,
     getRuleOccurrences,
@@ -131,10 +130,6 @@ export function useBookingCalendarEvents({
     });
 
     const capacityWindowEvents = computed(() => {
-        if (!showGroupEvents.value) {
-            return [];
-        }
-        
         return (props.calendarCapacityWindows ?? [])
             .map((capacityWindow) => {
                 const date = capacityWindow.date

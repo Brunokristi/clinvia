@@ -2,42 +2,44 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\ConvertAppointmentRequestToBookingAction;
+use App\Events\BranchCalendarUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
 use App\Models\Booking;
-use App\Models\BookingSlot;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Services\AdminBookingCalendarService;
+use App\Services\CapacityWindowService;
+use App\Notifications\RequestCancelledNotification;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Actions\CreateBookingAction;
-use App\Notifications\RequestCancelledNotification;
-use Illuminate\Support\Facades\Notification;
-use App\Events\BranchCalendarUpdated;
 
 class BranchBookingCalendarController extends Controller
 {
-    public function index(Request $request, Branch $branch, AdminBookingCalendarService $calendarService): Response
-    {
+    public function index(
+        Request $request,
+        Branch $branch,
+        AdminBookingCalendarService $calendarService,
+        CapacityWindowService $capacityWindowService,
+    ): Response {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
         $date = Carbon::parse($request->string('date', now()->toDateString()));
         $rangeStart = now()->copy()->subMonth()->startOfDay();
         $rangeEnd = now()->copy()->addMonths(6)->endOfDay();
 
-        $branch->load([
+       $branch->load([
             'company:id,legal_name,slug',
             'publicSite',
             'openingHours.intervals',
             'bookingAvailabilityRules.services',
-            'bookingSlots.service',
             'branchInboxMessages' => function ($query) {
                 $query->latest()->limit(15);
             },
@@ -50,21 +52,34 @@ class BranchBookingCalendarController extends Controller
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->get(),
-            'availableRescheduleSlots' => $calendarService->getAvailableAdminSlots($branch),
-            'calendarBookings' => $calendarService->getCalendarBookings($branch, $rangeStart, $rangeEnd),
-            'calendarCapacityWindows' => $calendarService->getCalendarCapacityWindows($branch, $rangeStart, $rangeEnd),
+
+            'availableRescheduleSlots' => [],
+
+            'calendarBookings' => $calendarService->getCalendarBookings(
+                branch: $branch,
+                rangeStart: $rangeStart,
+                rangeEnd: $rangeEnd,
+            ),
+
+            'calendarCapacityWindows' => $capacityWindowService->getCalendarCapacityWindows(
+                branch: $branch,
+                rangeStart: $rangeStart,
+                rangeEnd: $rangeEnd,
+            ),
+
             'pendingAppointmentRequests' => $this->getPendingAppointmentRequests($branch),
+
             'todayBookingsCount' => Booking::query()
                 ->where('branch_id', $branch->id)
                 ->whereNotIn('status', ['cancelled', 'rejected'])
-                ->whereHas('bookingSlot', function ($query) use ($date) {
-                    $query->whereDate('starts_at', $date);
-                })
+                ->whereDate('starts_at', $date->toDateString())
                 ->count(),
+
             'unreadMessagesCount' => BranchInboxMessage::query()
                 ->where('branch_id', $branch->id)
                 ->whereNull('read_at')
                 ->count(),
+
             'selectedDate' => $date->toDateString(),
         ]);
     }
@@ -76,33 +91,26 @@ class BranchBookingCalendarController extends Controller
         $today = now()->toDateString();
 
         $todayBookings = Booking::query()
-            ->with(['service', 'services', 'bookingSlot'])
+            ->with(['service', 'services'])
             ->where('branch_id', $branch->id)
             ->whereNotIn('status', ['cancelled', 'rejected'])
-            ->whereHas('bookingSlot', function ($query) use ($today) {
-                $query->whereDate('starts_at', $today);
-            })
-            ->get()
-            ->sortBy(function (Booking $booking) {
-                return $booking->bookingSlot?->starts_at;
-            })
-            ->values();
+            ->whereDate('starts_at', $today)
+            ->orderBy('starts_at')
+            ->get();
 
         return Inertia::render('Admin/Branches/Dashboard', [
             'branch' => $branch->load(['company:id,legal_name,slug']),
 
             'todayBookingsCount' => $todayBookings->count(),
 
-            'todayAgenda' => $todayBookings->map(function (Booking $booking) {
-                $startsAt = $booking->bookingSlot?->starts_at;
-
+            'todayAgenda' => $todayBookings->map(function (Booking $booking): array {
                 $serviceName = $booking->services?->pluck('name')->filter()->join(', ')
                     ?: $booking->service?->name;
 
                 return [
                     'id' => $booking->id,
-                    'time' => $startsAt
-                        ? Carbon::parse($startsAt)->format('H:i')
+                    'time' => $booking->starts_at
+                        ? Carbon::parse($booking->starts_at)->format('H:i')
                         : '—',
                     'patient_name' => $booking->patient_name,
                     'patient_email' => $booking->patient_email,
@@ -176,6 +184,11 @@ class BranchBookingCalendarController extends Controller
             }
         });
 
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'booking_services_updated',
+        );
+
         return back()->with('success', 'Nastavenia služieb boli uložené.');
     }
 
@@ -183,95 +196,56 @@ class BranchBookingCalendarController extends Controller
         Request $request,
         Branch $branch,
         AppointmentRequest $appointmentRequest,
-        CreateBookingAction $createBookingAction,
+        ConvertAppointmentRequestToBookingAction $convertAppointmentRequestToBookingAction,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
 
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
+            'notify_patient' => ['nullable', 'boolean'],
         ]);
 
-        $result = DB::transaction(function () use ($validated, $branch, $appointmentRequest, $createBookingAction): array {
-            $lockedAppointmentRequest = AppointmentRequest::query()
-                ->whereKey($appointmentRequest->id)
-                ->where('branch_id', $branch->id)
-                ->with('services')
-                ->lockForUpdate()
-                ->firstOrFail();
+        $convertAppointmentRequestToBookingAction->execute($branch, $appointmentRequest, [
+            ...$validated,
+            'notify_patient' => $request->boolean('notify_patient', true),
+        ]);
 
-            if ($lockedAppointmentRequest->status !== 'pending') {
-                throw ValidationException::withMessages([
-                    'appointment_request_id' => 'Táto žiadosť už nie je čakajúca.',
-                ]);
-            }
+        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+    }
 
-            $services = $lockedAppointmentRequest->services;
+    public function cancelAppointmentRequest(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
 
-            if ($services->isEmpty()) {
-                throw ValidationException::withMessages([
-                    'service_ids' => 'Žiadosť nemá vybrané služby.',
-                ]);
-            }
+        $validated = $request->validate([
+            'notify_patient' => ['nullable', 'boolean'],
+            'notification_reason' => ['nullable', 'string', 'max:1000'],
+        ]);
 
-            $primaryService = $services->first();
+        $appointmentRequest->update([
+            'status' => 'cancelled',
+        ]);
 
-            $startsAt = Carbon::parse($validated['starts_at']);
-
-            $durationMinutes = max(
-                15,
-                (int) $lockedAppointmentRequest->total_duration_minutes,
-            );
-
-            $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
-
-            $bookingSlot = BookingSlot::query()
-                ->firstOrCreate(
-                    [
-                        'branch_id' => $branch->id,
-                        'service_id' => $primaryService->id,
-                        'starts_at' => $startsAt,
-                        'ends_at' => $endsAt,
-                    ],
-                    [
-                        'capacity' => 1,
-                        'is_enabled' => true,
-                    ],
-                );
-
-            $booking = $createBookingAction->execute($branch, $bookingSlot, [
-                'service_id' => $primaryService->id,
-                'service_ids' => $services
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id)
-                    ->values()
-                    ->all(),
-                'patient_name' => $lockedAppointmentRequest->patient_name,
-                'patient_email' => $lockedAppointmentRequest->patient_email,
-                'patient_phone' => $lockedAppointmentRequest->patient_phone,
-                'patient_note' => $lockedAppointmentRequest->patient_note,
-                'notify_patient' => true,
-            ]);
-
-            $lockedAppointmentRequest->update([
-                'status' => 'converted',
-                'booking_id' => $booking->id,
-            ]);
-
-            return [
-                'booking_id' => $booking->id,
-                'appointment_request_id' => $lockedAppointmentRequest->id,
-            ];
-        });
+        if ($request->boolean('notify_patient', true) && $appointmentRequest->patient_email) {
+            Notification::route('mail', $appointmentRequest->patient_email)
+                ->notify(new RequestCancelledNotification(
+                    appointmentRequest: $appointmentRequest,
+                    reason: $validated['notification_reason'] ?? null,
+                ));
+        }
 
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: 'appointment_request_converted',
-            bookingId: $result['booking_id'],
-            appointmentRequestId: $result['appointment_request_id'],
+            action: 'appointment_request_cancelled',
+            appointmentRequestId: $appointmentRequest->id,
         );
 
-        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+        return back()->with('success', 'Žiadosť bola zrušená.');
     }
 
     private function getPendingAppointmentRequests(Branch $branch)
@@ -284,7 +258,7 @@ class BranchBookingCalendarController extends Controller
             ->orderBy('preferred_date')
             ->orderBy('created_at')
             ->get()
-            ->map(fn (AppointmentRequest $appointmentRequest) => [
+            ->map(fn (AppointmentRequest $appointmentRequest): array => [
                 'id' => $appointmentRequest->id,
                 'request_type' => $appointmentRequest->request_type ?? 'preferred_period',
                 'preferred_date' => $appointmentRequest->preferred_date?->toDateString(),
@@ -295,7 +269,7 @@ class BranchBookingCalendarController extends Controller
                 'patient_phone' => $appointmentRequest->patient_phone,
                 'patient_note' => $appointmentRequest->patient_note,
                 'services' => $appointmentRequest->services
-                    ->map(fn (Service $service) => [
+                    ->map(fn (Service $service): array => [
                         'id' => $service->id,
                         'name' => $service->name,
                         'duration_minutes' => $service->duration_minutes,

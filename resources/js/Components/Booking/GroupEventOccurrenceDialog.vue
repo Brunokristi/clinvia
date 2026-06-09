@@ -1,9 +1,10 @@
 <script setup>
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
+import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
@@ -29,14 +30,15 @@ const props = defineProps({
 
 const emit = defineEmits([
     'update:visible',
-    'add-patient-to-capacity-window',
+    'close',
+    'edit-capacity-window',
     'cancel-booking',
     'cancel-capacity-window',
     'reschedule-capacity-window',
     'delete-capacity-window-occurrence',
     'delete-capacity-window-from-date',
     'delete-capacity-window-series',
-    'edit-capacity-window-rule',
+    'add-patient-to-capacity-window',
 ]);
 
 const dialogVisible = computed({
@@ -62,6 +64,9 @@ const patientForm = reactive({
     admin_note: '',
     notify_patient: true,
 });
+
+const rescheduleChoiceVisible = ref(false);
+const pendingReschedulePayload = ref(null);
 
 const bookings = computed(() => {
     return props.capacityWindow?.bookings ?? [];
@@ -98,8 +103,9 @@ const dialogTitle = computed(() => {
 
 const isCapacityWindowRepeatable = computed(() => {
     return Boolean(
-        props.capacityWindow?.repeats
-            || props.capacityWindow?.is_recurring
+        props.capacityWindow?.series_uuid
+            || props.capacityWindow?.repeats
+            || props.capacityWindow?.is_recurring,
     );
 });
 
@@ -124,18 +130,164 @@ const canAddPatient = computed(() => {
         && Boolean(patientForm.patient_name.trim());
 });
 
+const stripTimezoneFromDateTime = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    return String(value)
+        .trim()
+        .replace(' ', 'T')
+        .replace(/Z$/, '')
+        .replace(/([+-]\d{2}:?\d{2})$/, '')
+        .slice(0, 19);
+};
+
+const parseDateValue = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value;
+    }
+
+    const stringValue = stripTimezoneFromDateTime(value);
+
+    if (!stringValue) {
+        return null;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
+        return new Date(`${stringValue}T00:00:00`);
+    }
+
+    if (stringValue.includes('T')) {
+        return new Date(`${stringValue.slice(0, 10)}T00:00:00`);
+    }
+
+    return null;
+};
+
+const parseTimeValue = (value, fallbackDate = null) => {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value;
+    }
+
+    const stringValue = stripTimezoneFromDateTime(value);
+
+    if (!stringValue) {
+        return null;
+    }
+
+    if (stringValue.includes('T')) {
+        return new Date(stringValue);
+    }
+
+    const [hours, minutes] = stringValue.slice(0, 5).split(':');
+    const date = fallbackDate instanceof Date
+        ? new Date(fallbackDate)
+        : new Date();
+
+    date.setHours(Number(hours), Number(minutes), 0, 0);
+
+    return date;
+};
+
+const formatDateOnlyForBackend = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const formatDateTimeForBackend = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:00`;
+};
+
+const mergeDateAndTime = (dateValue, timeValue) => {
+    if (!dateValue || !timeValue) {
+        return null;
+    }
+
+    const date = dateValue instanceof Date
+        ? new Date(dateValue)
+        : new Date(dateValue);
+
+    const time = timeValue instanceof Date
+        ? timeValue
+        : new Date(timeValue);
+
+    date.setHours(time.getHours(), time.getMinutes(), 0, 0);
+
+    return date;
+};
+
 const resetGroupForm = () => {
-    groupForm.date = capacityWindowDate.value
-        ? new Date(`${capacityWindowDate.value}T00:00:00`)
+    const pendingReschedule = props.capacityWindow?._pendingReschedule ?? null;
+    const pendingStart = pendingReschedule?.starts_at ?? null;
+    const pendingEnd = pendingReschedule?.ends_at ?? null;
+    const pendingDate = pendingReschedule?.date ?? null;
+
+    const dateString = pendingDate
+        ?? capacityWindowDate.value;
+
+    const date = dateString
+        ? parseDateValue(dateString)
         : null;
 
-    groupForm.starts_at = props.capacityWindow?.starts_at
-        ? new Date(props.capacityWindow.starts_at)
-        : null;
+    groupForm.date = date;
 
-    groupForm.ends_at = props.capacityWindow?.ends_at
-        ? new Date(props.capacityWindow.ends_at)
-        : null;
+    groupForm.starts_at = pendingStart
+        ? parseTimeValue(pendingStart, date)
+        : parseTimeValue(
+            props.capacityWindow?.starts_datetime
+                ?? props.capacityWindow?.starts_at,
+            date,
+        );
+
+    groupForm.ends_at = pendingEnd
+        ? parseTimeValue(pendingEnd, date)
+        : parseTimeValue(
+            props.capacityWindow?.ends_datetime
+                ?? props.capacityWindow?.ends_at,
+            date,
+        );
 
     groupForm.notify_patient = true;
     groupForm.notification_reason = '';
@@ -180,60 +332,23 @@ watch(
     },
 );
 
-const formatDateOnlyForBackend = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-
-    return `${year}-${month}-${day}`;
-};
-
-const formatDateTimeForBackend = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}:${minutes}:00`;
-};
-
-const mergeDateAndTime = (dateValue, timeValue) => {
-    if (!dateValue || !timeValue) {
-        return null;
-    }
-
-    const date = dateValue instanceof Date
-        ? new Date(dateValue)
-        : new Date(dateValue);
-
-    const time = timeValue instanceof Date
-        ? timeValue
-        : new Date(timeValue);
-
-    date.setHours(time.getHours(), time.getMinutes(), 0, 0);
-
-    return date;
+const editCapacityWindow = () => {
+    emit('edit-capacity-window', props.capacityWindow);
 };
 
 const closeDialog = () => {
     emit('update:visible', false);
+    emit('close');
+};
+
+const buildReschedulePayload = () => {
+    return {
+        date: selectedDateForBackend.value,
+        starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
+        ends_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.ends_at)),
+        notify_patient: groupForm.notify_patient,
+        notification_reason: groupForm.notification_reason,
+    };
 };
 
 const rescheduleCapacityWindow = () => {
@@ -241,13 +356,38 @@ const rescheduleCapacityWindow = () => {
         return;
     }
 
+    const payload = buildReschedulePayload();
+
+    if (!isCapacityWindowRepeatable.value) {
+        emit('reschedule-capacity-window', props.capacityWindow, {
+            ...payload,
+            reschedule_scope: 'occurrence',
+        });
+
+        return;
+    }
+
+    pendingReschedulePayload.value = payload;
+    rescheduleChoiceVisible.value = true;
+};
+
+const submitRescheduleScope = (scope) => {
+    if (!props.capacityWindow || !pendingReschedulePayload.value) {
+        return;
+    }
+
     emit('reschedule-capacity-window', props.capacityWindow, {
-        date: selectedDateForBackend.value,
-        starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
-        ends_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.ends_at)),
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        ...pendingReschedulePayload.value,
+        reschedule_scope: scope,
     });
+
+    pendingReschedulePayload.value = null;
+    rescheduleChoiceVisible.value = false;
+};
+
+const closeRescheduleChoice = () => {
+    pendingReschedulePayload.value = null;
+    rescheduleChoiceVisible.value = false;
 };
 
 const cancelCapacityWindow = () => {
@@ -267,14 +407,9 @@ const deleteCapacityWindowOccurrence = () => {
         return;
     }
 
-    if (!isCapacityWindowRepeatable.value) {
-        deleteCapacityWindowSeries();
-
-        return;
-    }
-
     emit('delete-capacity-window-occurrence', props.capacityWindow, {
         date: selectedDateForBackend.value,
+        delete_scope: 'occurrence',
         notify_patient: groupForm.notify_patient,
         notification_reason: groupForm.notification_reason,
     });
@@ -286,13 +421,14 @@ const deleteCapacityWindowFromDate = () => {
     }
 
     if (!isCapacityWindowRepeatable.value) {
-        deleteCapacityWindowSeries();
+        deleteCapacityWindowOccurrence();
 
         return;
     }
 
     emit('delete-capacity-window-from-date', props.capacityWindow, {
         date: selectedDateForBackend.value,
+        delete_scope: 'from_date',
         notify_patient: groupForm.notify_patient,
         notification_reason: groupForm.notification_reason,
     });
@@ -305,6 +441,7 @@ const deleteCapacityWindowSeries = () => {
 
     emit('delete-capacity-window-series', props.capacityWindow, {
         date: selectedDateForBackend.value,
+        delete_scope: 'series',
         notify_patient: groupForm.notify_patient,
         notification_reason: groupForm.notification_reason,
     });
@@ -365,7 +502,7 @@ const addPatientToCapacityWindow = () => {
                 type="button"
                 label="Viac"
                 outlined
-                @click="emit('edit-capacity-window-rule', capacityWindow)"
+                @click="editCapacityWindow"
             />
         </template>
 
@@ -420,7 +557,7 @@ const addPatientToCapacityWindow = () => {
                     </PatientCard>
                 </div>
             </FormSection>
-            
+
             <FormSection
                 title="Pridať pacienta"
                 description="Pacienta pridáte priamo do tohto skupinového termínu."
@@ -526,9 +663,8 @@ const addPatientToCapacityWindow = () => {
             </FormSection>
 
             <FormSection
-                v-if="capacityWindow"
                 title="Upraviť termín"
-                description="Zmeniť túto udalosť."
+                description="Zmeniť túto udalosť. Pri opakovanej sérii sa vás aplikácia opýta, či chcete presunúť iba tento termín alebo viac termínov."
                 columns="md:grid-cols-2"
             >
                 <div class="flex items-center gap-2 md:col-span-2">
@@ -567,11 +703,10 @@ const addPatientToCapacityWindow = () => {
                         type="button"
                         label="Upraviť skupinu udalostí"
                         outlined
-                        @click="emit('edit-capacity-window-rule', capacityWindow)"
+                        @click="editCapacityWindow"
                     />
                 </div>
             </FormSection>
-
         </FormPage>
 
         <div
@@ -581,4 +716,53 @@ const addPatientToCapacityWindow = () => {
             Skupinový termín sa nepodarilo načítať.
         </div>
     </EventDialog>
+
+    <Dialog
+        v-model:visible="rescheduleChoiceVisible"
+        modal
+        header="Presunúť opakovanie"
+        class="w-full max-w-md"
+    >
+        <div class="space-y-4">
+            <p class="text-sm leading-6 text-accent">
+                Tento skupinový termín je súčasťou opakovanej série. Čo chcete presunúť?
+            </p>
+
+            <div class="grid gap-3">
+                <Button
+                    type="button"
+                    label="Iba tento termín"
+                    icon="pi pi-calendar"
+                    outlined
+                    @click="submitRescheduleScope('occurrence')"
+                />
+
+                <Button
+                    type="button"
+                    label="Tento a nasledujúce termíny"
+                    icon="pi pi-calendar-plus"
+                    outlined
+                    @click="submitRescheduleScope('from_date')"
+                />
+
+                <Button
+                    type="button"
+                    label="Celú sériu"
+                    icon="pi pi-refresh"
+                    severity="danger"
+                    outlined
+                    @click="submitRescheduleScope('series')"
+                />
+            </div>
+        </div>
+
+        <template #footer>
+            <Button
+                type="button"
+                label="Zrušiť"
+                text
+                @click="closeRescheduleChoice"
+            />
+        </template>
+    </Dialog>
 </template>
