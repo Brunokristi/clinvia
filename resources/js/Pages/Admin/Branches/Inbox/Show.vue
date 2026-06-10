@@ -121,23 +121,20 @@ const formatDateTime = (value) => {
         return 'Bez termínu';
     }
 
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
+    const normalizedValue = String(value);
 
-    if (Number.isNaN(date.getTime())) {
+    const match = normalizedValue.match(
+        /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/,
+    );
+
+    if (!match) {
         return 'Bez termínu';
     }
 
-    return date.toLocaleString('sk-SK', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+    const [, year, month, day, hour, minute] = match;
 
+    return `${day}.${month}.${year} ${hour}:${minute}`;
+};
 const bookingServicesLabel = computed(() => {
     const services = booking.value?.services ?? [];
 
@@ -149,13 +146,21 @@ const bookingServicesLabel = computed(() => {
 });
 
 const bookingStartsAt = computed(() => {
-    return booking.value?.booking_slot?.starts_at
+    return booking.value?.starts_at
+        ?? booking.value?.startsAt
+        ?? booking.value?.capacity_window?.starts_at
+        ?? booking.value?.capacityWindow?.starts_at
+        ?? booking.value?.booking_slot?.starts_at
         ?? booking.value?.bookingSlot?.starts_at
         ?? null;
 });
 
 const bookingEndsAt = computed(() => {
-    return booking.value?.booking_slot?.ends_at
+    return booking.value?.ends_at
+        ?? booking.value?.endsAt
+        ?? booking.value?.capacity_window?.ends_at
+        ?? booking.value?.capacityWindow?.ends_at
+        ?? booking.value?.booking_slot?.ends_at
         ?? booking.value?.bookingSlot?.ends_at
         ?? null;
 });

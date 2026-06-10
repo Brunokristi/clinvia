@@ -9,9 +9,15 @@
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color: #FFE5E5; padding: 32px 16px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden;">
+                <table
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    role="presentation"
+                    style="max-width: 600px; background-color: #ffffff; border-radius: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden;"
+                >
                     <tr>
-                        <td style="padding: 32px 32px 12px 32px; text-align: center;">
+                        <td style="padding: 32px 32px 12px 32px; text-align: center; background-color: #ffffff; border-top-left-radius: 6px; border-top-right-radius: 6px;">
                             <img
                                 src="{{ asset('brand/logo_accent.png') }}"
                                 alt="Logo aplikácie"
@@ -22,13 +28,13 @@
                     </tr>
 
                     <tr>
-                        <td style="padding: 16px 32px 36px 32px; text-align: center;">
+                        <td style="padding: 16px 32px 36px 32px; text-align: center; background-color: #ffffff;">
                             @yield('content')
                         </td>
                     </tr>
 
                     <tr>
-                        <td style="padding: 20px 32px; background-color: #FFE5E5; text-align: center;">
+                        <td style="padding: 20px 32px; background-color: #ffffff; text-align: center; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;">
                             <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #C17979;">
                                 Tento email bol odoslaný automaticky. Neodpovedajte naň.
                             </p>

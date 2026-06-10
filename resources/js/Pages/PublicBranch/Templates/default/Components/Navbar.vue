@@ -326,7 +326,7 @@ const links = computed(() => {
                         </div>
                     </div>
 
-                    <nav class="mt-4 grid gap-1 border-b border-accent px-6">
+                    <nav class="py-4 grid gap-1 border-b border-accent px-6">
                         <Link
                             v-for="link in links"
                             :key="link.label"

@@ -23,22 +23,34 @@ class BookingCreatedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $this->booking->loadMissing(['branch', 'service', 'services', 'bookingSlot']);
+        $this->booking->loadMissing([
+            'branch',
+            'service',
+            'services',
+            'bookingSlot',
+            'capacityWindow',
+        ]);
 
-        $slot = $this->booking->bookingSlot;
+        $startsAt = $this->booking->starts_at
+            ?? $this->booking->capacityWindow?->starts_at
+            ?? $this->booking->bookingSlot?->starts_at;
+
+        $endsAt = $this->booking->ends_at
+            ?? $this->booking->capacityWindow?->ends_at
+            ?? $this->booking->bookingSlot?->ends_at;
 
         $appointmentLabel = '—';
 
-        if ($slot?->starts_at) {
-            $appointmentLabel = $slot->starts_at->format('d.m.Y H:i');
+        if ($startsAt) {
+            $appointmentLabel = $startsAt->format('d.m.Y H:i');
 
-            if ($slot->ends_at) {
-                $appointmentLabel .= ' – ' . $slot->ends_at->format('H:i');
+            if ($endsAt) {
+                $appointmentLabel .= ' – ' . $endsAt->format('H:i');
             }
         }
 
         return (new MailMessage)
-            ->subject('Nová Rezervácia')
+            ->subject('Nová rezervácia')
             ->view('emails.bookings.created', [
                 'patientName' => $this->booking->patient_name,
                 'serviceName' => $this->booking->services->isNotEmpty()

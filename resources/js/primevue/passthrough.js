@@ -1480,6 +1480,8 @@ export const primevuePt = {
         root: {
             class: [
                 '!w-full',
+                '!max-w-full',
+                '!min-w-0',
                 '!rounded-md',
                 '!border !border-soft',
                 '!bg-soft',
@@ -1492,34 +1494,71 @@ export const primevuePt = {
             ],
         },
 
+        labelContainer: {
+            class: [
+                '!min-w-0',
+                '!max-w-full',
+                '!overflow-hidden',
+            ],
+        },
+
         label: {
             class: [
-                '!px-4 !py-2 flex flex-wrap gap-1 items-center',
+                '!px-4 !py-2',
+                '!flex !flex-wrap !items-center !gap-1',
+                '!min-w-0',
+                '!max-w-full',
+                '!overflow-hidden',
                 '!text-normal',
                 '!text-accent',
                 '!shadow-none',
+                '!whitespace-normal',
             ],
         },
 
         chipItem: {
             class: [
-                '!bg-accent !text-white',
-                '!rounded-md !px-2 !py-0.5',
-                'flex items-center gap-1.5',
-                '!text-xs !font-medium',
+                '!min-w-0',
+                '!max-w-full',
             ],
         },
 
-        chipIcon: {
-            class: [
-                '!text-white/80 hover:!text-white',
-                '!text-[10px] cursor-pointer',
-            ],
+        pcChip: {
+            root: {
+                class: [
+                    '!max-w-full',
+                    '!min-w-0',
+                    '!rounded-md',
+                    '!bg-accent',
+                    '!px-2 !py-0.5',
+                    '!text-white',
+                    '!text-xs !font-medium',
+                ],
+            },
+
+            label: {
+                class: [
+                    '!min-w-0',
+                    '!max-w-[220px]',
+                    'overflow-hidden',
+                    'truncate',
+                    '!text-white',
+                ],
+            },
+
+            removeIcon: {
+                class: [
+                    '!text-white/80 hover:!text-white',
+                    '!text-[10px] cursor-pointer',
+                    'shrink-0',
+                ],
+            },
         },
 
         dropdown: {
             class: [
                 '!w-10',
+                'shrink-0',
                 '!text-accent',
                 '!bg-transparent',
                 '!rounded-r-md',
@@ -1535,6 +1574,7 @@ export const primevuePt = {
 
         overlay: {
             class: [
+                '!max-w-[calc(100vw-2rem)]',
                 '!rounded-md',
                 '!border !border-soft',
                 '!bg-white',
@@ -1560,7 +1600,7 @@ export const primevuePt = {
                     'hover:!border-accent',
                     'focus:!border-accent',
                 ],
-            }
+            },
         },
 
         listContainer: {
@@ -1595,6 +1635,8 @@ export const primevuePt = {
         optionLabel: {
             class: [
                 '!font-medium',
+                '!whitespace-normal',
+                '!break-words',
             ],
         },
 
@@ -1602,6 +1644,7 @@ export const primevuePt = {
             root: {
                 class: 'inline-flex items-center',
             },
+
             box: {
                 class: [
                     'h-4 w-4 rounded',
@@ -1611,6 +1654,7 @@ export const primevuePt = {
                     'data-[p-checked=true]:!bg-accent',
                 ],
             },
+
             icon: {
                 class: 'text-white text-[10px]',
             },

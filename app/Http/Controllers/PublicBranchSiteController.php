@@ -751,7 +751,6 @@ class PublicBranchSiteController extends Controller
             $confirmedBookingsCount = $capacityWindow
                 ->bookings()
                 ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-                ->lockForUpdate()
                 ->count();
 
             if ($confirmedBookingsCount >= (int) $capacityWindow->capacity) {

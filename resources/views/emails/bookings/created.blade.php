@@ -12,7 +12,7 @@
     </p>
 
     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #A75A5A;">
-        Vaša rezervácia bola úspešne vytvorená
+        Dataily o vašej rezervácii nájdete nižšie.
     </p>
 
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin: 0 0 24px 0; border-collapse: collapse;">

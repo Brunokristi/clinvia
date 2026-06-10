@@ -22,7 +22,7 @@ class BranchInboxMessageService
         $message = BranchInboxMessage::create([
             'branch_id' => $branch->id,
             'type' => 'contact_form',
-            'title' => 'Nový kontaktný formulár',
+            'title' => 'Nová správa',
             'body' => $body,
             'sender_name' => $senderName,
             'sender_email' => $senderEmail,
@@ -35,13 +35,9 @@ class BranchInboxMessageService
         $this->notifyBranchRecipients(
             branch: $branch,
             settingKey: 'notify_new_contact_form',
-            subject: 'Nový kontaktný formulár',
+            subject: 'Nová správa',
             message: collect([
-                'Bol odoslaný nový kontaktný formulár.',
-                'Odosielateľ: ' . $senderName,
-                $senderEmail ? 'E-mail: ' . $senderEmail : null,
-                $senderPhone ? 'Telefón: ' . $senderPhone : null,
-                $body ? 'Správa: ' . $body : null,
+                'Máte novú správu od '. $senderName . '.'
             ])->filter()->join("\n"),
         );
 
@@ -90,12 +86,7 @@ class BranchInboxMessageService
             settingKey: 'notify_new_booking',
             subject: 'Nová rezervácia',
             message: collect([
-                'Bola vytvorená nová rezervácia.',
-                'Pacient: ' . $booking->patient_name,
-                $services ? 'Služba: ' . $services : null,
-                $startsAt ? 'Termín: ' . $startsAt : null,
-                $booking->patient_email ? 'E-mail: ' . $booking->patient_email : null,
-                $booking->patient_phone ? 'Telefón: ' . $booking->patient_phone : null,
+                'Klinet ' . $booking->patient_name . ' vytvoril novú rezerváciu.',
             ])->filter()->join("\n"),
         );
 
@@ -141,13 +132,7 @@ class BranchInboxMessageService
             settingKey: 'notify_new_appointment_request',
             subject: 'Nová žiadosť o rezerváciu',
             message: collect([
-                'Bola odoslaná nová žiadosť o rezerváciu.',
-                'Pacient: ' . $appointmentRequest->patient_name,
-                $services ? 'Služby: ' . $services : null,
-                $preferredDate ? 'Preferovaný dátum: ' . $preferredDate : null,
-                $preferredPeriod ? 'Preferovaný čas: ' . $preferredPeriod : null,
-                $appointmentRequest->patient_email ? 'E-mail: ' . $appointmentRequest->patient_email : null,
-                $appointmentRequest->patient_phone ? 'Telefón: ' . $appointmentRequest->patient_phone : null,
+                'Klient ' . $appointmentRequest->patient_name . ' požiadal o nový termín.',
             ])->filter()->join("\n"),
         );
 

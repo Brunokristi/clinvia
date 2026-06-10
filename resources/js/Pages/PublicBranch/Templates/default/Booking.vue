@@ -3,12 +3,9 @@ import PublicBranchLayout from '@/Layouts/PublicBranchLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import DatePicker from 'primevue/datepicker';
-import Divider from 'primevue/divider';
 import InputText from 'primevue/inputtext';
-import Message from 'primevue/message';
 import MultiSelect from 'primevue/multiselect';
 import Paginator from 'primevue/paginator';
-import Steps from 'primevue/steps';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import { computed, ref, watch } from 'vue';
@@ -61,6 +58,9 @@ const currentStep = ref(1);
 const submittedSuccessfully = ref(false);
 const dateValue = ref(null);
 const selectedServiceIds = ref([...props.selectedServiceIds]);
+
+const visibleAvailabilityLimit = ref(5);
+const availabilityBatchSize = 5;
 
 const bookingForm = useForm({
     mode: '',
@@ -168,6 +168,34 @@ const hasExactSlots = computed(() => {
 const hasPreferredOptions = computed(() => {
     return props.availableOptions.length > 0;
 });
+
+const visibleAvailableSlots = computed(() => {
+    return props.availableSlots.slice(0, visibleAvailabilityLimit.value);
+});
+
+const hiddenAvailableSlotsCount = computed(() => {
+    return Math.max(0, props.availableSlots.length - visibleAvailabilityLimit.value);
+});
+
+const canShowMoreAvailableSlots = computed(() => {
+    return hiddenAvailableSlotsCount.value > 0;
+});
+
+const visibleAvailableOptions = computed(() => {
+    return props.availableOptions.slice(0, visibleAvailabilityLimit.value);
+});
+
+const hiddenAvailableOptionsCount = computed(() => {
+    return Math.max(0, props.availableOptions.length - visibleAvailabilityLimit.value);
+});
+
+const canShowMoreAvailableOptions = computed(() => {
+    return hiddenAvailableOptionsCount.value > 0;
+});
+
+const showMoreAvailability = () => {
+    visibleAvailabilityLimit.value += availabilityBatchSize;
+};
 
 const canUseGeneralRequest = computed(() => {
     return props.canSubmitGeneralRequest && hasSelectedServices.value;
@@ -386,6 +414,8 @@ const clearAvailabilitySelection = () => {
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
     bookingForm.preferred_period = '';
+
+    visibleAvailabilityLimit.value = 5;
 };
 
 const goToStep = (step) => {
@@ -398,6 +428,7 @@ const goToStep = (step) => {
     }
 
     currentStep.value = step;
+    scrollToTop();
 };
 
 const goToAvailabilityStep = () => {
@@ -414,6 +445,15 @@ const goToPatientStep = () => {
     }
 
     currentStep.value = 3;
+};
+
+const scrollToTop = () => {
+    requestAnimationFrame(() => {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth',
+        });
+    });
 };
 
 const applyFilters = (pageNumber = 1, nextStep = currentStep.value) => {
@@ -627,7 +667,7 @@ const submitBooking = () => {
                                 class="space-y-3"
                             >
                                 <button
-                                    v-for="capacityWindow in availableSlots"
+                                    v-for="capacityWindow in visibleAvailableSlots"
                                     :key="capacityWindow.capacity_window_id ?? capacityWindow.id"
                                     type="button"
                                     class="w-full rounded-md border px-4 py-3 text-left transition"
@@ -655,6 +695,18 @@ const submitBooking = () => {
                                         />
                                     </span>
                                 </button>
+
+                                <div
+                                    v-if="canShowMoreAvailableSlots"
+                                    class="flex justify-center pt-2"
+                                >
+                                    <Button
+                                        type="button"
+                                        :label="`Viac termínov (${hiddenAvailableSlotsCount})`"
+                                        text
+                                        @click="showMoreAvailability"
+                                    />
+                                </div>
                             </div>
 
                             <div
@@ -662,7 +714,7 @@ const submitBooking = () => {
                                 class="space-y-3"
                             >
                                 <button
-                                    v-for="option in availableOptions"
+                                    v-for="option in visibleAvailableOptions"
                                     :key="option.id"
                                     type="button"
                                     class="w-full rounded-md border px-4 py-3 text-left transition"
@@ -694,6 +746,18 @@ const submitBooking = () => {
                                         />
                                     </span>
                                 </button>
+
+                                <div
+                                    v-if="canShowMoreAvailableOptions"
+                                    class="flex justify-center pt-2"
+                                >
+                                    <Button
+                                        type="button"
+                                        :label="`Viac termínov (${hiddenAvailableOptionsCount})`"
+                                        outlined
+                                        @click="showMoreAvailability"
+                                    />
+                                </div>
 
                                 <Paginator
                                     v-if="hasPagination"
@@ -921,7 +985,7 @@ const submitBooking = () => {
 
                             <div class="flex flex-wrap justify-end gap-3">
                                 <Button
-                                    label="← Späť na termín"
+                                    label="Späť na výber termínu"
                                     severity="secondary"
                                     outlined
                                     type="button"

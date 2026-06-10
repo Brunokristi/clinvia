@@ -1,4 +1,5 @@
 <script setup>
+import TableCard from '@/Components/Tables/TableCard.vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { router } from '@inertiajs/vue3';
 import Button from 'primevue/button';
@@ -109,10 +110,36 @@ const overviewCards = computed(() => [
         onClick: goToAgenda,
     },
     {
-        title: 'Nečítané správy',
+        title: 'Nové správy',
         value: props.unreadMessagesCount,
-        description: 'Počet správ v inboxe, ktoré ešte neboli prečítané.',
+        description: 'Nové správy v schránke, ktoré vyžadujú vašu pozornosť.',
         onClick: goToInbox,
+    },
+]);
+
+const agendaColumns = computed(() => [
+    {
+        field: 'time',
+        header: 'Čas',
+        sortable: false,
+        style: 'width: 140px',
+    },
+    {
+        field: 'patient_name',
+        header: 'Pacient',
+        sortable: false,
+    },
+    {
+        field: 'service_name',
+        header: 'Služba',
+        sortable: false,
+        emptyValue: 'Bez služby',
+    },
+    {
+        field: 'status_label',
+        header: 'Stav',
+        sortable: false,
+        style: 'width: 160px',
     },
 ]);
 </script>
@@ -125,14 +152,14 @@ const overviewCards = computed(() => [
                     v-for="card in overviewCards"
                     :key="card.title"
                     type="button"
-                    class="rounded-md bg-soft text-left text-accent p-5"
+                    class="rounded-md bg-soft p-5 text-left text-accent"
                     @click="card.onClick"
                 >
                     <p class="text-normal font-semibold text-accent">
                         {{ card.title }}
                     </p>
 
-                    <p class="mt-4 text-heading text-dark font-semibold">
+                    <p class="mt-4 text-heading font-semibold text-dark">
                         {{ card.value }}
                     </p>
 
@@ -142,67 +169,48 @@ const overviewCards = computed(() => [
                 </button>
             </section>
 
-            <section>
-                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h2 class="text-normal font-semibold text-dark">
-                            Dnešná agenda
-                        </h2>
-
-                        <p class="mt-1 text-normal text-accent">
-                            Prehľad dnešných rezervácií v tejto pobočke.
-                        </p>
-                    </div>
-
+            <TableCard
+                title="Dnešná agenda"
+                description="Prehľad dnešných rezervácií v tejto pobočke."
+                :rows="todayAgenda"
+                :columns="agendaColumns"
+                :show-search="false"
+                :paginator="false"
+                table-style="min-width: 44rem"
+                empty-message="Dnes nie sú naplánované žiadne rezervácie."
+            >
+                <template #actions>
                     <Button
                         type="button"
                         label="Otvoriť kalendár"
                         @click="goToAgenda"
                     />
-                </div>
+                </template>
 
-                <div
-                    v-if="todayAgenda.length"
-                    class="mt-5 divide-y divide-soft"
-                >
-                    <article
-                        v-for="item in todayAgenda"
-                        :key="item.id"
-                        class="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                        <div class="flex gap-3">
-                            <p class="text-normal font-semibold text-dark">
-                                {{ item.time }}
-                            </p>
+                <template #cell-time="{ row }">
+                    <span class="text-normal font-semibold text-dark">
+                        {{ row.time }}
+                    </span>
+                </template>
 
-                            <p class="text-normal font-semibold text-dark">
-                                {{ item.patient_name }}
-                            </p>
+                <template #cell-patient_name="{ row }">
+                    <span class="text-normal font-semibold text-dark">
+                        {{ row.patient_name }}
+                    </span>
+                </template>
 
-                            <p class="text-normal text-accent">
-                                {{ item.service_name || 'Bez služby' }}
-                            </p>
-                        </div>
+                <template #cell-service_name="{ row }">
+                    <span class="text-normal text-accent">
+                        {{ row.service_name || 'Bez služby' }}
+                    </span>
+                </template>
 
-                        <Tag>
-                            {{ item.status_label }}
-                        </Tag>
-                    </article>
-                </div>
-
-                <div
-                    v-else
-                    class="mt-5 rounded-md bg-soft p-5 text-center"
-                >
-                    <p class="text-normal font-semibold text-dark">
-                        Dnes nie sú naplánované žiadne rezervácie.
-                    </p>
-
-                    <p class="mt-2 text-normal text-accent">
-                        Agenda sa tu zobrazí automaticky, keď bude na dnešný deň vytvorená rezervácia.
-                    </p>
-                </div>
-            </section>
+                <template #cell-status_label="{ row }">
+                    <Tag>
+                        {{ row.status_label }}
+                    </Tag>
+                </template>
+            </TableCard>
         </div>
     </AdminLayout>
 </template>
