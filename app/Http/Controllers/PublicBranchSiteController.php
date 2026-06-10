@@ -3,15 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Actions\CreateBookingAction;
+use App\Events\BranchCalendarUpdated;
 use App\Models\AppointmentRequest;
 use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
-use App\Models\CapacityWindow;
 use App\Models\Branch;
+use App\Models\CapacityWindow;
 use App\Models\Service;
-use App\Events\BranchCalendarUpdated;
-use App\Notifications\BookingCreatedNotification;
+use App\Notifications\ContactFormSubmittedNotification;
 use App\Notifications\RequestCreatedNotification;
+use App\Services\BookingAvailabilityService;
+use App\Services\BranchInboxMessageService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,9 +23,6 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Services\BranchInboxMessageService;
-use App\Notifications\ContactFormSubmittedNotification;
-use App\Services\BookingAvailabilityService;
 
 class PublicBranchSiteController extends Controller
 {
@@ -114,8 +113,7 @@ class PublicBranchSiteController extends Controller
         Request $request,
         Branch $branch,
         BookingAvailabilityService $bookingAvailabilityService,
-    ): Response
-    {
+    ): Response {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
 
@@ -151,7 +149,8 @@ class PublicBranchSiteController extends Controller
         $availableOptions = collect();
 
         $canBookExactSlots = false;
-        $canSubmitGeneralRequest = $selectedServices->isNotEmpty() && $bookingSettings['allow_appointment_requests'];
+        $canSubmitGeneralRequest = $selectedServices->isNotEmpty()
+            && $bookingSettings['allow_appointment_requests'];
 
         if ($selectedServices->isNotEmpty()) {
             $availableSlots = $bookingAvailabilityService->getAvailableSlotsForServices(
@@ -190,10 +189,14 @@ class PublicBranchSiteController extends Controller
                     'ends_at' => $capacityWindow->ends_at->toDateTimeString(),
                     'capacity' => (int) $capacityWindow->capacity,
                     'confirmed_bookings_count' => (int) $capacityWindow->confirmed_bookings_count,
-                    'free_capacity' => max(0, (int) $capacityWindow->capacity - (int) $capacityWindow->confirmed_bookings_count),
+                    'free_capacity' => max(
+                        0,
+                        (int) $capacityWindow->capacity - (int) $capacityWindow->confirmed_bookings_count,
+                    ),
                 ])
                 ->values(),
             'availableOptions' => $availableOptions->values(),
+            'availableOptionsPagination' => null,
             'bookingSettings' => $bookingSettings,
         ]);
     }
@@ -203,8 +206,7 @@ class PublicBranchSiteController extends Controller
         Branch $branch,
         CreateBookingAction $createBookingAction,
         BranchInboxMessageService $inboxMessageService,
-    ): RedirectResponse
-    {
+    ): RedirectResponse {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
 
@@ -223,7 +225,13 @@ class PublicBranchSiteController extends Controller
             'patient_email' => ['required', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
             'patient_note' => ['nullable', 'string', 'max:2000'],
+            'website' => ['nullable', 'string', 'max:255'],
+            'form_started_at' => ['nullable'],
         ]);
+
+        if (! empty($validated['website'])) {
+            return back()->with('success', 'Ďakujeme, vašu požiadavku sme prijali.');
+        }
 
         if ($validated['mode'] === 'appointment_request' && ! $bookingSettings['allow_appointment_requests']) {
             throw ValidationException::withMessages([
@@ -307,40 +315,6 @@ class PublicBranchSiteController extends Controller
             ->all();
     }
 
-    private function getUpcomingExactGroupSlots(Branch $branch, Service $service, Carbon $fromDate): Collection
-    {
-        $start = $fromDate->copy()->startOfDay();
-
-        if ($start->isPast()) {
-            $start = now();
-        }
-
-        $end = $start->copy()->addDays(60);
-
-        return CapacityWindow::query()
-            ->with('service')
-            ->withCount([
-                'bookings as confirmed_bookings_count' => function ($query) {
-                    $query->whereNotIn('status', ['cancelled', 'rejected', 'no_show']);
-                },
-            ])
-            ->where('branch_id', $branch->id)
-            ->where('service_id', $service->id)
-            ->where('status', 'active')
-            ->where('starts_at', '>=', $start)
-            ->where('starts_at', '<=', $end)
-            ->whereHas('service', function ($query) {
-                $query
-                    ->where('is_active', true)
-                    ->where('is_bookable', true);
-            })
-            ->orderBy('starts_at')
-            ->get()
-            ->filter(fn (CapacityWindow $window) => (int) $window->confirmed_bookings_count < (int) $window->capacity)
-            ->values()
-            ->take(30);
-    }
-
     private function getAvailableRequestOptions(
         Branch $branch,
         Collection $selectedServices,
@@ -358,9 +332,10 @@ class PublicBranchSiteController extends Controller
             return collect();
         }
 
-        $serviceIds = $selectedServices
+        $selectedServiceIds = $selectedServices
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
+            ->unique()
             ->values();
 
         $rules = BookingAvailabilityRule::query()
@@ -369,8 +344,8 @@ class PublicBranchSiteController extends Controller
             ->where('slot_mode', 'free_bookable_time')
             ->with('services')
             ->get()
-            ->filter(function (BookingAvailabilityRule $rule) use ($serviceIds) {
-                return $this->ruleAllowsAllSelectedServices($rule, $serviceIds);
+            ->filter(function (BookingAvailabilityRule $rule) use ($selectedServiceIds) {
+                return $this->ruleAllowsAllSelectedServices($rule, $selectedServiceIds);
             })
             ->values();
 
@@ -386,39 +361,34 @@ class PublicBranchSiteController extends Controller
             $start = now()->copy()->startOfDay();
         }
 
-        $end = $start->copy()->addDays(30);
+        $end = $start->copy()->addDays(30)->endOfDay();
 
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
-            foreach ($this->requestPeriods() as $period => $periodConfig) {
-                $periodCapacityMinutes = $this->availableRuleMinutesForPeriod(
-                    rules: $rules,
-                    date: $date,
-                    periodStart: $periodConfig['starts_at'],
-                    periodEnd: $periodConfig['ends_at'],
-                );
+            foreach ($this->requestPeriods() as $period => $periodData) {
+                $periodStartsAt = Carbon::parse($date->toDateString() . ' ' . $periodData['starts_at']);
+                $periodEndsAt = Carbon::parse($date->toDateString() . ' ' . $periodData['ends_at']);
 
-                if ($periodCapacityMinutes <= 0) {
+                if ($periodEndsAt->isPast()) {
                     continue;
                 }
 
-                $onlineCapacityMinutes = (int) floor($periodCapacityMinutes * 0.8);
+                $availableMinutes = 0;
 
-                $usedBookingMinutes = $this->confirmedBookingMinutesForPeriod(
-                    branch: $branch,
-                    date: $date,
-                    periodStart: $periodConfig['starts_at'],
-                    periodEnd: $periodConfig['ends_at'],
-                );
+                foreach ($rules as $rule) {
+                    if (! $this->ruleAppliesOnDate($rule, $date)) {
+                        continue;
+                    }
 
-                $pendingRequestMinutes = $this->pendingRequestMinutes(
-                    branch: $branch,
-                    date: $date,
-                    period: $period,
-                );
+                    $availableMinutes += $this->availableRuleMinutesForPeriod(
+                        branch: $branch,
+                        rule: $rule,
+                        date: $date,
+                        periodStartsAt: $periodStartsAt,
+                        periodEndsAt: $periodEndsAt,
+                    );
+                }
 
-                $remainingMinutes = $onlineCapacityMinutes - $usedBookingMinutes - $pendingRequestMinutes;
-
-                if ($remainingMinutes < $totalDurationMinutes) {
+                if ($availableMinutes < $totalDurationMinutes) {
                     continue;
                 }
 
@@ -427,14 +397,20 @@ class PublicBranchSiteController extends Controller
                     'date' => $date->toDateString(),
                     'date_label' => $date->translatedFormat('l j. n. Y'),
                     'period' => $period,
-                    'period_label' => $periodConfig['label'],
-                    'remaining_minutes' => $remainingMinutes,
+                    'period_label' => $periodData['label'],
+                    'starts_at' => $periodStartsAt->toDateTimeString(),
+                    'ends_at' => $periodEndsAt->toDateTimeString(),
+                    'remaining_minutes' => max(0, $availableMinutes),
                     'total_duration_minutes' => $totalDurationMinutes,
                 ]);
             }
         }
 
         return $options
+            ->sortBy([
+                ['date', 'asc'],
+                ['starts_at', 'asc'],
+            ])
             ->values()
             ->take(20);
     }
@@ -463,6 +439,86 @@ class PublicBranchSiteController extends Controller
                 'ends_at' => '21:00:00',
             ],
         ];
+    }
+
+    private function availableRuleMinutesForPeriod(
+        Branch $branch,
+        BookingAvailabilityRule $rule,
+        Carbon $date,
+        Carbon $periodStartsAt,
+        Carbon $periodEndsAt,
+    ): int {
+        $ruleStartsAt = Carbon::parse($date->toDateString() . ' ' . $rule->starts_at);
+        $ruleEndsAt = Carbon::parse($date->toDateString() . ' ' . $rule->ends_at);
+
+        if ($ruleEndsAt->lessThanOrEqualTo($ruleStartsAt)) {
+            return 0;
+        }
+
+        $overlapStartsAt = $ruleStartsAt->greaterThan($periodStartsAt)
+            ? $ruleStartsAt
+            : $periodStartsAt;
+
+        $overlapEndsAt = $ruleEndsAt->lessThan($periodEndsAt)
+            ? $ruleEndsAt
+            : $periodEndsAt;
+
+        if ($overlapEndsAt->lessThanOrEqualTo($overlapStartsAt)) {
+            return 0;
+        }
+
+        if ($overlapEndsAt->isPast()) {
+            return 0;
+        }
+
+        if ($overlapStartsAt->isPast()) {
+            $overlapStartsAt = now();
+        }
+
+        if ($overlapEndsAt->lessThanOrEqualTo($overlapStartsAt)) {
+            return 0;
+        }
+
+        $availableMinutes = $overlapStartsAt->diffInMinutes($overlapEndsAt);
+
+        $usedBookingMinutes = $this->confirmedBookingMinutesInsideRange(
+            branch: $branch,
+            startsAt: $overlapStartsAt,
+            endsAt: $overlapEndsAt,
+        );
+
+        $pendingRequestMinutes = $this->pendingRequestMinutesForRuleRange(
+            branch: $branch,
+            date: $date,
+            ruleStartsAt: $overlapStartsAt,
+            ruleEndsAt: $overlapEndsAt,
+        );
+
+        return max(0, $availableMinutes - $usedBookingMinutes - $pendingRequestMinutes);
+    }
+
+    private function periodFromRuleStart(Carbon $startsAt): string
+    {
+        $hour = (int) $startsAt->format('H');
+
+        if ($hour < 9) {
+            return 'morning';
+        }
+
+        if ($hour < 12) {
+            return 'forenoon';
+        }
+
+        if ($hour < 17) {
+            return 'afternoon';
+        }
+
+        return 'evening';
+    }
+
+    private function formatRulePeriodLabel(Carbon $startsAt, Carbon $endsAt): string
+    {
+        return $startsAt->format('H:i') . ' – ' . $endsAt->format('H:i');
     }
 
     private function ruleAllowsAllSelectedServices(
@@ -496,59 +552,18 @@ class PublicBranchSiteController extends Controller
             ->isEmpty();
     }
 
-    private function availableRuleMinutesForPeriod(
-        Collection $rules,
-        Carbon $date,
-        string $periodStart,
-        string $periodEnd,
-    ): int {
-        $totalMinutes = 0;
-
-        $periodStartsAt = Carbon::parse($date->toDateString() . ' ' . $periodStart);
-        $periodEndsAt = Carbon::parse($date->toDateString() . ' ' . $periodEnd);
-
-        foreach ($rules as $rule) {
-            if (! $this->ruleAppliesOnDate($rule, $date)) {
-                continue;
-            }
-
-            $ruleStartsAt = Carbon::parse($date->toDateString() . ' ' . $rule->starts_at);
-            $ruleEndsAt = Carbon::parse($date->toDateString() . ' ' . $rule->ends_at);
-
-            $overlapStartsAt = $ruleStartsAt->greaterThan($periodStartsAt)
-                ? $ruleStartsAt
-                : $periodStartsAt;
-
-            $overlapEndsAt = $ruleEndsAt->lessThan($periodEndsAt)
-                ? $ruleEndsAt
-                : $periodEndsAt;
-
-            if ($overlapEndsAt->lessThanOrEqualTo($overlapStartsAt)) {
-                continue;
-            }
-
-            $totalMinutes += $overlapStartsAt->diffInMinutes($overlapEndsAt);
-        }
-
-        return $totalMinutes;
-    }
-
-    private function confirmedBookingMinutesForPeriod(
+    private function confirmedBookingMinutesInsideRange(
         Branch $branch,
-        Carbon $date,
-        string $periodStart,
-        string $periodEnd,
+        Carbon $startsAt,
+        Carbon $endsAt,
     ): int {
-        $periodStartsAt = Carbon::parse($date->toDateString() . ' ' . $periodStart);
-        $periodEndsAt = Carbon::parse($date->toDateString() . ' ' . $periodEnd);
-
         return Booking::query()
             ->where('branch_id', $branch->id)
             ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-            ->where('starts_at', '<', $periodEndsAt)
-            ->where('ends_at', '>', $periodStartsAt)
+            ->where('starts_at', '<', $endsAt)
+            ->where('ends_at', '>', $startsAt)
             ->get()
-            ->sum(function (Booking $booking) use ($periodStartsAt, $periodEndsAt) {
+            ->sum(function (Booking $booking) use ($startsAt, $endsAt) {
                 $bookingStartsAt = $booking->starts_at;
                 $bookingEndsAt = $booking->ends_at;
 
@@ -556,13 +571,13 @@ class PublicBranchSiteController extends Controller
                     return 0;
                 }
 
-                $overlapStartsAt = $bookingStartsAt->greaterThan($periodStartsAt)
+                $overlapStartsAt = $bookingStartsAt->greaterThan($startsAt)
                     ? $bookingStartsAt
-                    : $periodStartsAt;
+                    : $startsAt;
 
-                $overlapEndsAt = $bookingEndsAt->lessThan($periodEndsAt)
+                $overlapEndsAt = $bookingEndsAt->lessThan($endsAt)
                     ? $bookingEndsAt
-                    : $periodEndsAt;
+                    : $endsAt;
 
                 if ($overlapEndsAt->lessThanOrEqualTo($overlapStartsAt)) {
                     return 0;
@@ -572,14 +587,67 @@ class PublicBranchSiteController extends Controller
             });
     }
 
-    private function pendingRequestMinutes(Branch $branch, Carbon $date, string $period): int
-    {
-        return (int) AppointmentRequest::query()
+    private function pendingRequestMinutesForRuleRange(
+        Branch $branch,
+        Carbon $date,
+        Carbon $ruleStartsAt,
+        Carbon $ruleEndsAt,
+    ): int {
+        return AppointmentRequest::query()
             ->where('branch_id', $branch->id)
             ->whereDate('preferred_date', $date->toDateString())
-            ->where('preferred_period', $period)
             ->where('status', 'pending')
-            ->sum('total_duration_minutes');
+            ->where('request_type', 'preferred_period')
+            ->get()
+            ->sum(function (AppointmentRequest $appointmentRequest) use ($ruleStartsAt, $ruleEndsAt) {
+                $preferredPeriod = $appointmentRequest->preferred_period;
+
+                if (! $preferredPeriod) {
+                    return 0;
+                }
+
+                $requestStartsAt = $this->periodStartsAtForDate(
+                    date: $ruleStartsAt->copy()->startOfDay(),
+                    period: $preferredPeriod,
+                );
+
+                $requestEndsAt = $this->periodEndsAtForDate(
+                    date: $ruleStartsAt->copy()->startOfDay(),
+                    period: $preferredPeriod,
+                );
+
+                if (! $requestStartsAt || ! $requestEndsAt) {
+                    return 0;
+                }
+
+                if ($requestStartsAt->gte($ruleEndsAt) || $requestEndsAt->lte($ruleStartsAt)) {
+                    return 0;
+                }
+
+                return (int) $appointmentRequest->total_duration_minutes;
+            });
+    }
+
+    private function periodStartsAtForDate(Carbon $date, string $period): ?Carbon
+    {
+        return match ($period) {
+            'morning' => Carbon::parse($date->toDateString() . ' 06:00:00'),
+            'forenoon' => Carbon::parse($date->toDateString() . ' 09:00:00'),
+            'afternoon' => Carbon::parse($date->toDateString() . ' 12:00:00'),
+            'evening' => Carbon::parse($date->toDateString() . ' 17:00:00'),
+            default => null,
+        };
+    }
+
+    private function periodEndsAtForDate(Carbon $date, string $period): ?Carbon
+    {
+        return match ($period) {
+            'morning' => Carbon::parse($date->toDateString() . ' 09:00:00'),
+            'forenoon' => Carbon::parse($date->toDateString() . ' 12:00:00'),
+            'afternoon' => Carbon::parse($date->toDateString() . ' 17:00:00'),
+            'evening' => Carbon::parse($date->toDateString() . ' 21:00:00'),
+            default => null,
+        };
     }
 
     private function ruleAppliesOnDate(BookingAvailabilityRule $rule, Carbon $date): bool
@@ -637,46 +705,83 @@ class PublicBranchSiteController extends Controller
             ]);
         }
 
-        $capacityWindow = CapacityWindow::query()
-            ->with('service')
-            ->where('branch_id', $branch->id)
-            ->whereKey($validated['capacity_window_id'])
-            ->where('status', 'active')
-            ->lockForUpdate()
-            ->firstOrFail();
+        $selectedServiceIds = collect($validated['service_ids'])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
 
-        if (! $capacityWindow->service || ! $capacityWindow->service->is_active || ! $capacityWindow->service->is_bookable) {
+        if ($selectedServiceIds->count() !== 1) {
             throw ValidationException::withMessages([
-                'capacity_window_id' => 'Tento termín nie je dostupný na priamu rezerváciu.',
+                'service_ids' => 'Pri priamom skupinovom termíne vyberte iba jednu službu.',
             ]);
         }
 
-        if ($capacityWindow->starts_at->isPast()) {
-            throw ValidationException::withMessages([
-                'capacity_window_id' => 'Tento termín už nie je dostupný.',
-            ]);
-        }
+        $booking = DB::transaction(function () use (
+            $branch,
+            $validated,
+            $selectedServiceIds,
+            $createBookingAction,
+        ): Booking {
+            $capacityWindow = CapacityWindow::query()
+                ->with('service')
+                ->where('branch_id', $branch->id)
+                ->whereKey($validated['capacity_window_id'])
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if (! in_array((int) $capacityWindow->service_id, collect($validated['service_ids'])->map(fn ($id) => (int) $id)->all(), true)) {
-            throw ValidationException::withMessages([
-                'service_ids' => 'Vybraný termín nepatrí k vybranej službe.',
-            ]);
-        }
+            if (! $capacityWindow->service || ! $capacityWindow->service->is_active || ! $capacityWindow->service->is_bookable) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Tento termín nie je dostupný na priamu rezerváciu.',
+                ]);
+            }
 
-        $booking = $createBookingAction->execute($branch, [
-            'capacity_window_id' => $capacityWindow->id,
-            'service_id' => $capacityWindow->service_id,
-            'starts_at' => $capacityWindow->starts_at,
-            'ends_at' => $capacityWindow->ends_at,
-            'patient_name' => $validated['patient_name'],
-            'patient_email' => $validated['patient_email'],
-            'patient_phone' => $validated['patient_phone'] ?? null,
-            'patient_note' => $validated['patient_note'] ?? null,
-            'status' => 'confirmed',
-            'notify_patient' => true,
-        ]);
+            if ($capacityWindow->starts_at->isPast()) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Tento termín už nie je dostupný.',
+                ]);
+            }
+
+            if ((int) $capacityWindow->service_id !== (int) $selectedServiceIds->first()) {
+                throw ValidationException::withMessages([
+                    'service_ids' => 'Vybraný termín nepatrí k vybranej službe.',
+                ]);
+            }
+
+            $confirmedBookingsCount = $capacityWindow
+                ->bookings()
+                ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
+                ->lockForUpdate()
+                ->count();
+
+            if ($confirmedBookingsCount >= (int) $capacityWindow->capacity) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Tento termín je už obsadený.',
+                ]);
+            }
+
+            return $createBookingAction->execute($branch, [
+                'capacity_window_id' => $capacityWindow->id,
+                'service_id' => $capacityWindow->service_id,
+                'service_ids' => [$capacityWindow->service_id],
+                'starts_at' => $capacityWindow->starts_at,
+                'ends_at' => $capacityWindow->ends_at,
+                'patient_name' => $validated['patient_name'],
+                'patient_email' => $validated['patient_email'],
+                'patient_phone' => $validated['patient_phone'] ?? null,
+                'patient_note' => $validated['patient_note'] ?? null,
+                'status' => 'confirmed',
+                'notify_patient' => true,
+            ]);
+        });
 
         $inboxMessageService->createForBooking($booking);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $booking->branch_id,
+            action: 'booking_created',
+            bookingId: $booking->id,
+        );
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])
@@ -737,11 +842,9 @@ class PublicBranchSiteController extends Controller
                 fromDate: Carbon::parse($validated['preferred_date']),
             );
 
-            $selectedOptionId = Carbon::parse($validated['preferred_date'])->toDateString()
-                . '_'
-                . $validated['preferred_period'];
+            $selectedOptionId = $validated['preferred_option_id'] ?? null;
 
-            if (! $availableOptions->contains('id', $selectedOptionId)) {
+            if (! $selectedOptionId || ! $availableOptions->contains('id', $selectedOptionId)) {
                 throw ValidationException::withMessages([
                     'preferred_option_id' => 'Táto možnosť už nie je dostupná.',
                 ]);
@@ -855,7 +958,7 @@ class PublicBranchSiteController extends Controller
     {
         abort_unless(
             $branch->services()->whereKey($service->id)->exists(),
-            404
+            404,
         );
     }
 

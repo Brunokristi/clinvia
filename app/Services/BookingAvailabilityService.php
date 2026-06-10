@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Branch;
-use App\Models\BookingSlot;
+use App\Models\CapacityWindow;
 use App\Models\Service;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -29,59 +29,67 @@ class BookingAvailabilityService
             return collect();
         }
 
-        $selectedServiceIds = $services
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values();
+        /*
+         * Direct booking into a capacity window is allowed only when the patient
+         * selected exactly one service.
+         *
+         * A capacity window belongs to one concrete service. If the patient selects
+         * multiple services, we must not pretend that one capacity window covers all
+         * selected services. Multi-service selection should go through rules/request
+         * logic, or fall back to a general day request.
+         */
+        if ($services->count() !== 1) {
+            return collect();
+        }
 
-        $start = $date->copy()->startOfDay();
-        $end = $date->copy()->endOfDay();
+        $service = $services->first();
 
-        $slots = BookingSlot::query()
-            ->withCount('confirmedBookings')
+        /*
+         * Important:
+         * The public booking page does not ask the patient for a date before showing
+         * direct capacity-window options. So we search from the selected/default date
+         * forward, not only inside that one day.
+         */
+        $from = $date->copy()->startOfDay();
+
+        if ($from->isPast()) {
+            $from = now();
+        }
+
+        $to = $from->copy()->addDays(90)->endOfDay();
+
+        return CapacityWindow::query()
+            ->with('service')
+            ->withCount([
+                'bookings as confirmed_bookings_count' => function ($query) {
+                    $query->whereNotIn('status', [
+                        'cancelled',
+                        'rejected',
+                        'no_show',
+                    ]);
+                },
+            ])
             ->where('branch_id', $branch->id)
-            ->whereIn('service_id', $selectedServiceIds)
-            ->where('is_enabled', true)
-            ->whereBetween('starts_at', [$start, $end])
-            ->where('starts_at', '>', now())
+            ->where('service_id', $service->id)
+            ->where('status', 'active')
+            ->where('starts_at', '>=', $from)
+            ->where('starts_at', '<=', $to)
+            ->whereHas('service', function ($query) {
+                $query
+                    ->where('is_active', true)
+                    ->where('is_bookable', true);
+            })
             ->orderBy('starts_at')
+            ->limit(30)
             ->get()
-            ->filter(fn (BookingSlot $slot) => $this->isSlotAvailable($slot))
-            ->values();
-
-        return $slots
-            ->groupBy(function (BookingSlot $slot) {
-                return $slot->starts_at->toDateTimeString() . '|' . $slot->ends_at->toDateTimeString();
-            })
-            ->filter(function (Collection $group) use ($selectedServiceIds) {
-                $groupServiceIds = $group
-                    ->pluck('service_id')
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
-
-                return $selectedServiceIds
-                    ->diff($groupServiceIds)
-                    ->isEmpty();
-            })
-            ->map(function (Collection $group) use ($selectedServiceIds) {
-                $primarySlot = $group
-                    ->firstWhere('service_id', $selectedServiceIds->first())
-                    ?? $group->first();
-
-                $primarySlot->selected_service_ids = $selectedServiceIds->all();
-
-                return $primarySlot;
-            })
-            ->sortBy('starts_at')
+            ->filter(fn (CapacityWindow $capacityWindow) => $this->isCapacityWindowAvailable($capacityWindow))
             ->values();
     }
 
-    public function isSlotAvailable(BookingSlot $slot): bool
+    public function isCapacityWindowAvailable(CapacityWindow $capacityWindow): bool
     {
-        return $slot->is_enabled
-            && $slot->starts_at->isFuture()
-            && $slot->confirmed_bookings_count < $slot->capacity;
+        return $capacityWindow->status === 'active'
+            && $capacityWindow->starts_at->isFuture()
+            && (int) $capacityWindow->confirmed_bookings_count < (int) $capacityWindow->capacity;
     }
 }
