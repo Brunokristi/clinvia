@@ -44,7 +44,6 @@ class PublicBranchSiteController extends Controller
             'branch' => $this->branchData($branch),
             'featuredServices' => $branch->services
                 ->where('is_active', true)
-                ->take(4)
                 ->values()
                 ->map(fn ($service) => $this->serviceCardData($service)),
         ]);

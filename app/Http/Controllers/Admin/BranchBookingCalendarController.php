@@ -7,12 +7,13 @@ use App\Events\BranchCalendarUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
 use App\Models\Booking;
+use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
+use App\Notifications\RequestCancelledNotification;
 use App\Services\AdminBookingCalendarService;
 use App\Services\CapacityWindowService;
-use App\Notifications\RequestCancelledNotification;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,37 +36,54 @@ class BranchBookingCalendarController extends Controller
         $rangeStart = now()->copy()->subMonth()->startOfDay();
         $rangeEnd = now()->copy()->addMonths(6)->endOfDay();
 
-       $branch->load([
+        $branch->load([
             'company:id,legal_name,slug',
             'publicSite',
             'openingHours.intervals',
-            'bookingAvailabilityRules.services',
             'branchInboxMessages' => function ($query) {
                 $query->latest()->limit(15);
             },
         ]);
 
+        $services = Service::query()
+            ->where('branch_id', $branch->id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get();
+
+        $availabilityRules = BookingAvailabilityRule::query()
+            ->where('branch_id', $branch->id)
+            ->with('services')
+            ->orderBy('date')
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn (BookingAvailabilityRule $rule): array => $this->formatAvailabilityRuleForFrontend($rule))
+            ->values();
+
+        $calendarBookings = $calendarService->getCalendarBookings(
+            branch: $branch,
+            rangeStart: $rangeStart,
+            rangeEnd: $rangeEnd,
+        );
+
+        $calendarCapacityWindows = $capacityWindowService->getCalendarCapacityWindows(
+            branch: $branch,
+            rangeStart: $rangeStart,
+            rangeEnd: $rangeEnd,
+        );
+
         return Inertia::render('Admin/Branches/Bookings', [
             'branch' => $branch,
-            'services' => Service::query()
-                ->where('branch_id', $branch->id)
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->get(),
+
+            'services' => $services,
+
+            'availabilityRules' => $availabilityRules,
 
             'availableRescheduleSlots' => [],
 
-            'calendarBookings' => $calendarService->getCalendarBookings(
-                branch: $branch,
-                rangeStart: $rangeStart,
-                rangeEnd: $rangeEnd,
-            ),
-
-            'calendarCapacityWindows' => $capacityWindowService->getCalendarCapacityWindows(
-                branch: $branch,
-                rangeStart: $rangeStart,
-                rangeEnd: $rangeEnd,
-            ),
+            'calendarBookings' => $calendarBookings,
+            
+            'calendarCapacityWindows' => $calendarCapacityWindows,
 
             'pendingAppointmentRequests' => $this->getPendingAppointmentRequests($branch),
 
@@ -278,5 +296,102 @@ class BranchBookingCalendarController extends Controller
                     ->all(),
             ])
             ->values();
+    }
+
+    private function formatAvailabilityRuleForFrontend(BookingAvailabilityRule $rule): array
+    {
+        $serviceIds = $rule->services
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($serviceIds === []) {
+            $serviceIds = $this->normalizeServiceIds($rule->service_ids ?? []);
+        }
+
+        return [
+            'id' => $rule->id,
+
+            'date' => $rule->date
+                ? Carbon::parse($rule->date)->toDateString()
+                : null,
+
+            'day_of_week' => $rule->day_of_week,
+
+            'starts_at' => $this->formatTimeForFrontend($rule->starts_at),
+            'ends_at' => $this->formatTimeForFrontend($rule->ends_at),
+
+            'slot_mode' => $rule->slot_mode,
+            'bookable_places' => (int) ($rule->bookable_places ?: 1),
+
+            'service_id' => $rule->service_id ? (int) $rule->service_id : null,
+            'service_ids' => $serviceIds,
+
+            'services' => $rule->services
+                ->map(fn (Service $service): array => [
+                    'id' => $service->id,
+                    'name' => $service->name,
+                    'duration_minutes' => $service->duration_minutes,
+                    'booking_type' => $service->booking_type,
+                    'public_booking_type' => $service->public_booking_type,
+                ])
+                ->values()
+                ->all(),
+
+            'repeats' => (bool) $rule->repeats,
+            'repeat_every' => (int) ($rule->repeat_every ?: 1),
+            'repeat_unit' => $rule->repeat_unit ?: 'weeks',
+
+            'repeat_ends_on' => $rule->repeat_ends_on
+                ? Carbon::parse($rule->repeat_ends_on)->toDateString()
+                : null,
+
+            'excluded_dates' => $this->normalizeDateStrings($rule->excluded_dates ?? []),
+
+            'is_enabled' => (bool) $rule->is_enabled,
+        ];
+    }
+
+    private function formatTimeForFrontend($time): ?string
+    {
+        if (! $time) {
+            return null;
+        }
+
+        if ($time instanceof Carbon) {
+            return $time->format('H:i');
+        }
+
+        $time = (string) $time;
+
+        if (preg_match('/^\d{2}:\d{2}/', $time)) {
+            return substr($time, 0, 5);
+        }
+
+        return Carbon::parse($time)->format('H:i');
+    }
+
+    private function normalizeServiceIds(array $serviceIds): array
+    {
+        return collect($serviceIds)
+            ->map(fn ($id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeDateStrings(array $dates): array
+    {
+        return collect($dates)
+            ->filter()
+            ->map(fn ($date): string => Carbon::parse($date)->startOfDay()->toDateString())
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
     }
 }

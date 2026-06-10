@@ -146,12 +146,12 @@ export function useBookingCalendar(props) {
         const type = clickInfo.event.extendedProps.type;
 
         if (type === 'rule') {
-            dialogs.selectedRuleIndex.value = clickInfo.event.extendedProps.ruleIndex;
+            const ruleIndex = clickInfo.event.extendedProps.ruleIndex;
+            const rule = rules.ruleForm.rules[ruleIndex];
 
-            const rule = rules.ruleForm.rules[clickInfo.event.extendedProps.ruleIndex];
-
+            dialogs.selectedRuleIndex.value = ruleIndex;
             dialogs.selectedRuleOccurrence.value = {
-                ruleIndex: clickInfo.event.extendedProps.ruleIndex,
+                ruleIndex,
                 occurrenceDate: clickInfo.event.extendedProps.occurrenceDate,
                 isRepeatedOccurrence: clickInfo.event.extendedProps.isRepeatedOccurrence,
                 originalRule: cloneRuleForRestore(rule),
@@ -206,7 +206,7 @@ export function useBookingCalendar(props) {
             harness.style.left = 'auto';
 
             mountInfo.el.style.zIndex = '1';
-            mountInfo.el.style.cursor = 'pointer';
+            mountInfo.el.style.cursor = 'grab';
         }
     };
 
@@ -321,10 +321,10 @@ export function useBookingCalendar(props) {
         bookingDialogVisible: dialogs.bookingDialogVisible,
 
         availabilityRuleDialogVisible: dialogs.availabilityRuleDialogVisible,
+        ruleRescheduleScopeDialogVisible: dialogs.ruleRescheduleScopeDialogVisible,
+        capacityWindowRescheduleScopeDialogVisible: dialogs.capacityWindowRescheduleScopeDialogVisible,
         groupEventDialogVisible: dialogs.groupEventDialogVisible,
         groupEventOccurrenceDialogVisible: dialogs.groupEventOccurrenceDialogVisible,
-
-        deleteRuleDialogVisible: dialogs.deleteRuleDialogVisible,
 
         selectedBooking: dialogs.selectedBooking,
         selectedCapacityWindow: dialogs.selectedCapacityWindow,
@@ -350,9 +350,11 @@ export function useBookingCalendar(props) {
         closeCreateChoiceDialog: dialogs.closeCreateChoiceDialog,
         continueFromCreateChoice,
 
-        closeRuleDialog: rules.closeRuleDialogSafely,
+        closeRuleDialog: dialogs.closeRuleDialog,
+        closeRuleDialogSafely: rules.closeRuleDialogSafely,
         closeGroupEventDialog: dialogs.closeGroupEventDialog,
         deleteCurrentRule: rules.deleteCurrentRule,
+        deleteCurrentRuleByScope: rules.deleteCurrentRuleByScope,
         saveRules: rules.saveRules,
 
         createAdminBooking: bookingActions.createAdminBooking,
@@ -363,9 +365,9 @@ export function useBookingCalendar(props) {
         cancelCapacityWindow: capacityWindowActions.cancelCapacityWindow,
         rescheduleCapacityWindow: capacityWindowActions.rescheduleCapacityWindow,
         saveCapacityWindow: capacityWindowActions.saveCapacityWindow,
+        submitPendingCapacityWindowRescheduleScope: capacityWindowActions.submitPendingCapacityWindowRescheduleScope,
+        cancelPendingCapacityWindowReschedule: capacityWindowActions.cancelPendingCapacityWindowReschedule,
 
-        openDeleteRuleDialog: dialogs.openDeleteRuleDialog,
-        closeDeleteRuleDialog: dialogs.closeDeleteRuleDialog,
         deleteCurrentRuleOccurrence: rules.deleteCurrentRuleOccurrence,
         deleteCurrentRuleFromNowOn: rules.deleteCurrentRuleFromNowOn,
         deleteCurrentRuleEverywhere: rules.deleteCurrentRuleEverywhere,

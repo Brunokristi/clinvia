@@ -3,10 +3,11 @@ import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -40,6 +41,8 @@ const emit = defineEmits([
     'save',
 ]);
 
+const updateChoiceVisible = ref(false);
+
 const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value),
@@ -50,12 +53,18 @@ const notificationForm = reactive({
     notification_reason: '',
 });
 
-watch(() => props.visible, (visible) => {
-    if (visible) {
-        notificationForm.notify_patient = true;
-        notificationForm.notification_reason = '';
+const stripTimezoneFromDateTime = (value) => {
+    if (!value) {
+        return null;
     }
-});
+
+    return String(value)
+        .trim()
+        .replace(' ', 'T')
+        .replace(/Z$/, '')
+        .replace(/([+-]\d{2}:?\d{2})$/, '')
+        .slice(0, 19);
+};
 
 const createTimeDate = (value) => {
     if (!value) {
@@ -66,10 +75,14 @@ const createTimeDate = (value) => {
         return value;
     }
 
-    const stringValue = String(value);
+    const stringValue = stripTimezoneFromDateTime(value);
 
-    if (stringValue.includes('T') || stringValue.includes(' ')) {
-        return new Date(stringValue.replace(' ', 'T'));
+    if (!stringValue) {
+        return null;
+    }
+
+    if (stringValue.includes('T')) {
+        return new Date(stringValue);
     }
 
     const [hours, minutes] = stringValue.slice(0, 5).split(':');
@@ -89,6 +102,10 @@ const formatDateForBackend = (value) => {
         ? value
         : new Date(value);
 
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -105,11 +122,68 @@ const formatTimeForBackend = (value) => {
         ? value
         : new Date(value);
 
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
 
     return `${hours}:${minutes}`;
 };
+
+const addYearsToDate = (dateValue, years = 2) => {
+    if (!dateValue) {
+        return null;
+    }
+
+    const stringValue = dateValue instanceof Date
+        ? formatDateForBackend(dateValue)
+        : String(dateValue).slice(0, 10);
+
+    const date = new Date(`${stringValue}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    date.setFullYear(date.getFullYear() + years);
+
+    return formatDateForBackend(date);
+};
+
+const normalizeRepeatDefaults = () => {
+    if (!props.groupEvent) {
+        return;
+    }
+
+    props.groupEvent.repeat_every = Number(props.groupEvent.repeat_every || 1);
+    props.groupEvent.repeat_unit = props.groupEvent.repeat_unit || 'weeks';
+
+    if (props.groupEvent.repeats && !props.groupEvent.repeat_ends_on) {
+        props.groupEvent.repeat_ends_on = addYearsToDate(props.groupEvent.date, 2);
+    }
+};
+
+watch(() => props.visible, (visible) => {
+    if (visible) {
+        notificationForm.notify_patient = true;
+        notificationForm.notification_reason = '';
+        updateChoiceVisible.value = false;
+
+        normalizeRepeatDefaults();
+    }
+});
+
+watch(() => props.groupEvent?.repeats, () => {
+    normalizeRepeatDefaults();
+});
+
+watch(() => props.groupEvent?.date, () => {
+    if (props.groupEvent?.repeats && !props.groupEvent.repeat_ends_on) {
+        props.groupEvent.repeat_ends_on = addYearsToDate(props.groupEvent.date, 2);
+    }
+});
 
 const datePickerModel = computed({
     get: () => {
@@ -121,7 +195,7 @@ const datePickerModel = computed({
             return props.groupEvent.date;
         }
 
-        return new Date(`${props.groupEvent.date}T00:00:00`);
+        return new Date(`${String(props.groupEvent.date).slice(0, 10)}T00:00:00`);
     },
     set: (value) => {
         if (!props.groupEvent) {
@@ -129,6 +203,10 @@ const datePickerModel = computed({
         }
 
         props.groupEvent.date = formatDateForBackend(value);
+
+        if (props.groupEvent.repeats && !props.groupEvent.repeat_ends_on) {
+            props.groupEvent.repeat_ends_on = addYearsToDate(props.groupEvent.date, 2);
+        }
     },
 });
 
@@ -162,6 +240,14 @@ const isEditing = computed(() => {
     return Boolean(props.groupEvent?.capacity_window_id ?? props.groupEvent?.id);
 });
 
+const isPartOfSeries = computed(() => {
+    return Boolean(props.groupEvent?.series_uuid);
+});
+
+const canEditRepeating = computed(() => {
+    return !isEditing.value || isPartOfSeries.value;
+});
+
 const dialogTitle = computed(() => {
     if (!props.groupEvent) {
         return 'Skupinový termín';
@@ -176,6 +262,16 @@ const dialogTitle = computed(() => {
         : 'Skupinový termín';
 });
 
+const hasValidRepeatSettings = computed(() => {
+    if (!props.groupEvent?.repeats) {
+        return true;
+    }
+
+    return Boolean(props.groupEvent.repeat_ends_on)
+        && Number(props.groupEvent.repeat_every ?? 0) >= 1
+        && ['days', 'weeks', 'months'].includes(props.groupEvent.repeat_unit);
+});
+
 const canSave = computed(() => {
     return Boolean(props.groupEvent)
         && Boolean(props.groupEvent.service_id)
@@ -183,12 +279,25 @@ const canSave = computed(() => {
         && Boolean(props.groupEvent.starts_at)
         && Boolean(props.groupEvent.ends_at)
         && Number(props.groupEvent.capacity ?? props.groupEvent.bookable_places ?? 0) > 0
-        && (!props.groupEvent.repeats || Boolean(props.groupEvent.repeat_ends_on));
+        && hasValidRepeatSettings.value;
 });
 
 const closeDialog = () => {
+    updateChoiceVisible.value = false;
     emit('update:visible', false);
     emit('close');
+};
+
+const buildSavePayload = (scope = 'occurrence') => {
+    return {
+        ...props.groupEvent,
+        update_scope: scope,
+        repeat_ends_on: props.groupEvent.repeats
+            ? String(props.groupEvent.repeat_ends_on).slice(0, 10)
+            : null,
+        notify_patient: notificationForm.notify_patient,
+        notification_reason: notificationForm.notification_reason,
+    };
 };
 
 const saveGroupEvent = () => {
@@ -196,11 +305,22 @@ const saveGroupEvent = () => {
         return;
     }
 
-    emit('save', {
-        ...props.groupEvent,
-        notify_patient: notificationForm.notify_patient,
-        notification_reason: notificationForm.notification_reason,
-    });
+    if (isEditing.value && isPartOfSeries.value) {
+        updateChoiceVisible.value = true;
+
+        return;
+    }
+
+    emit('save', buildSavePayload('occurrence'));
+};
+
+const submitUpdateScope = (scope) => {
+    updateChoiceVisible.value = false;
+    emit('save', buildSavePayload(scope));
+};
+
+const cancelUpdateScope = () => {
+    updateChoiceVisible.value = false;
 };
 </script>
 
@@ -277,11 +397,13 @@ const saveGroupEvent = () => {
             </FormSection>
 
             <RepeatingSection
-                v-if="!isEditing"
+                v-if="canEditRepeating"
                 :model="groupEvent"
                 :repeat-unit-options="repeatUnitOptions"
                 title="Opakovanie"
-                description="Pri opakovaní sa vytvoria samostatné capacity_windows záznamy v jednej sérii."
+                :description="isEditing
+                    ? 'Zmena opakovania upraví vybrané termíny v tejto sérii.'
+                    : 'Pri opakovaní sa vytvoria samostatné capacity_windows záznamy v jednej sérii.'"
                 enabled-id="group_window_is_enabled"
                 repeats-id="group_window_repeats"
                 repeat-every-id="group_repeat_every"
@@ -290,31 +412,16 @@ const saveGroupEvent = () => {
                 repeats-label="Opakovať tento skupinový termín periodicky"
             />
 
-            <FormSection
-                v-if="isEditing && groupEvent.series_uuid"
-                title="Séria"
-                description="Použite len pri zmene služby alebo kapacity celej série."
-                columns="md:grid-cols-1"
+            <div
+                v-if="groupEvent.repeats && !hasValidRepeatSettings"
+                class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
             >
-                <div class="flex items-center gap-2">
-                    <Checkbox
-                        v-model="groupEvent.apply_to_series"
-                        binary
-                        input-id="group_apply_to_series"
-                    />
-
-                    <label
-                        for="group_apply_to_series"
-                        class="cursor-pointer text-sm font-medium text-dark"
-                    >
-                        Použiť zmenu služby, kapacity a poznámky na celú sériu
-                    </label>
-                </div>
-            </FormSection>
+                Pri opakovaní musí byť vyplnený dátum ukončenia opakovania, interval a jednotka opakovania.
+            </div>
 
             <FormSection
                 title="Upozornenie pacientov"
-                description="Pri presune a rušení pacientom môžete poslať email v detaile konkrétneho skupinového termínu."
+                description="Pri presune alebo úprave skupinového termínu môžete pacientom poslať email."
                 columns="md:grid-cols-1"
             >
                 <div class="flex items-center gap-2">
@@ -356,4 +463,12 @@ const saveGroupEvent = () => {
             Skupinový termín sa nepodarilo načítať.
         </div>
     </EventDialog>
+
+    <OccurrenceScopeDialog
+        v-model:visible="updateChoiceVisible"
+        mode="update"
+        subject-label="skupinový termín"
+        @select="submitUpdateScope"
+        @cancel="cancelUpdateScope"
+    />
 </template>

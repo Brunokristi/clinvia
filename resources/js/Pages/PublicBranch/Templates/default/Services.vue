@@ -4,8 +4,8 @@ import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
 
 const props = defineProps({
     branch: {
@@ -21,6 +21,29 @@ const props = defineProps({
 const searchTerm = ref('');
 const selectedCategory = ref('all');
 const expandedCategories = ref({});
+
+const trimText = (value, maxLength = 110) => {
+    const text = String(value ?? '').trim();
+
+    if (!text) {
+        return '';
+    }
+
+    if (text.length <= maxLength) {
+        return text;
+    }
+
+    return `${text.slice(0, maxLength).trim()}…`;
+};
+
+const serviceDescription = (service) => {
+    return trimText(
+        service.short_description
+            || service.description
+            || 'Viac informácií nájdete v detaile služby.',
+        115,
+    );
+};
 
 const normalizeText = (value) => {
     return String(value ?? '')
@@ -89,7 +112,7 @@ const visibleCategoryServices = (categoryName, categoryServices) => {
         return categoryServices;
     }
 
-    return categoryServices.slice(0, 4);
+    return categoryServices.slice(0, 3);
 };
 
 const toggleCategory = (categoryName) => {
@@ -130,10 +153,11 @@ const durationLabel = (service) => {
 
                     <IconField class="w-full">
                         <InputIcon class="pi pi-search" />
+
                         <InputText
                             v-model="searchTerm"
                             class="w-full"
-                            :placeholder="Hľadať"
+                            placeholder="Hľadať"
                         />
                     </IconField>
                 </div>
@@ -168,7 +192,7 @@ const durationLabel = (service) => {
                         </h2>
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-4">
+                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                         <Link
                             v-for="service in visibleCategoryServices(categoryName, categoryServices)"
                             :key="service.id"
@@ -177,50 +201,46 @@ const durationLabel = (service) => {
                         >
                             <div class="flex items-center gap-3">
                                 <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
-                                    <i
-                                        v-if="service.icon"
-                                        :class="service.icon"
-                                    />
-
-                                    <span
-                                        v-else
-                                        class="font-semibold"
-                                    >
-                                        S
-                                    </span>
+                                    <i :class="service.icon || 'pi pi-briefcase'" />
                                 </div>
 
-                                <h3 class="text-normal font-semibold text-white">
+                                <h3
+                                    class="text-normal font-semibold text-soft"
+                                    :title="service.name"
+                                >
                                     {{ service.name }}
                                 </h3>
                             </div>
 
-                            <div class="mt-3">
-                                <p class="text-sm leading-6 text-white/80">
-                                    {{ service.short_description }}
+                            <div class="mt-6">
+                                <p
+                                    class="text-sm leading-6 text-soft"
+                                    :title="service.short_description || service.description"
+                                >
+                                    {{ serviceDescription(service) }}
                                 </p>
+                            </div>
 
-                                <div class="mt-4 flex flex-wrap gap-2">
-                                    <span
-                                        v-if="durationLabel(service)"
-                                        class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
-                                    >
-                                        {{ durationLabel(service) }}
-                                    </span>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <span
+                                    v-if="durationLabel(service)"
+                                    class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
+                                >
+                                    {{ durationLabel(service) }}
+                                </span>
 
-                                    <span
-                                        v-if="service.self_pay_amount"
-                                        class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
-                                    >
-                                        Samoplatca {{ service.self_pay_amount }} €
-                                    </span>
-                                </div>
+                                <span
+                                    v-if="service.self_pay_amount"
+                                    class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
+                                >
+                                    Samoplatca {{ service.self_pay_amount }} €
+                                </span>
                             </div>
                         </Link>
                     </div>
 
                     <div
-                        v-if="categoryServices.length > 4"
+                        v-if="categoryServices.length > 3"
                         class="flex justify-center"
                     >
                         <button
@@ -228,7 +248,7 @@ const durationLabel = (service) => {
                             class="rounded-md border border-accent/20 px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft"
                             @click="toggleCategory(categoryName)"
                         >
-                            {{ isCategoryExpanded(categoryName) ? 'Zobraziť menej' : `Zobraziť viac (${categoryServices.length - 4})` }}
+                            {{ isCategoryExpanded(categoryName) ? 'Zobraziť menej' : `Zobraziť viac (${categoryServices.length - 3})` }}
                         </button>
                     </div>
                 </div>

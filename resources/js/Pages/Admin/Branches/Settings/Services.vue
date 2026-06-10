@@ -124,6 +124,20 @@ const serviceTitle = (service) => {
     return service.name || '—';
 };
 
+const trimText = (value, maxLength = 42) => {
+    const text = String(value ?? '').trim();
+
+    if (text.length <= maxLength) {
+        return text || '—';
+    }
+
+    return `${text.slice(0, maxLength).trim()}…`;
+};
+
+const serviceDisplayTitle = (service) => {
+    return trimText(service.name, 42);
+};
+
 const branchBookingEnabled = computed(() => {
     return Boolean(props.branch.booking_settings?.is_enabled);
 });
@@ -164,7 +178,7 @@ const bookingLabel = (service) => {
         return 'Rezervovateľná';
     }
 
-    return `Rezervovateľná · ${service.duration_minutes} min`;
+    return `Rezervovateľná`;
 };
 
 const fillInformationItems = (items = []) => {
@@ -195,7 +209,8 @@ const fillFileItems = (items = []) => {
 const services = computed(() => {
     return (props.branch.services ?? []).map((service) => ({
         ...service,
-        title_label: serviceTitle(service),
+        title_label: serviceDisplayTitle(service),
+        full_title_label: serviceTitle(service),
         category_label: serviceCategoryName(service),
         duration_label: serviceDuration(service),
         insurance_price_label: formatPrice(service.insurance_amount),
@@ -214,16 +229,6 @@ const columns = [
     {
         field: 'duration_label',
         header: 'Trvanie',
-        sortable: true,
-    },
-    {
-        field: 'insurance_price_label',
-        header: 'Poisťovňa',
-        sortable: true,
-    },
-    {
-        field: 'self_pay_price_label',
-        header: 'Samoplatca',
         sortable: true,
     },
     {
@@ -446,7 +451,6 @@ const downloadServicesPdf = () => {
             <template #actions>
                 <Button
                     type="button"
-                    label="Vytlačiť PDF"
                     icon="pi pi-print"
                     outlined
                     @click="printServicesPdf"
@@ -454,7 +458,6 @@ const downloadServicesPdf = () => {
 
                 <Button
                     type="button"
-                    label="Stiahnuť PDF"
                     icon="pi pi-download"
                     outlined
                     @click="downloadServicesPdf"
@@ -473,7 +476,10 @@ const downloadServicesPdf = () => {
                     </div>
 
                     <div class="min-w-0">
-                        <p class="truncate text-sm font-semibold text-dark">
+                        <p
+                            class="truncate text-sm font-semibold text-dark"
+                            :title="row.full_title_label"
+                        >
                             {{ row.title_label }}
                         </p>
 

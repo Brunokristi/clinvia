@@ -1,4 +1,5 @@
 <script setup>
+import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import MultiSelect from 'primevue/multiselect';
 import Textarea from 'primevue/textarea';
@@ -76,16 +77,6 @@ const selectedServicesDuration = computed(() => {
     }, 0);
 });
 
-const selectedServicesLabel = computed(() => {
-    if (!selectedServices.value.length) {
-        return '';
-    }
-
-    return selectedServices.value
-        .map((service) => service.name)
-        .join(', ');
-});
-
 const originalServiceIds = computed(() => {
     if (!props.booking) {
         return [];
@@ -115,6 +106,20 @@ const hasPatientEmail = computed(() => {
 const canNotifyPatient = computed(() => {
     return hasPatientEmail.value;
 });
+
+const mergeDateAndTime = (dateValue, timeValue) => {
+    const date = dateValue instanceof Date
+        ? new Date(dateValue)
+        : new Date(dateValue);
+
+    const time = timeValue instanceof Date
+        ? timeValue
+        : new Date(timeValue);
+
+    date.setHours(time.getHours(), time.getMinutes(), 0, 0);
+
+    return date;
+};
 
 const bookingDateModel = computed({
     get: () => form.date,
@@ -160,20 +165,6 @@ const bookingEndTimeModel = computed({
         form.ends_at = mergeDateAndTime(form.date ?? value, value);
     },
 });
-
-const mergeDateAndTime = (dateValue, timeValue) => {
-    const date = dateValue instanceof Date
-        ? new Date(dateValue)
-        : new Date(dateValue);
-
-    const time = timeValue instanceof Date
-        ? timeValue
-        : new Date(timeValue);
-
-    date.setHours(time.getHours(), time.getMinutes(), 0, 0);
-
-    return date;
-};
 
 const calculateEndFromServices = () => {
     if (!form.date || !form.starts_at || !selectedServicesDuration.value) {
@@ -374,13 +365,22 @@ const cancelBooking = () => {
         save-label="Uložiť"
         :show-save="hasBookingChanges"
         :save-disabled="!canSaveChanges"
-        show-delete
-        delete-label="Odstrániť"
+        :show-delete="false"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
         @save="rescheduleBooking"
-        @delete-occurrence="cancelBooking"
     >
+        <template #footer-start>
+            <Button
+                v-if="booking"
+                type="button"
+                label="Odstrániť rezerváciu"
+                severity="danger"
+                outlined
+                @click="cancelBooking"
+            />
+        </template>
+
         <div v-if="booking">
             <PatientCard
                 class="md:col-span-2"

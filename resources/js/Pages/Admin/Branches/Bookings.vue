@@ -1,6 +1,5 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
-import FormSection from '@/Components/Forms/FormSection.vue';
 
 import CalendarCreateChoiceDialog from '@/Components/Booking/CalendarCreateChoiceDialog.vue';
 import BookingCreateDialog from '@/Components/Booking/BookingCreateDialog.vue';
@@ -9,6 +8,7 @@ import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityR
 import GroupEventCreateEditDialog from '@/Components/Booking/GroupEventCreateEditDialog.vue';
 import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenceDialog.vue';
 import ConfirmDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 
 import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 
@@ -20,33 +20,8 @@ import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
 
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
-import Tag from 'primevue/tag';
-import Toast from 'primevue/toast';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useToast } from 'primevue/usetoast';
-
-const toast = useToast();
-
-const showSuccess = (message) => {
-    toast.add({
-        severity: 'success',
-        summary: 'Hotovo',
-        detail: message,
-        life: 3500,
-    });
-};
-
-const showError = (fallback, errors = {}) => {
-    const firstError = Object.values(errors ?? {})?.[0];
-
-    toast.add({
-        severity: 'error',
-        summary: 'Chyba',
-        detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
-        life: 5000,
-    });
-};
 
 const props = defineProps({
     branch: {
@@ -54,6 +29,10 @@ const props = defineProps({
         required: true,
     },
     services: {
+        type: Array,
+        default: () => [],
+    },
+    availabilityRules: {
         type: Array,
         default: () => [],
     },
@@ -94,6 +73,8 @@ const {
     bookingDialogVisible,
 
     availabilityRuleDialogVisible,
+    ruleRescheduleScopeDialogVisible,
+    capacityWindowRescheduleScopeDialogVisible,
     groupEventDialogVisible,
     groupEventOccurrenceDialogVisible,
 
@@ -111,8 +92,6 @@ const {
     bookingNotes,
     calendarOptions,
 
-    getRuleTitle,
-    getRepeatLabel,
     availableSlotsForBooking,
 
     openCreateChoiceFromButton,
@@ -121,22 +100,22 @@ const {
     closeCreateChoiceDialog,
     continueFromCreateChoice,
 
-    closeRuleDialog,
-    closeGroupEventDialog,
+    closeRuleDialogSafely,
     saveRules,
+    deleteCurrentRuleByScope,
+
+    closeGroupEventDialog,
+    saveCapacityWindow,
 
     createAdminBooking,
     updateBooking,
     cancelBooking,
     rescheduleBooking,
 
-    deleteCurrentRuleOccurrence,
-    deleteCurrentRuleFromNowOn,
-    deleteCurrentRuleEverywhere,
-
     cancelCapacityWindow,
     rescheduleCapacityWindow,
-    saveCapacityWindow,
+    submitPendingCapacityWindowRescheduleScope,
+    cancelPendingCapacityWindowReschedule,
 
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
@@ -153,6 +132,7 @@ const requestSidebarHeight = ref(null);
 const reloadCalendarData = () => {
     router.reload({
         only: [
+            'availabilityRules',
             'calendarBookings',
             'calendarCapacityWindows',
             'pendingAppointmentRequests',
@@ -225,12 +205,6 @@ const confirmCancelAppointmentRequest = () => {
     ]), {
         preserveScroll: true,
         preserveState: true,
-        onSuccess: () => {
-            showSuccess('Žiadosť bola zrušená.');
-        },
-        onError: (errors) => {
-            showError('Žiadosť sa nepodarilo zrušiť.', errors);
-        },
         onFinish: () => {
             closeCancelAppointmentRequestDialog();
         },
@@ -339,214 +313,221 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Toast />
-
     <AdminLayout>
-                <div class="space-y-4">
-                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                        <div
-                            ref="bookingCalendar"
-                            class="booking-calendar min-w-0 gap-4 flex flex-col"
-                        >
-                            <FullCalendar :options="calendarOptions" />
+        <div class="space-y-4">
+            <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div
+                    ref="bookingCalendar"
+                    class="booking-calendar flex min-w-0 flex-col gap-4"
+                >
+                    <FullCalendar :options="calendarOptions" />
 
-                            <div class="flex flex-wrap items-center justify-between gap-4">
-                                <div class="flex flex-wrap gap-6">
-                                    <label class="flex items-center gap-2 text-sm text-dark">
-                                        <ToggleSwitch v-model="showAvailabilityRules" />
-                                        Zobraziť pravidlá
-                                    </label>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex flex-wrap gap-6">
+                            <label class="flex items-center gap-2 text-sm text-dark">
+                                <ToggleSwitch v-model="showAvailabilityRules" />
+                                Zobraziť pravidlá
+                            </label>
 
-                                    <label class="flex items-center gap-2 text-sm text-dark">
-                                        <ToggleSwitch v-model="showReservations" />
-                                        Zobraziť rezervácie
-                                    </label>
+                            <label class="flex items-center gap-2 text-sm text-dark">
+                                <ToggleSwitch v-model="showReservations" />
+                                Zobraziť rezervácie
+                            </label>
 
-                                    <label class="flex items-center gap-2 text-sm text-dark">
-                                        <ToggleSwitch v-model="showGroupEvents" />
-                                        Zobraziť skupinové udalosti
-                                    </label>
-                                </div>
-
-                                <Button
-                                    type="button"
-                                    label="Vytvoriť udalosť"
-                                    @click="openCreateChoiceFromButton"
-                                />
-                            </div>
+                            <label class="flex items-center gap-2 text-sm text-dark">
+                                <ToggleSwitch v-model="showGroupEvents" />
+                                Zobraziť skupinové termíny
+                            </label>
                         </div>
 
-                        <aside
-                            ref="requestSidebar"
-                            class="flex min-h-0 flex-col gap-4 rounded-md bg-soft p-4"
-                            :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
-                        >
-                            <div
-                                v-if="pendingRequests.length"
-                                class="min-h-0 flex-1 overflow-y-auto pr-1"
-                            >
-                                <div class="space-y-3">
-                                    <article
-                                        v-for="request in pendingRequests"
-                                        :key="request.id"
-                                        :data-request-id="request.id"
-                                        class="appointment-request-card cursor-grab rounded-md bg-accent p-4 transition active:cursor-grabbing"
-                                    >
-                                        <div class="space-y-4">
-                                            <div class="flex items-start justify-between gap-3">
-                                                <div>
-                                                    <h3 class="font-semibold text-soft">
-                                                        {{ request.patient_name }}
-                                                    </h3>
-
-                                                    <div class="space-y-1 text-xs text-soft">
-                                                        <p v-if="request.patient_phone">
-                                                            {{ request.patient_phone }}
-                                                        </p>
-
-                                                        <p v-if="request.patient_email">
-                                                            {{ request.patient_email }}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    class="rounded-md px-2 py-1 text-xs font-semibold text-dark transition hover:bg-red-50"
-                                                    @mousedown.stop
-                                                    @click.stop="openCancelAppointmentRequestDialog(request)"
-                                                >
-                                                    Zrušiť
-                                                </button>
-                                            </div>
-
-                                            <div class="grid gap-2 text-normal text-soft ">
-                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
-                                                    <span class="text-right">
-                                                        {{ getRequestServicesLabel(request) }}
-                                                    </span>
-                                                </div>
-
-                                                <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
-                                                    <span class="font-medium">
-                                                        Preferovaný termín
-                                                    </span>
-
-                                                    <span class="text-right">
-                                                        {{ formatDate(getRequestPreferredDate(request)) }} · {{ getRequestPeriodLabel(request) }}
-                                                    </span>
-                                                </div>
-
-                                                <div class="request-card-soft-box flex items-center justify-end gap-3 text-soft">
-                                                    <span class="font-medium">
-                                                        Trvanie
-                                                    </span>
-
-                                                    <span>
-                                                        {{ request.total_duration_minutes }} min
-                                                    </span>
-                                                </div>
-                                            </div>
-
-
-                                            <p
-                                                v-if="request.patient_note"
-                                                class="request-card-soft-box rounded-md bg-white/60 p-3 text-xs leading-5 text-accent"
-                                            >
-                                                {{ request.patient_note }}
-                                            </p>
-                                        </div>
-                                    </article>
-                                </div>
-                            </div>
-
-                            <div
-                                v-else
-                                class="min-h-0 flex-1 text-sm text-accent text-center align-middle flex items-center justify-center"
-                            >
-                                Žiadne čakajúce žiadosti.
-                            </div>
-                        </aside>
+                        <Button
+                            type="button"
+                            label="Vytvoriť udalosť"
+                            @click="openCreateChoiceFromButton"
+                        />
                     </div>
                 </div>
 
-            <CalendarCreateChoiceDialog
-                v-model:visible="createChoiceDialogVisible"
-                :selection="pendingCalendarSelection"
-                @close="closeCreateChoiceDialog"
-                @continue="continueFromCreateChoice"
-            />
+                <aside
+                    ref="requestSidebar"
+                    class="flex min-h-0 flex-col gap-4 rounded-md bg-soft p-4"
+                    :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
+                >
+                    <div
+                        v-if="pendingRequests.length"
+                        class="min-h-0 flex-1 overflow-y-auto pr-1"
+                    >
+                        <div class="space-y-3">
+                            <article
+                                v-for="request in pendingRequests"
+                                :key="request.id"
+                                :data-request-id="request.id"
+                                class="appointment-request-card cursor-grab rounded-md bg-accent p-4 transition active:cursor-grabbing"
+                            >
+                                <div class="space-y-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h3 class="font-semibold text-soft">
+                                                {{ request.patient_name }}
+                                            </h3>
 
-            <BookingCreateDialog
-                v-model:visible="createBookingDialogVisible"
-                :services="services"
-                :selection="pendingCalendarSelection"
-                @close="closeCreateBookingDialog"
-                @create-booking="createAdminBooking"
-            />
+                                            <div class="space-y-1 text-xs text-soft">
+                                                <p v-if="request.patient_phone">
+                                                    {{ request.patient_phone }}
+                                                </p>
 
-            <BookingEditDialog
-                v-model:visible="bookingDialogVisible"
-                :booking="selectedBooking"
-                :booking-notes="bookingNotes"
-                :services="services"
-                :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
-                @update-booking="updateBooking"
-                @cancel-booking="cancelBooking"
-                @reschedule-booking="rescheduleBooking"
-            />
+                                                <p v-if="request.patient_email">
+                                                    {{ request.patient_email }}
+                                                </p>
+                                            </div>
+                                        </div>
 
-            <AvailabilityRuleCreateEditDialog
-                v-model:visible="availabilityRuleDialogVisible"
-                :current-rule="currentRule"
-                :selected-rule-occurrence="selectedRuleOccurrence"
-                :services="services"
-                :repeat-unit-options="repeatUnitOptions"
-                :loading="ruleForm.processing"
-                :get-rule-title="getRuleTitle"
-                :get-repeat-label="getRepeatLabel"
-                @close="closeRuleDialog"
-                @save="saveRules"
-                @save-scope="saveRules"
-                @delete-occurrence="deleteCurrentRuleOccurrence"
-                @delete-from-now-on="deleteCurrentRuleFromNowOn"
-                @delete-all="deleteCurrentRuleEverywhere"
-            />
+                                        <button
+                                            type="button"
+                                            class="rounded-md px-2 py-1 text-xs font-semibold text-dark transition hover:bg-red-50"
+                                            @mousedown.stop
+                                            @click.stop="openCancelAppointmentRequestDialog(request)"
+                                        >
+                                            Zrušiť
+                                        </button>
+                                    </div>
 
-            <GroupEventCreateEditDialog
-                v-model:visible="groupEventDialogVisible"
-                :group-event="selectedGroupEvent"
-                :services="services"
-                :repeat-unit-options="repeatUnitOptions"
-                :loading="ruleForm.processing"
-                @close="closeGroupEventDialog"
-                @save="saveCapacityWindow"
-            />
+                                    <div class="grid gap-2 text-normal text-soft">
+                                        <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
+                                            <span class="text-right">
+                                                {{ getRequestServicesLabel(request) }}
+                                            </span>
+                                        </div>
 
-            <GroupEventOccurrenceDialog
-                v-model:visible="groupEventOccurrenceDialogVisible"
-                :capacity-window="selectedCapacityWindow"
-                :booking-notes="bookingNotes"
-                @edit-capacity-window="openCapacityWindowEditor"
-                @reschedule-capacity-window="rescheduleCapacityWindow"
-                @cancel-capacity-window="cancelCapacityWindow"
-                @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
-                @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
-                @delete-capacity-window-series="deleteCapacityWindowSeries"
-                @add-patient-to-capacity-window="addPatientToCapacityWindow"
-                @cancel-booking="cancelBooking"
-            />
+                                        <div class="request-card-soft-box flex items-center justify-between gap-3 rounded-md bg-soft px-3 py-2 text-accent">
+                                            <span class="font-medium">
+                                                Preferovaný termín
+                                            </span>
 
-            <ConfirmDialog
-                :show="requestCancelDialogVisible"
-                title="Zrušiť žiadosť"
-                :message="requestCancelDialogMessage"
-                confirm-label="Zrušiť žiadosť"
-                cancel-label="Ponechať"
-                confirm-severity="danger"
-                @cancel="closeCancelAppointmentRequestDialog"
-                @confirm="confirmCancelAppointmentRequest"
-            />
+                                            <span class="text-right">
+                                                {{ formatDate(getRequestPreferredDate(request)) }} · {{ getRequestPeriodLabel(request) }}
+                                            </span>
+                                        </div>
+
+                                        <div class="request-card-soft-box flex items-center justify-end gap-3 text-soft">
+                                            <span class="font-medium">
+                                                Trvanie
+                                            </span>
+
+                                            <span>
+                                                {{ request.total_duration_minutes }} min
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <p
+                                        v-if="request.patient_note"
+                                        class="request-card-soft-box rounded-md bg-white/60 p-3 text-xs leading-5 text-accent"
+                                    >
+                                        {{ request.patient_note }}
+                                    </p>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div
+                        v-else
+                        class="flex min-h-0 flex-1 items-center justify-center text-center text-sm text-accent"
+                    >
+                        Žiadne čakajúce žiadosti.
+                    </div>
+                </aside>
+            </div>
+        </div>
+
+        <CalendarCreateChoiceDialog
+            v-model:visible="createChoiceDialogVisible"
+            :selection="pendingCalendarSelection"
+            @close="closeCreateChoiceDialog"
+            @continue="continueFromCreateChoice"
+        />
+
+        <BookingCreateDialog
+            v-model:visible="createBookingDialogVisible"
+            :services="services"
+            :selection="pendingCalendarSelection"
+            @close="closeCreateBookingDialog"
+            @create-booking="createAdminBooking"
+        />
+
+        <BookingEditDialog
+            v-model:visible="bookingDialogVisible"
+            :booking="selectedBooking"
+            :booking-notes="bookingNotes"
+            :services="services"
+            :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
+            @update-booking="updateBooking"
+            @cancel-booking="cancelBooking"
+            @reschedule-booking="rescheduleBooking"
+        />
+
+        <AvailabilityRuleCreateEditDialog
+            v-model:visible="availabilityRuleDialogVisible"
+            :rule="currentRule"
+            :selected-rule-occurrence="selectedRuleOccurrence"
+            :services="services"
+            :repeat-unit-options="repeatUnitOptions"
+            :loading="ruleForm.processing"
+            @close="closeRuleDialogSafely"
+            @save="saveRules"
+            @delete="deleteCurrentRuleByScope"
+        />
+
+        <OccurrenceScopeDialog
+            v-model:visible="ruleRescheduleScopeDialogVisible"
+            mode="reschedule"
+            subject-label="voľný čas"
+            @select="saveRules"
+        />
+
+        <OccurrenceScopeDialog
+            v-model:visible="capacityWindowRescheduleScopeDialogVisible"
+            mode="reschedule"
+            subject-label="skupinový termín"
+            @select="submitPendingCapacityWindowRescheduleScope"
+            @cancel="cancelPendingCapacityWindowReschedule"
+        />
+
+        <GroupEventCreateEditDialog
+            v-model:visible="groupEventDialogVisible"
+            :group-event="selectedGroupEvent"
+            :services="services"
+            :repeat-unit-options="repeatUnitOptions"
+            :loading="false"
+            @close="closeGroupEventDialog"
+            @save="saveCapacityWindow"
+        />
+
+        <GroupEventOccurrenceDialog
+            v-model:visible="groupEventOccurrenceDialogVisible"
+            :capacity-window="selectedCapacityWindow"
+            :booking-notes="bookingNotes"
+            @edit-capacity-window="openCapacityWindowEditor"
+            @reschedule-capacity-window="rescheduleCapacityWindow"
+            @cancel-capacity-window="cancelCapacityWindow"
+            @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
+            @delete-capacity-window-from-date="deleteCapacityWindowFromDate"
+            @delete-capacity-window-series="deleteCapacityWindowSeries"
+            @add-patient-to-capacity-window="addPatientToCapacityWindow"
+            @cancel-booking="cancelBooking"
+        />
+
+        <ConfirmDialog
+            :show="requestCancelDialogVisible"
+            title="Zrušiť žiadosť"
+            :message="requestCancelDialogMessage"
+            confirm-label="Zrušiť žiadosť"
+            cancel-label="Ponechať"
+            confirm-severity="danger"
+            @cancel="closeCancelAppointmentRequestDialog"
+            @confirm="confirmCancelAppointmentRequest"
+        />
     </AdminLayout>
 </template>
 

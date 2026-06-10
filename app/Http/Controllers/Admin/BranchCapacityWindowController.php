@@ -111,24 +111,37 @@ class BranchCapacityWindowController extends Controller
             'service_id' => ['required', 'integer', 'exists:services,id'],
             'capacity' => ['required', 'integer', 'min:1'],
             'admin_note' => ['nullable', 'string'],
+
+            /**
+             * occurrence = only this one capacity window
+             * from_date = this and following windows in the same series
+             * series = all windows in the same series
+             */
+            'update_scope' => ['nullable', 'in:occurrence,from_date,series'],
+
+            /**
+             * Backwards compatibility with the old frontend.
+             */
             'apply_to_series' => ['nullable', 'boolean'],
+
+            'from_date' => ['nullable', 'date'],
         ]);
 
         $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
 
         DB::transaction(function () use ($capacityWindow, $service, $validated): void {
-            $applyToSeries = ($validated['apply_to_series'] ?? false) && filled($capacityWindow->series_uuid);
+            $scope = $this->resolveSeriesScope(
+                requestedScope: $validated['update_scope'] ?? null,
+                applyToSeries: $validated['apply_to_series'] ?? null,
+                capacityWindow: $capacityWindow,
+            );
 
-            $query = CapacityWindow::query()
-                ->where('branch_id', $capacityWindow->branch_id);
-
-            if ($applyToSeries) {
-                $query->where('series_uuid', $capacityWindow->series_uuid);
-            } else {
-                $query->whereKey($capacityWindow->id);
-            }
-
-            $windows = $query->lockForUpdate()->get();
+            $windows = $this->getCapacityWindowsForScope(
+                capacityWindow: $capacityWindow,
+                scope: $scope,
+                fromDate: $validated['from_date'] ?? null,
+                activeOnly: true,
+            );
 
             foreach ($windows as $window) {
                 $activeBookingsCount = $window->bookings()
@@ -147,6 +160,16 @@ class BranchCapacityWindowController extends Controller
                     'admin_note' => $validated['admin_note'] ?? null,
                 ]);
             }
+
+            if ($scope === 'occurrence' && filled($capacityWindow->series_uuid)) {
+                $capacityWindow->refresh();
+
+                if ($capacityWindow->status === 'active') {
+                    $capacityWindow->update([
+                        'series_uuid' => null,
+                    ]);
+                }
+            }
         });
 
         BranchCalendarUpdated::dispatch(
@@ -155,7 +178,14 @@ class BranchCapacityWindowController extends Controller
             capacityWindowId: $capacityWindow->id,
         );
 
-        return back()->with('success', 'Skupinový termín bol upravený.');
+        return back()->with(
+            'success',
+            match ($validated['update_scope'] ?? null) {
+                'from_date' => 'Tento a nasledujúce skupinové termíny boli upravené.',
+                'series' => 'Celá séria skupinových termínov bola upravená.',
+                default => 'Skupinový termín bol upravený.',
+            },
+        );
     }
 
     public function reschedule(
@@ -176,11 +206,11 @@ class BranchCapacityWindowController extends Controller
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $scope = $validated['reschedule_scope'] ?? 'occurrence';
-
-        if ($scope !== 'occurrence' && blank($capacityWindow->series_uuid)) {
-            $scope = 'occurrence';
-        }
+        $scope = $this->resolveSeriesScope(
+            requestedScope: $validated['reschedule_scope'] ?? null,
+            applyToSeries: null,
+            capacityWindow: $capacityWindow,
+        );
 
         $newStartsAt = Carbon::parse($validated['starts_at']);
         $newEndsAt = Carbon::parse($validated['ends_at']);
@@ -188,14 +218,32 @@ class BranchCapacityWindowController extends Controller
         $reason = $validated['notification_reason'] ?? null;
 
         if ($scope === 'occurrence') {
-            $capacityWindowService->rescheduleWindow(
-                capacityWindow: $capacityWindow,
-                newStartsAt: $newStartsAt,
-                newEndsAt: $newEndsAt,
-                notifyPatient: $notifyPatient,
-                reason: $reason,
-                notificationService: $notificationService,
-            );
+            DB::transaction(function () use (
+                $capacityWindow,
+                $capacityWindowService,
+                $notificationService,
+                $newStartsAt,
+                $newEndsAt,
+                $notifyPatient,
+                $reason,
+            ): void {
+                $capacityWindowService->rescheduleWindow(
+                    capacityWindow: $capacityWindow,
+                    newStartsAt: $newStartsAt,
+                    newEndsAt: $newEndsAt,
+                    notifyPatient: $notifyPatient,
+                    reason: $reason,
+                    notificationService: $notificationService,
+                );
+
+                $capacityWindow->refresh();
+
+                if (filled($capacityWindow->series_uuid)) {
+                    $capacityWindow->update([
+                        'series_uuid' => null,
+                    ]);
+                }
+            });
         } else {
             $this->rescheduleCapacityWindowSeries(
                 capacityWindow: $capacityWindow,
@@ -317,22 +365,13 @@ class BranchCapacityWindowController extends Controller
         }
 
         $deleteScope = $validated['delete_scope'] ?? 'series';
-        $fromDate = $deleteScope === 'from_date'
-            ? Carbon::parse($validated['from_date'] ?? $capacityWindow->starts_at)->startOfDay()
-            : null;
 
-        $windowsQuery = CapacityWindow::query()
-            ->where('branch_id', $capacityWindow->branch_id)
-            ->where('series_uuid', $capacityWindow->series_uuid)
-            ->where('status', 'active');
-
-        if ($fromDate) {
-            $windowsQuery->where('starts_at', '>=', $fromDate);
-        }
-
-        $windows = $windowsQuery
-            ->orderBy('starts_at')
-            ->get();
+        $windows = $this->getCapacityWindowsForScope(
+            capacityWindow: $capacityWindow,
+            scope: $deleteScope,
+            fromDate: $validated['from_date'] ?? null,
+            activeOnly: true,
+        );
 
         foreach ($windows as $window) {
             $capacityWindowService->cancelWindow(
@@ -345,13 +384,15 @@ class BranchCapacityWindowController extends Controller
 
         BranchCalendarUpdated::dispatch(
             branchId: $branch->id,
-            action: $fromDate ? 'capacity_window_series_deleted_from_date' : 'capacity_window_series_deleted',
+            action: $deleteScope === 'from_date'
+                ? 'capacity_window_series_deleted_from_date'
+                : 'capacity_window_series_deleted',
             capacityWindowId: $capacityWindow->id,
         );
 
         return back()->with(
             'success',
-            $fromDate
+            $deleteScope === 'from_date'
                 ? 'Skupinové termíny od vybraného dátumu boli vymazané.'
                 : 'Séria skupinových termínov bola vymazaná.',
         );
@@ -419,22 +460,12 @@ class BranchCapacityWindowController extends Controller
         $minuteOfDayDiff = (($newStartsAt->hour * 60) + $newStartsAt->minute)
             - (($originalStartsAt->hour * 60) + $originalStartsAt->minute);
 
-        $windowsQuery = CapacityWindow::query()
-            ->where('branch_id', $capacityWindow->branch_id)
-            ->where('series_uuid', $capacityWindow->series_uuid)
-            ->where('status', 'active');
-
-        if ($scope === 'from_date') {
-            $windowsQuery->where(
-                'starts_at',
-                '>=',
-                Carbon::parse($fromDate ?? $capacityWindow->starts_at)->startOfDay(),
-            );
-        }
-
-        $windows = $windowsQuery
-            ->orderBy('starts_at')
-            ->get();
+        $windows = $this->getCapacityWindowsForScope(
+            capacityWindow: $capacityWindow,
+            scope: $scope,
+            fromDate: $fromDate,
+            activeOnly: true,
+        );
 
         foreach ($windows as $window) {
             $updatedStartsAt = $window->starts_at
@@ -453,6 +484,58 @@ class BranchCapacityWindowController extends Controller
                 notificationService: $notificationService,
             );
         }
+    }
+
+    private function getCapacityWindowsForScope(
+        CapacityWindow $capacityWindow,
+        string $scope,
+        ?string $fromDate,
+        bool $activeOnly = true,
+    ) {
+        if ($scope === 'occurrence' || blank($capacityWindow->series_uuid)) {
+            return CapacityWindow::query()
+                ->where('branch_id', $capacityWindow->branch_id)
+                ->whereKey($capacityWindow->id)
+                ->when($activeOnly, fn ($query) => $query->where('status', 'active'))
+                ->lockForUpdate()
+                ->get();
+        }
+
+        $query = CapacityWindow::query()
+            ->where('branch_id', $capacityWindow->branch_id)
+            ->where('series_uuid', $capacityWindow->series_uuid)
+            ->when($activeOnly, fn ($query) => $query->where('status', 'active'));
+
+        if ($scope === 'from_date') {
+            $query->where(
+                'starts_at',
+                '>=',
+                Carbon::parse($fromDate ?? $capacityWindow->starts_at)->startOfDay(),
+            );
+        }
+
+        return $query
+            ->orderBy('starts_at')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    private function resolveSeriesScope(
+        ?string $requestedScope,
+        ?bool $applyToSeries,
+        CapacityWindow $capacityWindow,
+    ): string {
+        $scope = $requestedScope;
+
+        if (! $scope) {
+            $scope = $applyToSeries ? 'series' : 'occurrence';
+        }
+
+        if ($scope !== 'occurrence' && blank($capacityWindow->series_uuid)) {
+            return 'occurrence';
+        }
+
+        return $scope;
     }
 
     private function authorizeCapacityWindow(Request $request, Branch $branch, CapacityWindow $capacityWindow): void

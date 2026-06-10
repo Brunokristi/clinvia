@@ -1,13 +1,13 @@
 <script setup>
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -67,6 +67,8 @@ const patientForm = reactive({
 
 const rescheduleChoiceVisible = ref(false);
 const pendingReschedulePayload = ref(null);
+const isResettingGroupForm = ref(false);
+const hasManuallyChangedDateTime = ref(false);
 
 const bookings = computed(() => {
     return props.capacityWindow?.bookings ?? [];
@@ -118,6 +120,10 @@ const canSaveGroupEvent = computed(() => {
         && Boolean(groupForm.date)
         && Boolean(groupForm.starts_at)
         && Boolean(groupForm.ends_at);
+});
+
+const hasGroupEventTimeChanged = computed(() => {
+    return hasManuallyChangedDateTime.value;
 });
 
 const canNotifyNewPatient = computed(() => {
@@ -259,6 +265,9 @@ const mergeDateAndTime = (dateValue, timeValue) => {
 };
 
 const resetGroupForm = () => {
+    isResettingGroupForm.value = true;
+    hasManuallyChangedDateTime.value = false;
+
     const pendingReschedule = props.capacityWindow?._pendingReschedule ?? null;
     const pendingStart = pendingReschedule?.starts_at ?? null;
     const pendingEnd = pendingReschedule?.ends_at ?? null;
@@ -291,6 +300,13 @@ const resetGroupForm = () => {
 
     groupForm.notify_patient = true;
     groupForm.notification_reason = '';
+
+    pendingReschedulePayload.value = null;
+    rescheduleChoiceVisible.value = false;
+
+    setTimeout(() => {
+        isResettingGroupForm.value = false;
+    }, 0);
 };
 
 const resetPatientForm = () => {
@@ -324,6 +340,21 @@ watch(
 );
 
 watch(
+    () => [
+        groupForm.date,
+        groupForm.starts_at,
+        groupForm.ends_at,
+    ],
+    () => {
+        if (!props.visible || isResettingGroupForm.value) {
+            return;
+        }
+
+        hasManuallyChangedDateTime.value = true;
+    },
+);
+
+watch(
     () => patientForm.patient_email,
     (email) => {
         if (email.trim()) {
@@ -337,6 +368,10 @@ const editCapacityWindow = () => {
 };
 
 const closeDialog = () => {
+    pendingReschedulePayload.value = null;
+    rescheduleChoiceVisible.value = false;
+    hasManuallyChangedDateTime.value = false;
+
     emit('update:visible', false);
     emit('close');
 };
@@ -356,6 +391,10 @@ const rescheduleCapacityWindow = () => {
         return;
     }
 
+    if (!hasGroupEventTimeChanged.value) {
+        return;
+    }
+
     const payload = buildReschedulePayload();
 
     if (!isCapacityWindowRepeatable.value) {
@@ -363,6 +402,8 @@ const rescheduleCapacityWindow = () => {
             ...payload,
             reschedule_scope: 'occurrence',
         });
+
+        hasManuallyChangedDateTime.value = false;
 
         return;
     }
@@ -381,6 +422,7 @@ const submitRescheduleScope = (scope) => {
         reschedule_scope: scope,
     });
 
+    hasManuallyChangedDateTime.value = false;
     pendingReschedulePayload.value = null;
     rescheduleChoiceVisible.value = false;
 };
@@ -459,6 +501,9 @@ const addPatientToCapacityWindow = () => {
         return;
     }
 
+    pendingReschedulePayload.value = null;
+    rescheduleChoiceVisible.value = false;
+
     emit('add-patient-to-capacity-window', props.capacityWindow, {
         date: selectedDateForBackend.value,
         starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
@@ -483,9 +528,9 @@ const addPatientToCapacityWindow = () => {
         v-model:starts-at="groupForm.starts_at"
         v-model:ends-at="groupForm.ends_at"
         width="max-w-5xl"
-        save-label="Uložiť"
+        save-label="Presunúť"
         :show-save="Boolean(capacityWindow)"
-        :save-disabled="!canSaveGroupEvent"
+        :save-disabled="!canSaveGroupEvent || !hasGroupEventTimeChanged"
         show-delete
         :delete-disabled="!capacityWindow"
         :is-repeatable="isCapacityWindowRepeatable"
@@ -657,14 +702,14 @@ const addPatientToCapacityWindow = () => {
                         label="Pridať pacienta"
                         icon="pi pi-user-plus"
                         :disabled="!canAddPatient"
-                        @click="addPatientToCapacityWindow"
+                        @click.stop="addPatientToCapacityWindow"
                     />
                 </div>
             </FormSection>
 
             <FormSection
                 title="Upraviť termín"
-                description="Zmeniť túto udalosť. Pri opakovanej sérii sa vás aplikácia opýta, či chcete presunúť iba tento termín alebo viac termínov."
+                description="Tu zmeňte iba dátum alebo čas. Pri opakovanej sérii sa vás aplikácia opýta, či chcete presunúť iba tento termín alebo viac termínov."
                 columns="md:grid-cols-2"
             >
                 <div class="flex items-center gap-2 md:col-span-2">
@@ -717,52 +762,11 @@ const addPatientToCapacityWindow = () => {
         </div>
     </EventDialog>
 
-    <Dialog
+    <OccurrenceScopeDialog
         v-model:visible="rescheduleChoiceVisible"
-        modal
-        header="Presunúť opakovanie"
-        class="w-full max-w-md"
-    >
-        <div class="space-y-4">
-            <p class="text-sm leading-6 text-accent">
-                Tento skupinový termín je súčasťou opakovanej série. Čo chcete presunúť?
-            </p>
-
-            <div class="grid gap-3">
-                <Button
-                    type="button"
-                    label="Iba tento termín"
-                    icon="pi pi-calendar"
-                    outlined
-                    @click="submitRescheduleScope('occurrence')"
-                />
-
-                <Button
-                    type="button"
-                    label="Tento a nasledujúce termíny"
-                    icon="pi pi-calendar-plus"
-                    outlined
-                    @click="submitRescheduleScope('from_date')"
-                />
-
-                <Button
-                    type="button"
-                    label="Celú sériu"
-                    icon="pi pi-refresh"
-                    severity="danger"
-                    outlined
-                    @click="submitRescheduleScope('series')"
-                />
-            </div>
-        </div>
-
-        <template #footer>
-            <Button
-                type="button"
-                label="Zrušiť"
-                text
-                @click="closeRescheduleChoice"
-            />
-        </template>
-    </Dialog>
+        mode="reschedule"
+        subject-label="skupinový termín"
+        @select="submitRescheduleScope"
+        @cancel="closeRescheduleChoice"
+    />
 </template>

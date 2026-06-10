@@ -122,7 +122,7 @@ const bookingHref = computed(() => {
                                 v-else
                                 class="text-lg font-semibold"
                             >
-                                S
+                                <i class="pi pi-briefcase" />
                             </span>
                         </div>
 
@@ -222,13 +222,15 @@ const bookingHref = computed(() => {
                         <div
                             v-for="(item, index) in service.information"
                             :key="index"
-                            class="grid grid-cols-[36px_minmax(0,1fr)] gap-3"
+                            class="grid grid-cols-[36px_minmax(0,1fr)] items-stretch gap-3"
                         >
-                            <div class="flex h-max w-9 items-center justify-center rounded-md bg-soft text-sm font-semibold text-accent">
+                            <div class="flex h-full w-9 items-center justify-center rounded-md bg-soft text-sm font-semibold text-accent">
                                 +
                             </div>
-                            
-                            {{ item.text }}
+
+                            <p class="text-normal leading-6 text-accent">
+                                {{ item.text }}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -244,20 +246,20 @@ const bookingHref = computed(() => {
                         <div
                             v-for="step in service.steps"
                             :key="step.number"
-                            class="grid grid-cols-[36px_minmax(0,1fr)] gap-3"
+                            class="grid grid-cols-[36px_minmax(0,1fr)] items-stretch gap-3"
                         >
-                            <div class="flex h-max w-9 items-center justify-center rounded-md bg-soft text-sm font-semibold text-accent">
+                            <div class="flex h-full w-9 items-center justify-center rounded-md bg-soft text-sm font-semibold text-accent">
                                 {{ step.number }}
                             </div>
 
                             <div>
-                                <h3 class="text-sm font-semibold text-dark">
+                                <h3 class="text-normal font-semibold text-dark">
                                     {{ step.title }}
                                 </h3>
 
                                 <p
                                     v-if="step.text"
-                                    class="mt-1 text-sm leading-6 text-accent"
+                                    class="mt-1 text-normal leading-6 text-accent"
                                 >
                                     {{ step.text }}
                                 </p>

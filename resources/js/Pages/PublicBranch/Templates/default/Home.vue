@@ -18,6 +18,37 @@ const props = defineProps({
     },
 });
 
+const trimText = (value, maxLength = 110) => {
+    const text = String(value ?? '').trim();
+
+    if (!text) {
+        return '';
+    }
+
+    if (text.length <= maxLength) {
+        return text;
+    }
+
+    return `${text.slice(0, maxLength).trim()}…`;
+};
+
+const serviceDescription = (service) => {
+    return trimText(
+        service.short_description
+            || service.description
+            || 'Viac informácií nájdete v detaile služby.',
+        115,
+    );
+};
+
+const homepageServices = computed(() => {
+    return props.featuredServices.slice(0, 3);
+});
+
+const servicesCount = computed(() => {
+    return props.featuredServices.length;
+});
+
 const durationLabel = (service) => {
     if (!service.duration_minutes) {
         return null;
@@ -129,7 +160,7 @@ const generatedFaq = computed(() => {
 
     const customQuestions = customFaqItems.map((item) => {
         return {
-            icon: 'pi pi-question',
+            icon: 'pi pi-star',
             question: item.question,
             answer: item.answer,
         };
@@ -289,62 +320,62 @@ const professionalPositions = (professional) => {
 
                 <Link
                     :href="route('public.branch.services', branch.slug)"
-                    class="hidden rounded-md bg-white px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft md:inline-flex"
+                    class="hidden items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-accent transition hover:bg-soft md:inline-flex"
                 >
-                    Zobraziť všetky
+                    <span>Zobraziť všetky</span>
+
+                    <span class="rounded-md bg-soft px-2 py-0.5 text-xs font-semibold text-accent">
+                        {{ servicesCount }}
+                    </span>
                 </Link>
             </div>
 
             <div
-                v-if="featuredServices.length"
+                v-if="homepageServices.length"
                 class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
             >
                 <Link
-                    v-for="service in featuredServices"
+                    v-for="service in homepageServices"
                     :key="service.id"
                     :href="route('public.branch.services.show', [branch.slug, service.slug])"
                     class="rounded-md border border-accent bg-accent p-5 text-white transition hover:scale-[1.01] hover:bg-accent/90"
                 >
                     <div class="flex items-center gap-3">
                         <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-soft text-accent">
-                            <i
-                                v-if="service.icon"
-                                :class="service.icon"
-                            />
-
-                            <span
-                                v-else
-                                class="font-semibold"
-                            >
-                                S
-                            </span>
+                            <i :class="service.icon || 'pi pi-briefcase'" />
                         </div>
 
-                        <h3 class="text-normal font-semibold text-white">
+                        <h3
+                            class="text-normal font-semibold text-soft"
+                            :title="service.name"
+                        >
                             {{ service.name }}
                         </h3>
                     </div>
 
-                    <div class="mt-3">
-                        <p class="text-sm leading-6 text-white/80">
-                            {{ service.short_description || service.description || 'Viac informácií nájdete v detaile služby.' }}
+                    <div class="mt-6">
+                        <p
+                            class="text-sm leading-6 text-soft"
+                            :title="service.short_description || service.description"
+                        >
+                            {{ serviceDescription(service) }}
                         </p>
+                    </div>
 
-                        <div class="mt-4 flex flex-wrap gap-2">
-                            <span
-                                v-if="durationLabel(service)"
-                                class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
-                            >
-                                {{ durationLabel(service) }}
-                            </span>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <span
+                            v-if="durationLabel(service)"
+                            class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
+                        >
+                            {{ durationLabel(service) }}
+                        </span>
 
-                            <span
-                                v-if="service.self_pay_amount"
-                                class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
-                            >
-                                Samoplatca {{ service.self_pay_amount }} €
-                            </span>
-                        </div>
+                        <span
+                            v-if="service.self_pay_amount"
+                            class="rounded-md bg-dark px-3 py-1 text-xs font-medium text-soft"
+                        >
+                            Samoplatca {{ service.self_pay_amount }} €
+                        </span>
                     </div>
                 </Link>
             </div>

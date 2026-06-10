@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
+import { ref } from 'vue';
 
 export function useCapacityWindowActions({
     props,
@@ -12,9 +13,12 @@ export function useCapacityWindowActions({
     const {
         groupEventDialogVisible,
         groupEventOccurrenceDialogVisible,
+        capacityWindowRescheduleScopeDialogVisible,
         selectedCapacityWindow,
         selectedGroupEvent,
     } = dialogs;
+
+    const pendingCapacityWindowReschedule = ref(null);
 
     const showSuccess = (message) => {
         toast.add({
@@ -39,6 +43,7 @@ export function useCapacityWindowActions({
     const reloadCalendarData = () => {
         router.reload({
             only: [
+                'availabilityRules',
                 'calendarBookings',
                 'calendarCapacityWindows',
                 'pendingAppointmentRequests',
@@ -186,6 +191,7 @@ export function useCapacityWindowActions({
         const nextEndsAt = toDateTimeString(groupEvent.date, groupEvent.ends_at);
         const previousStartsAt = String(groupEvent.original_starts_at ?? getExistingStart(groupEvent) ?? '').replace('T', ' ');
         const previousEndsAt = String(groupEvent.original_ends_at ?? getExistingEnd(groupEvent) ?? '').replace('T', ' ');
+
         const shouldReschedule = nextStartsAt
             && nextEndsAt
             && (
@@ -206,7 +212,7 @@ export function useCapacityWindowActions({
             }), {
                 starts_at: nextStartsAt,
                 ends_at: nextEndsAt,
-                reschedule_scope: 'occurrence',
+                reschedule_scope: groupEvent.update_scope ?? 'occurrence',
                 from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
                 notify_patient: Boolean(groupEvent.notify_patient ?? true),
                 notification_reason: groupEvent.notification_reason ?? null,
@@ -229,7 +235,8 @@ export function useCapacityWindowActions({
             service_id: groupEvent.service_id,
             capacity: groupEvent.capacity ?? groupEvent.bookable_places ?? 1,
             admin_note: groupEvent.admin_note ?? null,
-            apply_to_series: Boolean(groupEvent.apply_to_series ?? false),
+            update_scope: groupEvent.update_scope ?? 'occurrence',
+            from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -287,7 +294,7 @@ export function useCapacityWindowActions({
             repeat_every: 1,
             repeat_unit: 'weeks',
             repeat_ends_on: null,
-            apply_to_series: false,
+            update_scope: 'occurrence',
         };
 
         groupEventOccurrenceDialogVisible.value = false;
@@ -382,22 +389,19 @@ export function useCapacityWindowActions({
             date: getDateOnly(changeInfo.event.start),
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: toLocalDateTimeString(changeInfo.event.end),
+            notify_patient: true,
+            notification_reason: 'Termín skupinovej rezervácie bol presunutý.',
         };
 
         if (isCapacityWindowRepeatable(capacityWindow)) {
             changeInfo.revert();
-            selectedCapacityWindow.value = {
-                ...capacityWindow,
-                _pendingReschedule: pendingReschedule,
-            };
-            groupEventOccurrenceDialogVisible.value = true;
 
-            toast.add({
-                severity: 'info',
-                summary: 'Opakovaný termín',
-                detail: 'Vyberte, či chcete presunúť iba tento termín, nasledujúce termíny alebo celú sériu.',
-                life: 4500,
-            });
+            pendingCapacityWindowReschedule.value = {
+                capacityWindow,
+                payload: pendingReschedule,
+            };
+
+            capacityWindowRescheduleScopeDialogVisible.value = true;
 
             return;
         }
@@ -411,19 +415,40 @@ export function useCapacityWindowActions({
             reschedule_scope: 'occurrence',
             from_date: capacityWindow.date ?? getDateOnly(getExistingStart(capacityWindow)),
             notify_patient: true,
-            notification_reason: 'Termín skupinovej rezervácie bol presunutý.',
+            notification_reason: pendingReschedule.notification_reason,
         }, {
             preserveScroll: true,
             preserveState: true,
-            onError: (errors) => {
-                changeInfo.revert();
-                showError('Skupinový termín sa nepodarilo presunúť.', errors);
-            },
             onSuccess: () => {
                 showSuccess('Skupinový termín bol presunutý.');
                 reloadCalendarData();
             },
+            onError: (errors) => {
+                changeInfo.revert();
+                showError('Skupinový termín sa nepodarilo presunúť.', errors);
+            },
         });
+    };
+
+    const submitPendingCapacityWindowRescheduleScope = (scope) => {
+        if (!pendingCapacityWindowReschedule.value) {
+            return;
+        }
+
+        const { capacityWindow, payload } = pendingCapacityWindowReschedule.value;
+
+        rescheduleCapacityWindow(capacityWindow, {
+            ...payload,
+            reschedule_scope: scope,
+        });
+
+        pendingCapacityWindowReschedule.value = null;
+        capacityWindowRescheduleScopeDialogVisible.value = false;
+    };
+
+    const cancelPendingCapacityWindowReschedule = () => {
+        pendingCapacityWindowReschedule.value = null;
+        capacityWindowRescheduleScopeDialogVisible.value = false;
     };
 
     const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
@@ -592,6 +617,8 @@ export function useCapacityWindowActions({
         deleteCapacityWindowSeries,
         rescheduleCapacityWindow,
         rescheduleCapacityWindowByCalendarChange,
+        submitPendingCapacityWindowRescheduleScope,
+        cancelPendingCapacityWindowReschedule,
         addPatientToCapacityWindow,
         openCapacityWindowEditor,
         saveCapacityWindow,

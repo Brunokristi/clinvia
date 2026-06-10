@@ -461,10 +461,6 @@ const iconLabel = (value) => {
                             {{ option.label }}
                         </template>
                     </AutoComplete>
-
-                    <p class="mt-2 text-sm text-accent">
-                        Ak kategória nie je v zozname, napíšte ju a pridajte čiarku.
-                    </p>
                 </FormField>
 
                 <FormField

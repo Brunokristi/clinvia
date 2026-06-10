@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours }) {
     const toast = useToast();
@@ -27,8 +27,16 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
     const reloadRuleState = () => {
         router.reload({
+            only: [
+                'availabilityRules',
+                'calendarBookings',
+                'calendarCapacityWindows',
+                'pendingAppointmentRequests',
+                'todayBookingsCount',
+                'unreadMessagesCount',
+            ],
             preserveScroll: true,
-            preserveState: false,
+            preserveState: true,
         });
     };
 
@@ -48,6 +56,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const {
         availabilityRuleDialogVisible,
         deleteRuleDialogVisible,
+        ruleRescheduleScopeDialogVisible,
         pendingCalendarSelection,
         selectedRuleIndex,
         selectedRuleOccurrence,
@@ -87,25 +96,73 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         is_enabled: true,
     });
 
-    const ruleForm = useForm({
-        rules: (props.branch.booking_availability_rules ?? []).map((rule) => ({
-            id: rule.id,
+    const getRuleServiceIds = (rule) => {
+        if (Array.isArray(rule.service_ids) && rule.service_ids.length) {
+            return rule.service_ids
+                .map((id) => Number(id))
+                .filter((id) => id > 0);
+        }
 
-            date: formatDate(rule.date ?? rule.starts_on ?? rule.start_date),
-            starts_at: formatTime(rule.starts_at),
-            ends_at: formatTime(rule.ends_at),
+        return (rule.services ?? [])
+            .map((service) => Number(service.id))
+            .filter((id) => id > 0);
+    };
 
-            service_ids: (rule.services ?? []).map((service) => service.id),
+    const getRuleId = (rule) => {
+        const id = Number(rule.id);
 
-            repeats: Boolean(rule.repeats),
-            repeat_every: rule.repeat_every ?? rule.repeat_interval ?? 1,
-            repeat_unit: rule.repeat_unit ?? 'weeks',
-            repeat_ends_on: formatDate(rule.repeat_ends_on),
-            excluded_dates: rule.excluded_dates ?? [],
+        return Number.isInteger(id) && id > 0
+            ? id
+            : null;
+    };
 
-            is_enabled: Boolean(rule.is_enabled),
-        })),
+    const mapRuleFromBackend = (rule) => ({
+        id: getRuleId(rule),
+
+        date: formatDate(rule.date ?? rule.starts_on ?? rule.start_date),
+        starts_at: formatTime(rule.starts_at),
+        ends_at: formatTime(rule.ends_at),
+
+        service_ids: getRuleServiceIds(rule),
+
+        repeats: Boolean(rule.repeats),
+        repeat_every: Number(rule.repeat_every ?? rule.repeat_interval ?? 1),
+        repeat_unit: rule.repeat_unit ?? 'weeks',
+        repeat_ends_on: formatDate(rule.repeat_ends_on),
+        excluded_dates: rule.excluded_dates ?? [],
+
+        is_enabled: Boolean(rule.is_enabled),
     });
+
+    const getInitialRules = () => {
+        if (Array.isArray(props.availabilityRules)) {
+            return props.availabilityRules;
+        }
+
+        return props.branch.booking_availability_rules ?? [];
+    };
+
+    const ruleForm = useForm({
+        rules: getInitialRules().map(mapRuleFromBackend),
+    });
+
+    const refreshRulesFromProps = () => {
+        if (ruleForm.processing) {
+            return;
+        }
+
+        ruleForm.rules = getInitialRules().map(mapRuleFromBackend);
+    };
+
+    watch(
+        () => props.availabilityRules,
+        () => {
+            refreshRulesFromProps();
+        },
+        {
+            deep: true,
+        },
+    );
 
     const currentRule = computed(() => {
         if (selectedRuleIndex.value === null) {
@@ -114,6 +171,22 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         return ruleForm.rules[selectedRuleIndex.value] ?? null;
     });
+
+    const getSelectedRule = () => {
+        if (selectedRuleIndex.value === null) {
+            return null;
+        }
+
+        return ruleForm.rules[selectedRuleIndex.value] ?? null;
+    };
+
+    const getSelectedOccurrenceDate = () => {
+        const rule = getSelectedRule();
+
+        return selectedRuleOccurrence.value?.occurrenceDate
+            ?? rule?.date
+            ?? null;
+    };
 
     const getServiceNames = (serviceIds) => {
         return props.services
@@ -237,13 +310,13 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
             service_ids: rule.service_ids ?? [],
 
-            repeats: rule.repeats,
-            repeat_every: rule.repeats ? rule.repeat_every : 1,
-            repeat_unit: rule.repeats ? rule.repeat_unit : 'weeks',
-            repeat_ends_on: rule.repeat_ends_on ?? null,
+            repeats: Boolean(rule.repeats),
+            repeat_every: rule.repeats ? Number(rule.repeat_every || 1) : 1,
+            repeat_unit: rule.repeats ? (rule.repeat_unit || 'weeks') : 'weeks',
+            repeat_ends_on: rule.repeats ? rule.repeat_ends_on : null,
             excluded_dates: rule.excluded_dates ?? [],
 
-            is_enabled: rule.is_enabled,
+            is_enabled: Boolean(rule.is_enabled),
         })),
     });
 
@@ -257,14 +330,18 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             });
     };
 
+    const cloneRule = (rule) => ({
+        ...rule,
+        service_ids: [...(rule.service_ids ?? [])],
+        excluded_dates: [...(rule.excluded_dates ?? [])],
+    });
+
     const restorePendingRuleReschedule = () => {
         if (selectedRuleOccurrence.value?.originalRule && currentRule.value) {
-            Object.assign(currentRule.value, {
-                ...selectedRuleOccurrence.value.originalRule,
-                service_ids: [...(selectedRuleOccurrence.value.originalRule.service_ids ?? [])],
-                excluded_dates: [...(selectedRuleOccurrence.value.originalRule.excluded_dates ?? [])],
-            });
+            Object.assign(currentRule.value, cloneRule(selectedRuleOccurrence.value.originalRule));
         }
+
+        ruleRescheduleScopeDialogVisible.value = false;
     };
 
     const closeRuleDialogSafely = () => {
@@ -274,30 +351,9 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const closeRuleAfterSave = () => {
+        ruleRescheduleScopeDialogVisible.value = false;
         closeRuleDialog();
         pendingCalendarSelection.value = null;
-    };
-
-    const getRuleRescheduleTargetDate = (rule, scope) => {
-        if (scope === 'series') {
-            return rule.date;
-        }
-
-        const occurrence = selectedRuleOccurrence.value;
-
-        if (!occurrence?.occurrenceDate) {
-            return rule.date;
-        }
-
-        if (!occurrence.originalRule) {
-            return rule.date === occurrence.occurrenceDate
-                ? rule.date
-                : occurrence.occurrenceDate;
-        }
-
-        return rule.date === occurrence.originalRule.date
-            ? occurrence.occurrenceDate
-            : rule.date;
     };
 
     const saveRules = (options = {}) => {
@@ -306,14 +362,15 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             : options.reschedule_scope ?? null;
 
         const rule = currentRule.value;
+        const occurrenceDate = getSelectedOccurrenceDate();
 
-        if (scope && rule?.id && selectedRuleOccurrence.value?.occurrenceDate) {
+        if (scope && rule?.id && occurrenceDate) {
             router.post(route('branches.booking.rules.reschedule', [
                 props.branch.id,
                 rule.id,
             ]), {
-                occurrence_date: selectedRuleOccurrence.value.occurrenceDate,
-                date: getRuleRescheduleTargetDate(rule, scope),
+                occurrence_date: occurrenceDate,
+                date: rule.date,
                 starts_at: rule.starts_at,
                 ends_at: rule.ends_at,
                 reschedule_scope: scope,
@@ -338,6 +395,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             onSuccess: () => {
                 closeRuleAfterSave();
                 showSuccess('Voľný čas bol uložený.');
+                reloadRuleStateSoon();
             },
             onError: (errors) => {
                 showError('Voľný čas sa nepodarilo uložiť.', errors);
@@ -379,11 +437,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             return;
         }
 
-        const previousRule = {
-            ...rule,
-            service_ids: [...(rule.service_ids ?? [])],
-            excluded_dates: [...(rule.excluded_dates ?? [])],
-        };
+        const previousRule = cloneRule(rule);
 
         const nextRule = {
             date: getDateFromDate(changeInfo.event.start),
@@ -391,7 +445,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             ends_at: getTimeFromDate(changeInfo.event.end),
         };
 
-        if (rule.repeats) {
+        if (rule.repeats && rule.id) {
             changeInfo.revert();
 
             Object.assign(rule, nextRule);
@@ -399,19 +453,14 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             selectedRuleIndex.value = index;
             selectedRuleOccurrence.value = {
                 ruleIndex: index,
-                occurrenceDate: changeInfo.event.extendedProps.occurrenceDate,
+                occurrenceDate: changeInfo.event.extendedProps.occurrenceDate ?? previousRule.date,
                 isRepeatedOccurrence: true,
                 originalRule: previousRule,
+                pendingReschedule: nextRule,
+                source: 'calendar_drag',
             };
 
-            availabilityRuleDialogVisible.value = true;
-
-            toast.add({
-                severity: 'info',
-                summary: 'Opakovaná dostupnosť',
-                detail: 'Vyberte, či chcete presunúť iba tento výskyt, nasledujúce výskyty alebo celú sériu.',
-                life: 4500,
-            });
+            ruleRescheduleScopeDialogVisible.value = true;
 
             return;
         }
@@ -426,6 +475,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             },
             onSuccess: () => {
                 showSuccess('Voľný čas bol presunutý.');
+                reloadRuleStateSoon();
             },
         });
     };
@@ -438,20 +488,21 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const deleteCurrentRuleOccurrence = () => {
-        if (!selectedRuleOccurrence.value) {
+        const rule = getSelectedRule();
+        const occurrenceDate = getSelectedOccurrenceDate();
+
+        if (!rule || !occurrenceDate) {
             return;
         }
 
-        const rule = ruleForm.rules[selectedRuleOccurrence.value.ruleIndex];
-
-        if (!rule?.id) {
+        if (!rule.id) {
             deleteCurrentRule();
 
             return;
         }
 
         router.post(route('branches.booking.rules.exclude-date', [props.branch.id, rule.id]), {
-            date: selectedRuleOccurrence.value.occurrenceDate,
+            date: occurrenceDate,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -467,42 +518,43 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const deleteCurrentRuleFromNowOn = () => {
-        if (!selectedRuleOccurrence.value) {
+        const rule = getSelectedRule();
+        const occurrenceDate = getSelectedOccurrenceDate();
+
+        if (!rule || !occurrenceDate) {
             return;
         }
 
-        const rule = ruleForm.rules[selectedRuleOccurrence.value.ruleIndex];
-
-        if (!rule?.id) {
+        if (!rule.id) {
             deleteCurrentRule();
 
             return;
         }
 
         router.post(route('branches.booking.rules.end-before-date', [props.branch.id, rule.id]), {
-            date: selectedRuleOccurrence.value.occurrenceDate,
+            date: occurrenceDate,
         }, {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
                 closeRuleDeletes();
-                showSuccess('Opakovanie voľného času bolo ukončené.');
+                showSuccess('Tento a nasledujúce výskyty boli vymazané.');
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
-                showError('Opakovanie voľného času sa nepodarilo ukončiť.', errors);
+                showError('Výskyty voľného času sa nepodarilo vymazať.', errors);
             },
         });
     };
 
     const deleteCurrentRuleEverywhere = () => {
-        if (selectedRuleIndex.value === null) {
+        const rule = getSelectedRule();
+
+        if (!rule) {
             return;
         }
 
-        const rule = ruleForm.rules[selectedRuleIndex.value];
-
-        if (!rule?.id) {
+        if (!rule.id) {
             deleteCurrentRule();
 
             return;
@@ -522,6 +574,22 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         });
     };
 
+    const deleteCurrentRuleByScope = (scope = 'series') => {
+        if (scope === 'occurrence') {
+            deleteCurrentRuleOccurrence();
+
+            return;
+        }
+
+        if (scope === 'from_date') {
+            deleteCurrentRuleFromNowOn();
+
+            return;
+        }
+
+        deleteCurrentRuleEverywhere();
+    };
+
     return {
         currentRule,
         emptyRule,
@@ -534,6 +602,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         closeRuleDialogSafely,
         deleteCurrentRule,
+        deleteCurrentRuleByScope,
         deleteCurrentRuleEverywhere,
         deleteCurrentRuleFromNowOn,
         deleteCurrentRuleOccurrence,

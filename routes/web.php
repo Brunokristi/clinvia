@@ -226,6 +226,7 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/booking/rules/{rule}/reschedule', [BranchAvailabilityRuleController::class, 'reschedule'])
                     ->name('booking.rules.reschedule');
 
+
                 /*
                 |--------------------------------------------------------------------------
                 | Bookings
