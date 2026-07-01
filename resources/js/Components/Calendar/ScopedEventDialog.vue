@@ -119,6 +119,10 @@ const props = defineProps({
         type: Boolean,
         default: true,
     },
+    showDateTimeFields: {
+        type: Boolean,
+        default: true,
+    },
 });
 
 const emit = defineEmits([
@@ -201,6 +205,7 @@ const duplicate = () => {
         :starts-at-placeholder="startsAtPlaceholder"
         :ends-at-placeholder="endsAtPlaceholder"
         :date-time-disabled="dateTimeDisabled"
+        :show-date-time-fields="showDateTimeFields"
         :show-save="showSave"
         :show-cancel="showCancel"
         :show-delete="showDelete"

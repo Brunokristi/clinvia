@@ -110,6 +110,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    showDateTimeFields: {
+        type: Boolean,
+        default: true,
+    },
 });
 
 const emit = defineEmits([
@@ -184,6 +188,7 @@ const deleteAll = () => {
     >
         <div class="space-y-6">
             <EventDateTimeFields
+                v-if="showDateTimeFields"
                 v-model:date="dateModel"
                 v-model:starts-at="startsAtModel"
                 v-model:ends-at="endsAtModel"

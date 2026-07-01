@@ -1,11 +1,9 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
-import BookingCreateDialog from '@/Components/Booking/BookingCreateDialog.vue';
-import BookingEditDialog from '@/Components/Booking/BookingEditDialog.vue';
-import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityRuleCreateEditDialog.vue';
-import GroupEventCreateEditDialog from '@/Components/Booking/GroupEventCreateEditDialog.vue';
-import GroupEventOccurrenceDialog from '@/Components/Booking/GroupEventOccurrenceDialog.vue';
+import BookingDialog from '@/Components/Booking/BookingDialog.vue';
+import AvailabilityRuleDialog from '@/Components/Booking/AvailabilityRuleDialog.vue';
+import GroupEventDialog from '@/Components/Booking/GroupEventDialog.vue';
 import ConfirmDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 
@@ -597,27 +595,23 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <BookingCreateDialog
-            v-model:visible="createBookingDialogVisible"
+        <BookingDialog
+            v-model:create-visible="createBookingDialogVisible"
+            v-model:detail-visible="bookingDialogVisible"
             :services="services"
             :selection="pendingCalendarSelection"
             :prefill="createBookingPrefill"
-            @close="closeCreateBookingDialog"
-            @create-booking="continueFromCreateChoice"
-        />
-
-        <BookingEditDialog
-            v-model:visible="bookingDialogVisible"
             :booking="selectedBooking"
             :booking-notes="bookingNotes"
-            :services="services"
             :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
+            @close-create="closeCreateBookingDialog"
+            @create-booking="continueFromCreateChoice"
             @edit-in-unified-form="openBookingInUnifiedEditor"
             @cancel-booking="cancelBooking"
             @duplicate-booking="duplicateBooking"
         />
 
-        <AvailabilityRuleCreateEditDialog
+        <AvailabilityRuleDialog
             v-model:visible="availabilityRuleDialogVisible"
             :rule="currentRule"
             :selected-rule-occurrence="selectedRuleOccurrence"
@@ -646,21 +640,18 @@ onBeforeUnmount(() => {
             @cancel="cancelPendingCapacityWindowReschedule"
         />
 
-        <GroupEventCreateEditDialog
-            v-model:visible="groupEventDialogVisible"
+        <GroupEventDialog
+            v-model:create-edit-visible="groupEventDialogVisible"
+            v-model:occurrence-visible="groupEventOccurrenceDialogVisible"
             :group-event="selectedGroupEvent"
+            :capacity-window="selectedCapacityWindow"
             :services="services"
             :repeat-unit-options="repeatUnitOptions"
+            :booking-notes="bookingNotes"
             :loading="false"
-            @close="closeGroupEventDialog"
+            @close-create-edit="closeGroupEventDialog"
             @save="saveCapacityWindow"
             @duplicate="duplicateCapacityWindow"
-        />
-
-        <GroupEventOccurrenceDialog
-            v-model:visible="groupEventOccurrenceDialogVisible"
-            :capacity-window="selectedCapacityWindow"
-            :booking-notes="bookingNotes"
             @edit-capacity-window="openCapacityWindowEditor"
             @duplicate-capacity-window="duplicateCapacityWindow"
             @reschedule-capacity-window="rescheduleCapacityWindow"

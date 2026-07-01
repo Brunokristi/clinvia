@@ -14,10 +14,6 @@ const props = defineProps({
         type: Boolean,
         default: true,
     },
-    patientsLabel: {
-        type: String,
-        default: 'Pacienti',
-    },
     duplicateLabel: {
         type: String,
         default: 'Duplikovať',
@@ -36,14 +32,6 @@ const emit = defineEmits([
 </script>
 
 <template>
-    <Button
-        v-if="showPatients"
-        type="button"
-        :label="patientsLabel"
-        outlined
-        @click="emit('patients')"
-    />
-
     <Button
         v-if="showDuplicate"
         type="button"

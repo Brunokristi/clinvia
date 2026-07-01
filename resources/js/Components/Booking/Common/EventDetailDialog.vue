@@ -62,6 +62,10 @@ const props = defineProps({
         type: String,
         default: 'termín',
     },
+    showDateTimeFields: {
+        type: Boolean,
+        default: true,
+    },
 });
 
 const emit = defineEmits([
@@ -93,6 +97,7 @@ const emit = defineEmits([
         :duplicate-label="duplicateLabel"
         :scope-mode="scopeMode"
         :scope-subject-label="scopeSubjectLabel"
+        :show-date-time-fields="showDateTimeFields"
         @update:visible="emit('update:visible', $event)"
         @close="emit('close')"
         @duplicate="emit('duplicate')"
