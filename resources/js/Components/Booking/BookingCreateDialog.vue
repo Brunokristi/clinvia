@@ -7,7 +7,7 @@ import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
 import { computed, reactive, ref, watch } from 'vue';
 
-import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import EventCreateEditDialog from '@/Components/Booking/Common/EventCreateEditDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import RecurrencePicker from '@/Components/Calendar/RecurrencePicker.vue';
 import FormField from '@/Components/Forms/FormField.vue';
@@ -636,7 +636,7 @@ const submit = () => {
 </script>
 
 <template>
-    <EventDialog
+    <EventCreateEditDialog
         :visible="visible"
         v-model:date="form.date"
         v-model:starts-at="form.starts_at"
@@ -902,5 +902,5 @@ const submit = () => {
                 </FormSection>
             </template>
         </FormPage>
-    </EventDialog>
+    </EventCreateEditDialog>
 </template>

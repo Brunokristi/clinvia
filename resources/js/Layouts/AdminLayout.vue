@@ -165,40 +165,46 @@ watch(
 </script>
 
 <template>
-    <div class="flex h-screen overflow-hidden bg-white text-slate-900">
-        <AdminNavigation />
+    <div class="flex h-screen flex-col overflow-hidden bg-white text-slate-900">
+        <header class="z-10 flex w-full shrink-0 bg-accent">
+            <Link
+                :href="route('dashboard')"
+                class="flex shrink-0 items-center justify-center w-72 bg-dark"
+                title="Dashboard"
+            >
+                <ApplicationLogo
+                    class="h-10 w-auto"
+                    type="symbolic"
+                    color="accent"
+                />
+            </Link>
+
+            <div class="flex min-w-0 flex-1 items-center px-8 py-4 text-white">
+                <Breadcrumb
+                    v-if="breadcrumbs.length"
+                    :model="breadcrumbs"
+                />
+            </div>
+        </header>
+
+        <div class="flex min-h-0 flex-1 overflow-hidden">
+            <AdminNavigation />
+
+
+            <main class="min-w-0 flex-1 overflow-y-auto">
+                <div class="p-8">
+                    <div class="pb-4">
+                        <h1 class="text-heading font-semibold text-dark">
+                            {{ pageTitle }}
+                        </h1>
+                    </div>
+
+                    <slot />
+                </div>
+            </main>
+
+        </div>
 
         <Toast />
-
-        <main class="min-w-0 flex-1 overflow-y-auto">
-            <header class="sticky top-0 z-10 flex w-full items-stretch">
-                <Link
-                    :href="route('dashboard')"
-                    class="flex items-center bg-accent px-8"
-                    :title="sidebarCollapsed ? 'Dashboard' : null"
-                >
-                    <ApplicationLogo
-                        class="h-10"
-                        type="symbolic"
-                    />
-                </Link>
-
-
-                <div class="flex min-w-0 flex-1 items-center bg-accent pr-4 py-4 text-white">
-                    <Breadcrumb
-                        v-if="breadcrumbs.length"
-                        :model="breadcrumbs"
-                    />
-                </div>
-            </header>
-            <div class="p-8">
-                <div class="pb-4">
-                    <h1 class="text-heading font-semibold text-dark">
-                        {{ pageTitle }}
-                    </h1>
-                </div>
-                <slot />
-            </div>
-        </main>
     </div>
 </template>

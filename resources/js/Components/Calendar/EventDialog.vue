@@ -98,6 +98,18 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    deleteDialogTitle: {
+        type: String,
+        default: 'Odstrániť termín',
+    },
+    deleteDialogDescription: {
+        type: String,
+        default: 'Vyberte, ako chcete tento termín odstrániť.',
+    },
+    deleteDialogImpactMessage: {
+        type: String,
+        default: '',
+    },
 });
 
 const emit = defineEmits([
@@ -227,14 +239,21 @@ const deleteAll = () => {
 
     <AppDialog
         v-model:visible="deleteDialogVisible"
-        title="Odstrániť termín"
+        :title="deleteDialogTitle"
         width="max-w-xl"
         @close="closeDeleteDialog"
     >
         <div class="space-y-5">
             <p class="text-sm text-dark">
-                Vyberte, ako chcete tento termín odstrániť.
+                {{ deleteDialogDescription }}
             </p>
+
+            <div
+                v-if="deleteDialogImpactMessage"
+                class="rounded-xl border border-soft bg-soft p-3 text-sm text-dark"
+            >
+                {{ deleteDialogImpactMessage }}
+            </div>
 
             <div
                 v-if="occurrenceDate"

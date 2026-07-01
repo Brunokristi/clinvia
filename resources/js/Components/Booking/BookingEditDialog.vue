@@ -1,8 +1,9 @@
 <script setup>
-import Button from 'primevue/button';
 import { computed } from 'vue';
 
-import ScopedEventDialog from '@/Components/Calendar/ScopedEventDialog.vue';
+import EventDeleteButton from '@/Components/Booking/Common/EventDeleteButton.vue';
+import EventDetailDialog from '@/Components/Booking/Common/EventDetailDialog.vue';
+import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceActions.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
@@ -101,16 +102,13 @@ const duplicateBooking = () => {
 </script>
 
 <template>
-    <ScopedEventDialog
+    <EventDetailDialog
         :visible="visible"
         title="Rezervácia"
         width="max-w-3xl"
         :date="bookingDateModel"
         :starts-at="bookingStartsAtModel"
         :ends-at="bookingEndsAtModel"
-        :date-time-disabled="true"
-        :show-save="false"
-        :show-delete="false"
         :is-repeatable="Boolean(booking?.series_uuid || booking?.recurrence)"
         :show-duplicate="true"
         @update:visible="emit('update:visible', $event)"
@@ -118,28 +116,16 @@ const duplicateBooking = () => {
         @duplicate="duplicateBooking"
     >
         <template #footer-start>
-            <Button
+            <EventDeleteButton
                 v-if="booking"
-                type="button"
                 label="Odstrániť rezerváciu"
-                severity="danger"
-                outlined
-                @click="cancelBooking"
+                @delete="cancelBooking"
             />
 
-            <Button
+            <EventOccurrenceActions
                 v-if="booking"
-                type="button"
-                label="Duplikovať"
-                outlined
-                @click="duplicateBooking"
-            />
-
-            <Button
-                v-if="booking"
-                type="button"
-                label="Upraviť"
-                @click="openUnifiedEditor"
+                @duplicate="duplicateBooking"
+                @edit="openUnifiedEditor"
             />
         </template>
 
@@ -165,5 +151,5 @@ const duplicateBooking = () => {
         >
             Rezerváciu sa nepodarilo načítať.
         </div>
-    </ScopedEventDialog>
+    </EventDetailDialog>
 </template>

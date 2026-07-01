@@ -47,6 +47,13 @@ export function useBookingCalendarEvents({
             .slice(0, 19);
     };
 
+    const getBookingTitle = (booking) => {
+        return booking.patient_name
+            ?? booking.patientName
+            ?? booking.patient?.name
+            ?? 'Rezervácia';
+    };
+
     const ruleEvents = computed(() => {
         if (!showAvailabilityRules.value) {
             return [];
@@ -58,7 +65,7 @@ export function useBookingCalendarEvents({
 
                 return {
                     id: `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${occurrenceDate}`,
-                    title: getRuleTitle(rule),
+                    title: 'Pravidlo rezervácií',
                     start: getDateTimeValue(occurrenceDate, rule.starts_at),
                     end: getDateTimeValue(occurrenceDate, rule.ends_at),
                     editable: true,
@@ -87,7 +94,7 @@ export function useBookingCalendarEvents({
         return (props.calendarBookings ?? []).map((booking) => {
             return {
                 id: `booking-${booking.id}`,
-                title: booking.patient_name ?? 'Rezervácia',
+                title: getBookingTitle(booking),
                 start: normalizeCalendarDateTime(booking.starts_datetime ?? booking.starts_at),
                 end: normalizeCalendarDateTime(booking.ends_datetime ?? booking.ends_at),
                 editable: true,
@@ -116,10 +123,7 @@ export function useBookingCalendarEvents({
 
             return {
                 id: `capacity-window-${capacityWindow.id}`,
-                title: capacityWindow.title
-                    ?? capacityWindow.service?.name
-                    ?? capacityWindow.service_name
-                    ?? 'Skupinový termín',
+                title: 'Skupinový termín',
                 start: normalizeCalendarDateTime(capacityWindow.starts_datetime ?? capacityWindow.starts_at),
                 end: normalizeCalendarDateTime(capacityWindow.ends_datetime ?? capacityWindow.ends_at),
                 editable: true,

@@ -4,6 +4,7 @@ import InputText from 'primevue/inputtext';
 import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceActions.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
@@ -125,6 +126,21 @@ const canAddPatient = computed(() => {
     return Boolean(props.capacityWindow)
         && hasFreeCapacity.value
         && Boolean(patientForm.patient_name.trim());
+});
+
+const deleteDialogTitle = computed(() => {
+    return 'Delete this availability window?';
+});
+
+const deleteDialogDescription = computed(() => {
+    const bookingCount = bookings.value.length;
+    const bookingNoun = bookingCount === 1 ? 'booking' : 'bookings';
+
+    return `This will cancel/remove ${bookingCount} ${bookingNoun} inside this window.`;
+});
+
+const deleteDialogImpactMessage = computed(() => {
+    return 'It will not affect other calendar bookings.';
 });
 
 const formatDateForDisplay = (value) => {
@@ -566,6 +582,9 @@ const addPatientToCapacityWindow = () => {
         :delete-disabled="!capacityWindow"
         :is-repeatable="isCapacityWindowRepeatable"
         :occurrence-date="selectedDateForBackend"
+        :delete-dialog-title="deleteDialogTitle"
+        :delete-dialog-description="deleteDialogDescription"
+        :delete-dialog-impact-message="deleteDialogImpactMessage"
         @close="closeDialog"
         @save="rescheduleCapacityWindow"
         @delete-occurrence="deleteCapacityWindowOccurrence"
@@ -573,31 +592,13 @@ const addPatientToCapacityWindow = () => {
         @delete-all="deleteCapacityWindowSeries"
     >
         <template #footer-start>
-            <Button
+            <EventOccurrenceActions
                 v-if="capacityWindow"
                 v-show="isDetailMode"
-                type="button"
-                label="Pacienti"
-                outlined
-                @click="openPatientManagementMode"
-            />
-
-            <Button
-                v-if="capacityWindow"
-                v-show="isDetailMode"
-                type="button"
-                label="Duplikovať"
-                outlined
-                @click="duplicateCapacityWindow"
-            />
-
-            <Button
-                v-if="capacityWindow"
-                v-show="isDetailMode"
-                type="button"
-                label="Upraviť"
-                outlined
-                @click="enableEditMode"
+                :show-patients="true"
+                @patients="openPatientManagementMode"
+                @duplicate="duplicateCapacityWindow"
+                @edit="enableEditMode"
             />
         </template>
 

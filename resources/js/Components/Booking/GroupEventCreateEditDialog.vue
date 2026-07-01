@@ -1,10 +1,9 @@
 <script setup>
-import Button from 'primevue/button';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import { computed, reactive, watch } from 'vue';
 
-import ScopedEventDialog from '@/Components/Calendar/ScopedEventDialog.vue';
+import EventCreateEditDialog from '@/Components/Booking/Common/EventCreateEditDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
@@ -322,7 +321,7 @@ const duplicateGroupEvent = () => {
 </script>
 
 <template>
-    <ScopedEventDialog
+    <EventCreateEditDialog
         v-model:visible="dialogVisible"
         :title="dialogTitle"
         v-model:date="datePickerModel"
@@ -433,5 +432,5 @@ const duplicateGroupEvent = () => {
             <i class="pi pi-exclamation-circle mb-2 block text-2xl text-red-400"></i>
             Skupinový termín sa nepodarilo načítať.
         </div>
-    </ScopedEventDialog>
+    </EventCreateEditDialog>
 </template>

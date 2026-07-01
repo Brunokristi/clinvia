@@ -96,7 +96,7 @@ export const primevuePt = {
         separator: {
             class: [
                 '!mx-1',
-                '!text-accent',
+                '!text-white',
             ],
         },
     },

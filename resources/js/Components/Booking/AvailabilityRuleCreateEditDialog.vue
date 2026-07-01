@@ -1,8 +1,8 @@
 <script setup>
-import Button from 'primevue/button';
 import { computed } from 'vue';
 
-import ScopedEventDialog from '@/Components/Calendar/ScopedEventDialog.vue';
+import EventDetailDialog from '@/Components/Booking/Common/EventDetailDialog.vue';
+import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceActions.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
@@ -116,16 +116,14 @@ const duplicateRule = () => {
 </script>
 
 <template>
-    <ScopedEventDialog
+    <EventDetailDialog
         v-model:visible="dialogVisible"
         :title="dialogTitle"
         width="max-w-3xl"
         :date="ruleDateModel"
         :starts-at="ruleStartsAtModel"
         :ends-at="ruleEndsAtModel"
-        :date-time-disabled="true"
         :loading="loading"
-        :show-save="false"
         show-delete
         :delete-disabled="!rule"
         :is-repeatable="Boolean(rule?.repeats)"
@@ -140,19 +138,10 @@ const duplicateRule = () => {
         @duplicate="duplicateRule"
     >
         <template #footer-start>
-            <Button
+            <EventOccurrenceActions
                 v-if="rule"
-                type="button"
-                label="Duplikovať"
-                outlined
-                @click="duplicateRule"
-            />
-
-            <Button
-                v-if="rule"
-                type="button"
-                label="Upraviť"
-                @click="openUnifiedEditor"
+                @duplicate="duplicateRule"
+                @edit="openUnifiedEditor"
             />
         </template>
 
@@ -173,5 +162,5 @@ const duplicateRule = () => {
         >
             Pravidlo sa nepodarilo načítať.
         </div>
-    </ScopedEventDialog>
+    </EventDetailDialog>
 </template>
