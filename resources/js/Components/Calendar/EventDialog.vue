@@ -94,6 +94,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    dateTimeDisabled: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits([
@@ -176,6 +180,7 @@ const deleteAll = () => {
                 :ends-at-id="endsAtId"
                 :starts-at-placeholder="startsAtPlaceholder"
                 :ends-at-placeholder="endsAtPlaceholder"
+                :disabled="dateTimeDisabled"
             />
 
             <slot />

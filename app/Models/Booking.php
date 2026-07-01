@@ -17,6 +17,7 @@ class Booking extends Model
         'branch_id',
         'service_id',
         'capacity_window_id',
+        'series_uuid',
         'starts_at',
         'ends_at',
         'patient_name',
@@ -25,6 +26,8 @@ class Booking extends Model
         'status',
         'patient_note',
         'admin_note',
+        'recurrence',
+        'recurrence_excluded_dates',
     ];
 
     protected function casts(): array
@@ -32,6 +35,8 @@ class Booking extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'recurrence' => 'array',
+            'recurrence_excluded_dates' => 'array',
         ];
     }
 

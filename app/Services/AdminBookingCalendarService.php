@@ -6,11 +6,17 @@ use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\CapacityWindow;
 use App\Models\Service;
+use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class AdminBookingCalendarService
 {
+    public function __construct(private RecurrenceService $recurrenceService)
+    {
+    }
+
     public function getAvailableAdminSlots(Branch $branch): Collection
     {
         return collect();
@@ -18,7 +24,9 @@ class AdminBookingCalendarService
 
     public function getCalendarBookings(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): Collection
     {
-        return Booking::query()
+        $supportsRecurringBookings = $this->supportsRecurringBookings();
+
+        $oneOffBookingsQuery = Booking::query()
             ->with([
                 'service',
                 'services',
@@ -29,10 +37,44 @@ class AdminBookingCalendarService
             ->whereNotIn('status', ['cancelled', 'rejected'])
             ->where('starts_at', '<', $rangeEnd)
             ->where('ends_at', '>', $rangeStart)
-            ->orderBy('starts_at')
+            ->orderBy('starts_at');
+
+        if ($supportsRecurringBookings) {
+            $oneOffBookingsQuery->where(function ($query) {
+                $query->whereNull('series_uuid')
+                    ->orWhereNull('recurrence');
+            });
+        }
+
+        $oneOffBookings = $oneOffBookingsQuery
             ->get()
             ->map(fn (Booking $booking) => $this->mapBooking($booking))
             ->values();
+
+        if (! $supportsRecurringBookings) {
+            return $oneOffBookings;
+        }
+
+        $recurringBookings = Booking::query()
+            ->with([
+                'service',
+                'services',
+                'capacityWindow',
+            ])
+            ->where('branch_id', $branch->id)
+            ->whereNull('capacity_window_id')
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->whereNotNull('series_uuid')
+            ->whereNotNull('recurrence')
+            ->where('starts_at', '<=', $rangeEnd)
+            ->orderBy('starts_at')
+            ->get()
+            ->flatMap(function (Booking $booking) use ($rangeStart, $rangeEnd) {
+                return $this->mapRecurringBookingOccurrences($booking, $rangeStart, $rangeEnd);
+            })
+            ->values();
+
+        return $oneOffBookings->concat($recurringBookings)->values();
     }
 
     public function getCalendarCapacityWindows(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): Collection
@@ -139,7 +181,42 @@ class AdminBookingCalendarService
             'status' => $booking->status,
             'patient_note' => $booking->patient_note,
             'admin_note' => $booking->admin_note,
+            'series_uuid' => $booking->series_uuid,
+            'recurrence' => $booking->recurrence,
+            'recurrence_excluded_dates' => $booking->recurrence_excluded_dates ?? [],
         ];
+    }
+
+    private function mapRecurringBookingOccurrences(Booking $booking, Carbon $rangeStart, Carbon $rangeEnd): Collection
+    {
+        if (! $booking->recurrence) {
+            return collect();
+        }
+
+        $occurrenceDates = $this->recurrenceService->getOccurrenceDates(
+            seriesStart: $booking->starts_at->copy(),
+            rangeStart: $rangeStart,
+            rangeEnd: $rangeEnd,
+            recurrence: $booking->recurrence,
+            excludedDates: $booking->recurrence_excluded_dates ?? [],
+        );
+
+        return $occurrenceDates->map(function (Carbon $occurrenceDate) use ($booking) {
+            $startsAt = Carbon::parse($occurrenceDate->toDateString() . ' ' . $booking->starts_at->format('H:i:s'));
+            $endsAt = Carbon::parse($occurrenceDate->toDateString() . ' ' . $booking->ends_at->format('H:i:s'));
+
+            return [
+                ...$this->mapBooking($booking),
+                'id' => sprintf('booking-%s-%s', $booking->id, $occurrenceDate->toDateString()),
+                'starts_at' => $this->formatCalendarDateTime($startsAt),
+                'ends_at' => $this->formatCalendarDateTime($endsAt),
+                'starts_datetime' => $this->formatCalendarDateTime($startsAt),
+                'ends_datetime' => $this->formatCalendarDateTime($endsAt),
+                'date' => $occurrenceDate->toDateString(),
+                'occurrence_date' => $occurrenceDate->toDateString(),
+                'is_recurring' => true,
+            ];
+        });
     }
 
 
@@ -151,5 +228,11 @@ class AdminBookingCalendarService
     private function isActiveBooking(Booking $booking): bool
     {
         return ! in_array($booking->status, ['cancelled', 'rejected', 'no_show'], true);
+    }
+
+    private function supportsRecurringBookings(): bool
+    {
+        return Schema::hasColumn('bookings', 'series_uuid')
+            && Schema::hasColumn('bookings', 'recurrence');
     }
 }

@@ -8,14 +8,25 @@ use App\Models\Branch;
 use App\Models\CapacityWindow;
 use App\Models\Service;
 use App\Notifications\BookingCreatedNotification;
+use App\Services\DisabledDayService;
+use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class CreateBookingAction
 {
+    public function __construct(
+        private DisabledDayService $disabledDayService,
+        private RecurrenceService $recurrenceService,
+    )
+    {
+    }
+
     public function execute(Branch $branch, array $data): Booking
     {
         $booking = DB::transaction(function () use ($branch, $data): Booking {
@@ -39,11 +50,29 @@ class CreateBookingAction
                 ? $capacityWindow->starts_at->copy()
                 : Carbon::parse($data['starts_at']);
 
+            if ($this->disabledDayService->isDisabled($branch, $startsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Tento deň je v kalendári zakázaný.',
+                ]);
+            }
+
             $endsAt = $capacityWindow
                 ? $capacityWindow->ends_at->copy()
                 : $this->resolveEndsAt($startsAt, $services, $data);
 
-            $booking = Booking::query()->create([
+            $recurrence = ! empty($data['recurrence'])
+                ? $this->recurrenceService->normalize($data['recurrence'])
+                : null;
+
+            $supportsRecurrenceColumns = Schema::hasColumn('bookings', 'series_uuid')
+                && Schema::hasColumn('bookings', 'recurrence')
+                && Schema::hasColumn('bookings', 'recurrence_excluded_dates');
+
+            $seriesUuid = $supportsRecurrenceColumns && $recurrence
+                ? (string) Str::uuid()
+                : null;
+
+            $bookingPayload = [
                 'branch_id' => $branch->id,
                 'service_id' => $primaryService->id,
                 'capacity_window_id' => $capacityWindow?->id,
@@ -55,7 +84,21 @@ class CreateBookingAction
                 'status' => $data['status'] ?? 'confirmed',
                 'patient_note' => $data['patient_note'] ?? null,
                 'admin_note' => $data['admin_note'] ?? null,
-            ]);
+            ];
+
+            if (Schema::hasColumn('bookings', 'series_uuid')) {
+                $bookingPayload['series_uuid'] = $seriesUuid;
+            }
+
+            if (Schema::hasColumn('bookings', 'recurrence')) {
+                $bookingPayload['recurrence'] = $supportsRecurrenceColumns ? $recurrence : null;
+            }
+
+            if (Schema::hasColumn('bookings', 'recurrence_excluded_dates')) {
+                $bookingPayload['recurrence_excluded_dates'] = [];
+            }
+
+            $booking = Booking::query()->create($bookingPayload);
 
             $this->syncBookingServices($booking, $services);
 

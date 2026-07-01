@@ -41,6 +41,10 @@ const props = defineProps({
         type: String,
         default: '09:00',
     },
+    disabled: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits([
@@ -79,6 +83,7 @@ const endsAtModel = computed({
                 class="w-full"
                 input-class="w-full"
                 :placeholder="datePlaceholder"
+                :disabled="disabled"
             />
         </FormField>
 
@@ -96,6 +101,7 @@ const endsAtModel = computed({
                 class="w-full"
                 input-class="w-full"
                 :placeholder="startsAtPlaceholder"
+                :disabled="disabled"
             />
         </FormField>
 
@@ -113,6 +119,7 @@ const endsAtModel = computed({
                 class="w-full"
                 input-class="w-full"
                 :placeholder="endsAtPlaceholder"
+                :disabled="disabled"
             />
         </FormField>
     </div>

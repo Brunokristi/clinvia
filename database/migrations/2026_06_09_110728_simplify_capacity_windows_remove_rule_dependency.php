@@ -41,7 +41,7 @@ return new class extends Migration
             constraint: 'capacity_windows_booking_availability_rule_id_foreign',
         );
 
-        if (Schema::hasColumn('capacity_windows', 'booking_availability_rule_id')) {
+        if (DB::getDriverName() !== 'sqlite' && Schema::hasColumn('capacity_windows', 'booking_availability_rule_id')) {
             DB::statement('ALTER TABLE capacity_windows DROP COLUMN booking_availability_rule_id');
         }
     }
@@ -76,6 +76,10 @@ return new class extends Migration
 
     private function createIndexIfMissing(string $table, string $indexName, string $sql): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         $exists = DB::table('pg_indexes')
             ->where('tablename', $table)
             ->where('indexname', $indexName)
@@ -88,6 +92,10 @@ return new class extends Migration
 
     private function dropIndexIfExists(string $table, string $indexName): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         $exists = DB::table('pg_indexes')
             ->where('tablename', $table)
             ->where('indexname', $indexName)
@@ -100,6 +108,10 @@ return new class extends Migration
 
     private function dropForeignKeyIfExists(string $table, string $constraint): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         $exists = DB::table('pg_constraint')
             ->join('pg_class', 'pg_constraint.conrelid', '=', 'pg_class.oid')
             ->where('pg_class.relname', $table)

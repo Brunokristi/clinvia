@@ -448,6 +448,10 @@ class PublicBranchSiteController extends Controller
         Carbon $periodStartsAt,
         Carbon $periodEndsAt,
     ): int {
+        if (app(\App\Services\DisabledDayService::class)->isDisabled($branch, $date)) {
+            return 0;
+        }
+
         $ruleStartsAt = Carbon::parse($date->toDateString() . ' ' . $rule->starts_at);
         $ruleEndsAt = Carbon::parse($date->toDateString() . ' ' . $rule->ends_at);
 
@@ -654,6 +658,10 @@ class PublicBranchSiteController extends Controller
     {
         $rawDate = $rule->date ?? $rule->starts_on ?? $rule->start_date;
 
+        if (app(\App\Services\DisabledDayService::class)->isDisabled($rule->branch, $date)) {
+            return false;
+        }
+
         if (! $rawDate) {
             return false;
         }
@@ -739,6 +747,12 @@ class PublicBranchSiteController extends Controller
             if ($capacityWindow->starts_at->isPast()) {
                 throw ValidationException::withMessages([
                     'capacity_window_id' => 'Tento termín už nie je dostupný.',
+                ]);
+            }
+
+            if (app(\App\Services\DisabledDayService::class)->isDisabled($branch, $capacityWindow->starts_at)) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Tento deň je v kalendári zakázaný.',
                 ]);
             }
 

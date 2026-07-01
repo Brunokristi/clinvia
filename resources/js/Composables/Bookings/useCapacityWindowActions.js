@@ -16,6 +16,7 @@ export function useCapacityWindowActions({
         capacityWindowRescheduleScopeDialogVisible,
         selectedCapacityWindow,
         selectedGroupEvent,
+        openCreateBookingWithPrefill,
     } = dialogs;
 
     const pendingCapacityWindowReschedule = ref(null);
@@ -46,6 +47,7 @@ export function useCapacityWindowActions({
                 'availabilityRules',
                 'calendarBookings',
                 'calendarCapacityWindows',
+                'disabledDays',
                 'pendingAppointmentRequests',
                 'todayBookingsCount',
                 'unreadMessagesCount',
@@ -75,8 +77,8 @@ export function useCapacityWindowActions({
     const isCapacityWindowRepeatable = (capacityWindow) => {
         return Boolean(
             capacityWindow?.series_uuid
-                || capacityWindow?.repeats
-                || capacityWindow?.is_recurring,
+            || capacityWindow?.repeats
+            || capacityWindow?.is_recurring,
         );
     };
 
@@ -152,7 +154,7 @@ export function useCapacityWindowActions({
             starts_at: toDateTimeString(groupEvent.date, groupEvent.starts_at),
             ends_at: toDateTimeString(groupEvent.date, groupEvent.ends_at),
             capacity: groupEvent.capacity ?? groupEvent.bookable_places ?? 1,
-            admin_note: groupEvent.admin_note ?? null,
+            public_booking_type: groupEvent.public_booking_type ?? 'immediate_booking',
             repeats: Boolean(groupEvent.repeats),
             repeat_every: groupEvent.repeats ? groupEvent.repeat_every : 1,
             repeat_unit: groupEvent.repeats ? groupEvent.repeat_unit : 'weeks',
@@ -175,6 +177,42 @@ export function useCapacityWindowActions({
                 showError('Skupinový termín sa nepodarilo vytvoriť.', errors);
             },
         });
+    };
+
+    const duplicateCapacityWindow = (groupEvent) => {
+        if (!groupEvent) {
+            return;
+        }
+
+        const date = getDateOnly(groupEvent.date ?? getExistingStart(groupEvent));
+        const startsAt = getExistingStart(groupEvent) ?? toDateTimeString(groupEvent.date, groupEvent.starts_at);
+        const endsAt = getExistingEnd(groupEvent) ?? toDateTimeString(groupEvent.date, groupEvent.ends_at);
+
+        openCreateBookingWithPrefill({
+            create_type: 'group_event',
+            date,
+            starts_at: startsAt,
+            ends_at: endsAt,
+            service_ids: [groupEvent.service_id ?? groupEvent.service?.id].filter(Boolean),
+            service_id: groupEvent.service_id ?? groupEvent.service?.id ?? null,
+            capacity: groupEvent.capacity ?? groupEvent.bookable_places ?? 1,
+            public_booking_type: groupEvent.service?.public_booking_type ?? 'immediate_booking',
+            recurrence: groupEvent.repeats
+                ? {
+                    frequency: groupEvent.repeat_unit === 'months' ? 'monthly' : 'weekly',
+                    interval: Number(groupEvent.repeat_every ?? 1),
+                    weekdays: [],
+                    ends: {
+                        type: groupEvent.repeat_ends_on ? 'on' : 'never',
+                        count: null,
+                        until: groupEvent.repeat_ends_on ?? null,
+                    },
+                }
+                : null,
+        });
+
+        closeCapacityWindowDialog();
+        closeGroupEventDialog();
     };
 
     const updateCapacityWindow = (capacityWindow, groupEvent) => {
@@ -214,8 +252,7 @@ export function useCapacityWindowActions({
                 ends_at: nextEndsAt,
                 reschedule_scope: groupEvent.update_scope ?? 'occurrence',
                 from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
-                notify_patient: Boolean(groupEvent.notify_patient ?? true),
-                notification_reason: groupEvent.notification_reason ?? null,
+                notify_patient: true,
             }, {
                 preserveScroll: true,
                 preserveState: true,
@@ -234,7 +271,7 @@ export function useCapacityWindowActions({
         }), {
             service_id: groupEvent.service_id,
             capacity: groupEvent.capacity ?? groupEvent.bookable_places ?? 1,
-            admin_note: groupEvent.admin_note ?? null,
+            public_booking_type: groupEvent.public_booking_type ?? 'immediate_booking',
             update_scope: groupEvent.update_scope ?? 'occurrence',
             from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
         }, {
@@ -274,32 +311,29 @@ export function useCapacityWindowActions({
             return;
         }
 
-        selectedGroupEvent.value = {
-            id: getCapacityWindowId(capacityWindow),
-            capacity_window_id: getCapacityWindowId(capacityWindow),
-            series_uuid: capacityWindow.series_uuid ?? null,
+        const date = getDateOnly(capacityWindow.date ?? getExistingStart(capacityWindow));
+        const startsAt = getExistingStart(capacityWindow);
+        const endsAt = getExistingEnd(capacityWindow);
 
+        openCreateBookingWithPrefill({
+            create_type: 'group_event',
+            edit_mode: true,
+            target_type: 'group_event',
+            target_id: getCapacityWindowId(capacityWindow),
+            date,
+            starts_at: startsAt,
+            ends_at: endsAt,
+            original_starts_at: startsAt,
+            original_ends_at: endsAt,
+            service_ids: [capacityWindow.service_id ?? capacityWindow.service?.id].filter(Boolean),
             service_id: capacityWindow.service_id ?? capacityWindow.service?.id ?? null,
             capacity: capacityWindow.capacity ?? capacityWindow.bookable_places ?? 1,
-            bookable_places: capacityWindow.capacity ?? capacityWindow.bookable_places ?? 1,
-            admin_note: capacityWindow.admin_note ?? '',
-
-            date: getDateOnly(capacityWindow.date ?? getExistingStart(capacityWindow)),
-            starts_at: getTimeOnly(getExistingStart(capacityWindow)),
-            ends_at: getTimeOnly(getExistingEnd(capacityWindow)),
-            original_starts_at: getExistingStart(capacityWindow),
-            original_ends_at: getExistingEnd(capacityWindow),
-
-            repeats: false,
-            repeat_every: 1,
-            repeat_unit: 'weeks',
-            repeat_ends_on: null,
-            update_scope: 'occurrence',
-        };
+            public_booking_type: capacityWindow.service?.public_booking_type ?? 'immediate_booking',
+        });
 
         groupEventOccurrenceDialogVisible.value = false;
         selectedCapacityWindow.value = null;
-        groupEventDialogVisible.value = true;
+        groupEventDialogVisible.value = false;
     };
 
     const cancelCapacityWindow = (capacityWindow, options = {}) => {
@@ -316,8 +350,7 @@ export function useCapacityWindowActions({
             branch: props.branch.id,
             capacityWindow: capacityWindowId,
         }), {
-            notify_patient: Boolean(options.notify_patient ?? true),
-            notification_reason: options.notification_reason ?? null,
+            notify_patient: true,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -350,8 +383,7 @@ export function useCapacityWindowActions({
             ends_at: data.ends_at,
             reschedule_scope: data.reschedule_scope ?? 'occurrence',
             from_date: data.date ?? capacityWindow.date ?? getDateOnly(getExistingStart(capacityWindow)),
-            notify_patient: Boolean(data.notify_patient ?? true),
-            notification_reason: data.notification_reason ?? null,
+            notify_patient: true,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -390,7 +422,6 @@ export function useCapacityWindowActions({
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: toLocalDateTimeString(changeInfo.event.end),
             notify_patient: true,
-            notification_reason: 'Termín skupinovej rezervácie bol presunutý.',
         };
 
         if (isCapacityWindowRepeatable(capacityWindow)) {
@@ -415,7 +446,6 @@ export function useCapacityWindowActions({
             reschedule_scope: 'occurrence',
             from_date: capacityWindow.date ?? getDateOnly(getExistingStart(capacityWindow)),
             notify_patient: true,
-            notification_reason: pendingReschedule.notification_reason,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -467,8 +497,7 @@ export function useCapacityWindowActions({
         }), {
             data: {
                 delete_scope: 'occurrence',
-                notify_patient: Boolean(options.notify_patient ?? true),
-                notification_reason: options.notification_reason ?? null,
+                notify_patient: true,
             },
             preserveScroll: true,
             preserveState: true,
@@ -500,8 +529,7 @@ export function useCapacityWindowActions({
             data: {
                 delete_scope: 'from_date',
                 from_date: options.date ?? capacityWindow.date ?? null,
-                notify_patient: Boolean(options.notify_patient ?? true),
-                notification_reason: options.notification_reason ?? null,
+                notify_patient: true,
             },
             preserveScroll: true,
             preserveState: true,
@@ -532,8 +560,7 @@ export function useCapacityWindowActions({
         }), {
             data: {
                 delete_scope: 'series',
-                notify_patient: Boolean(options.notify_patient ?? true),
-                notification_reason: options.notification_reason ?? null,
+                notify_patient: true,
             },
             preserveScroll: true,
             preserveState: true,
@@ -585,9 +612,7 @@ export function useCapacityWindowActions({
                 patient_name: payload.patient_name,
                 patient_email: payload.patient_email,
                 patient_phone: payload.patient_phone,
-                patient_note: payload.patient_note,
-                admin_note: payload.admin_note,
-                notify_patient: Boolean(payload.notify_patient ?? true),
+                notify_patient: true,
             },
             {
                 preserveScroll: true,
@@ -612,6 +637,7 @@ export function useCapacityWindowActions({
     return {
         cancelCapacityWindow,
         createCapacityWindow,
+        duplicateCapacityWindow,
         deleteCapacityWindowFromDate,
         deleteCapacityWindowOccurrence,
         deleteCapacityWindowSeries,

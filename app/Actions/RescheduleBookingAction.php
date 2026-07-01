@@ -43,6 +43,7 @@ class RescheduleBookingAction
                 'ends_at' => $endsAt,
                 'status' => 'confirmed',
                 'admin_note' => $data['admin_note'] ?? $lockedBooking->admin_note,
+                'recurrence' => $data['recurrence'] ?? $lockedBooking->recurrence,
             ]);
 
             $this->syncBookingServices($lockedBooking, $services);

@@ -1,12 +1,15 @@
 <script setup>
-import Checkbox from 'primevue/checkbox';
+import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
+import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import MultiSelect from 'primevue/multiselect';
-import Textarea from 'primevue/textarea';
-import { computed, reactive, watch } from 'vue';
+import Select from 'primevue/select';
+import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
+import RecurrencePicker from '@/Components/Calendar/RecurrencePicker.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -25,6 +28,10 @@ const props = defineProps({
         type: Object,
         default: null,
     },
+    prefill: {
+        type: Object,
+        default: null,
+    },
 });
 
 const emit = defineEmits([
@@ -33,7 +40,71 @@ const emit = defineEmits([
     'create-booking',
 ]);
 
+const createTypeOptions = [
+    {
+        label: 'Rezervácia',
+        value: 'booking',
+    },
+    {
+        label: 'Pravidlo online rezervácií',
+        value: 'rule',
+    },
+    {
+        label: 'Skupinový termín',
+        value: 'group_event',
+    },
+];
+
+const bookingModeOptions = [
+    {
+        label: 'Priama rezervácia',
+        value: 'immediate_booking',
+    },
+    {
+        label: 'Len cez žiadosť',
+        value: 'appointment_request',
+    },
+];
+
+const recurrencePresetOptions = [
+    { label: 'Neopakovať sa', value: 'never' },
+    { label: 'Každý týždeň', value: 'weekly' },
+    { label: 'Každé 2 týždne', value: 'biweekly' },
+    { label: 'Každý mesiac', value: 'monthly' },
+    { label: 'Vlastné opakovanie...', value: 'custom' },
+];
+
+const recurrenceUnitOptions = [
+    {
+        label: 'Dni',
+        value: 'days',
+    },
+    {
+        label: 'Týždne',
+        value: 'weeks',
+    },
+    {
+        label: 'Mesiace',
+        value: 'months',
+    },
+];
+
 const form = reactive({
+    create_type: 'booking',
+    recurrence: null,
+    recurrence_preset: 'never',
+    recurrence_frequency: 'weekly',
+    recurrence_interval: 1,
+    recurrence_weekdays: [],
+    recurrence_ends_type: 'never',
+    recurrence_ends_count: 1,
+    recurrence_ends_until: null,
+    is_enabled: true,
+    repeats: false,
+    repeat_every: 1,
+    repeat_unit: 'weeks',
+    public_booking_type: 'immediate_booking',
+    capacity: 5,
     service_ids: [],
     date: null,
     starts_at: null,
@@ -43,9 +114,17 @@ const form = reactive({
     patient_phone: '',
     patient_phone_country: 'SK',
     patient_phone_full: '',
-    patient_note: '',
-    admin_note: '',
-    notify_patient: true,
+});
+
+const customRecurrenceVisible = ref(false);
+
+const customRecurrence = reactive({
+    frequency: 'weekly',
+    interval: 1,
+    weekdays: [],
+    ends_type: 'never',
+    ends_count: 1,
+    ends_until: null,
 });
 
 const serviceOptions = computed(() => {
@@ -61,10 +140,6 @@ const selectedServices = computed(() => {
     return props.services.filter((service) => {
         return form.service_ids.map(Number).includes(Number(service.id));
     });
-});
-
-const hasPatientEmail = computed(() => {
-    return Boolean(form.patient_email.trim());
 });
 
 const selectedServicesDuration = computed(() => {
@@ -88,6 +163,179 @@ const selectedServicesLabel = computed(() => {
         .map((service) => service.name)
         .join(', ');
 });
+
+const isBookingType = computed(() => form.create_type === 'booking');
+
+const isRuleType = computed(() => form.create_type === 'rule');
+
+const isGroupEventType = computed(() => form.create_type === 'group_event');
+
+const groupServiceModel = computed({
+    get: () => form.service_ids[0] ?? null,
+    set: (value) => {
+        form.service_ids = value ? [value] : [];
+    },
+});
+
+const isEditMode = computed(() => {
+    return Boolean(props.prefill?.edit_mode);
+});
+
+const currentEntityLabel = computed(() => {
+    if (isRuleType.value) {
+        return 'pravidlo';
+    }
+
+    if (isGroupEventType.value) {
+        return 'skupinový termín';
+    }
+
+    return 'rezerváciu';
+});
+
+const dialogTitle = computed(() => {
+    return isEditMode.value
+        ? `Upraviť ${currentEntityLabel.value}`
+        : 'Vytvoriť udalosť';
+});
+
+const submitLabel = computed(() => {
+    return isEditMode.value ? 'Upraviť' : 'Vytvoriť udalosť';
+});
+
+const weekdayCodeForDate = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+
+    return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
+};
+
+const presetLabelForMode = (mode) => {
+    return recurrencePresetOptions.find((option) => option.value === mode)?.label ?? 'Neopakovať sa';
+};
+
+const applyRecurrencePreset = (preset) => {
+    const selectedWeekday = form.date ? weekdayCodeForDate(form.date) : 'MO';
+
+    switch (preset) {
+        case 'weekly':
+            form.recurrence_frequency = 'weekly';
+            form.recurrence_interval = 1;
+            form.recurrence_weekdays = [selectedWeekday];
+            break;
+        case 'biweekly':
+            form.recurrence_frequency = 'weekly';
+            form.recurrence_interval = 2;
+            form.recurrence_weekdays = [selectedWeekday];
+            break;
+        case 'monthly':
+            form.recurrence_frequency = 'monthly';
+            form.recurrence_interval = 1;
+            form.recurrence_weekdays = [];
+            break;
+        case 'never':
+        default:
+            form.recurrence_frequency = 'weekly';
+            form.recurrence_interval = 1;
+            form.recurrence_weekdays = [];
+            break;
+    }
+
+    form.repeats = preset !== 'never';
+    form.repeat_every = form.recurrence_interval;
+    form.repeat_unit = form.recurrence_frequency === 'monthly' ? 'months' : 'weeks';
+};
+
+const openCustomRecurrenceDialog = () => {
+    customRecurrence.frequency = form.recurrence_frequency;
+    customRecurrence.interval = form.recurrence_interval;
+    customRecurrence.weekdays = [...form.recurrence_weekdays];
+    customRecurrence.ends_type = form.recurrence_ends_type;
+    customRecurrence.ends_count = form.recurrence_ends_count;
+    customRecurrence.ends_until = form.recurrence_ends_until;
+
+    customRecurrenceVisible.value = true;
+};
+
+const toggleCustomWeekday = (weekday) => {
+    const index = customRecurrence.weekdays.indexOf(weekday);
+
+    if (index === -1) {
+        customRecurrence.weekdays.push(weekday);
+        return;
+    }
+
+    customRecurrence.weekdays.splice(index, 1);
+};
+
+const saveCustomRecurrence = () => {
+    form.recurrence_preset = 'custom';
+    form.recurrence_frequency = customRecurrence.frequency;
+    form.recurrence_interval = Math.max(1, Number(customRecurrence.interval || 1));
+    form.recurrence_weekdays = [...customRecurrence.weekdays];
+    form.recurrence_ends_type = customRecurrence.ends_type;
+    form.recurrence_ends_count = Math.max(1, Number(customRecurrence.ends_count || 1));
+    form.recurrence_ends_until = customRecurrence.ends_until;
+    form.repeats = true;
+    form.repeat_every = form.recurrence_interval;
+    form.repeat_unit = form.recurrence_frequency === 'monthly' ? 'months' : 'weeks';
+    customRecurrenceVisible.value = false;
+};
+
+const cancelCustomRecurrence = () => {
+    customRecurrenceVisible.value = false;
+};
+
+const recurrenceSummary = computed(() => {
+    if (!form.repeats) {
+        return 'Neopakovať sa';
+    }
+
+    if (form.recurrence_preset === 'custom') {
+        return 'Vlastné opakovanie';
+    }
+
+    return presetLabelForMode(form.recurrence_preset);
+});
+
+const recurrencePayload = computed(() => {
+    if (!form.recurrence) {
+        return null;
+    }
+
+    return {
+        ...form.recurrence,
+    };
+});
+
+const getRepeatUnitForRecurrence = (recurrence) => {
+    if (!recurrence) {
+        return 'weeks';
+    }
+
+    if (recurrence.frequency === 'monthly') {
+        return 'months';
+    }
+
+    return 'weeks';
+};
+
+const parseDateValue = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return new Date(value);
+    }
+
+    const normalized = String(value).includes('T')
+        ? String(value)
+        : String(value).replace(' ', 'T');
+
+    const parsed = new Date(normalized);
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 const formatDateForBackend = (value) => {
     if (!value) {
@@ -175,15 +423,42 @@ const endsAtForBackend = computed(() => {
 });
 
 const canSubmit = computed(() => {
-    return Boolean(form.service_ids.length)
+    const hasBaseValues = Boolean(form.create_type)
         && Boolean(form.date)
         && Boolean(form.starts_at)
-        && Boolean(form.ends_at)
+        && Boolean(form.ends_at);
+
+    if (!hasBaseValues) {
+        return false;
+    }
+
+    if (isRuleType.value) {
+        return Boolean(form.service_ids.length)
+            && Boolean(form.date)
+            && Boolean(form.starts_at)
+            && Boolean(form.ends_at)
+            && Boolean(form.public_booking_type);
+    }
+
+    if (isGroupEventType.value) {
+        return Boolean(form.service_ids.length)
+            && Number(form.capacity ?? 0) > 0
+            && Boolean(form.date)
+            && Boolean(form.starts_at)
+            && Boolean(form.ends_at)
+            && Boolean(form.public_booking_type);
+    }
+
+    return Boolean(form.service_ids.length)
         && Boolean(form.patient_name.trim())
         && selectedServicesDuration.value > 0;
 });
 
 const resetForm = () => {
+    form.create_type = 'booking';
+    form.recurrence = null;
+    form.public_booking_type = 'immediate_booking';
+    form.capacity = 5;
     form.service_ids = [];
     form.ends_at = null;
 
@@ -192,6 +467,17 @@ const resetForm = () => {
             ? props.selection.start
             : new Date(props.selection.start);
 
+        const end = props.selection?.end
+            ? (props.selection.end instanceof Date
+                ? props.selection.end
+                : new Date(props.selection.end))
+            : (() => {
+                const fallbackEnd = new Date(start);
+                fallbackEnd.setMinutes(fallbackEnd.getMinutes() + 30);
+
+                return fallbackEnd;
+            })();
+
         form.date = props.selection?.date
             ? new Date(`${props.selection.date}T00:00:00`)
             : start;
@@ -199,9 +485,14 @@ const resetForm = () => {
         form.starts_at = props.selection?.starts_at
             ? createDateFromDateAndTime(form.date, props.selection.starts_at)
             : start;
+
+        form.ends_at = props.selection?.ends_at
+            ? createDateFromDateAndTime(form.date, props.selection.ends_at)
+            : end;
     } else {
         form.date = null;
         form.starts_at = null;
+        form.ends_at = null;
     }
 
     form.patient_name = '';
@@ -209,9 +500,42 @@ const resetForm = () => {
     form.patient_phone = '';
     form.patient_phone_country = 'SK';
     form.patient_phone_full = '';
-    form.patient_note = '';
-    form.admin_note = '';
-    form.notify_patient = true;
+
+    if (props.prefill) {
+        const prefillStartsAtSource = parseDateValue(props.prefill.starts_at);
+        const prefillDate = props.prefill.date
+            ? new Date(`${props.prefill.date}T00:00:00`)
+            : (prefillStartsAtSource
+                ? new Date(prefillStartsAtSource)
+                : null);
+
+        form.create_type = props.prefill.create_type ?? form.create_type;
+        form.recurrence = props.prefill.recurrence ?? null;
+        form.service_ids = [...(props.prefill.service_ids ?? form.service_ids)];
+        form.capacity = Number(props.prefill.capacity ?? form.capacity ?? 5);
+
+        if (prefillDate && !Number.isNaN(prefillDate.getTime())) {
+            form.date = prefillDate;
+            form.date.setHours(0, 0, 0, 0);
+        }
+
+        const prefillStartsAt = prefillStartsAtSource;
+        const prefillEndsAt = parseDateValue(props.prefill.ends_at);
+
+        if (prefillStartsAt) {
+            form.starts_at = prefillStartsAt;
+        }
+
+        if (prefillEndsAt) {
+            form.ends_at = prefillEndsAt;
+        }
+
+        form.patient_name = props.prefill.patient_name ?? '';
+        form.patient_email = props.prefill.patient_email ?? '';
+        form.patient_phone = props.prefill.patient_phone ?? '';
+        form.patient_phone_full = props.prefill.patient_phone ?? '';
+        form.public_booking_type = props.prefill.public_booking_type ?? form.public_booking_type;
+    }
 };
 
 watch(() => props.visible, (visible) => {
@@ -226,13 +550,26 @@ watch(() => props.selection, () => {
     }
 });
 
-watch(() => form.patient_email, (email) => {
-    if (email.trim()) {
-        form.notify_patient = true;
+watch(() => form.recurrence_preset, (preset) => {
+    if (preset === 'custom') {
+        openCustomRecurrenceDialog();
+        return;
+    }
+
+    applyRecurrencePreset(preset);
+});
+
+watch(() => form.date, () => {
+    if (form.recurrence_preset === 'weekly' || form.recurrence_preset === 'biweekly') {
+        applyRecurrencePreset(form.recurrence_preset);
     }
 });
 
 watch(calculatedEndsAtDate, (endsAt) => {
+    if (!isBookingType.value || !endsAt) {
+        return;
+    }
+
     form.ends_at = endsAt;
 });
 
@@ -272,7 +609,20 @@ const submit = () => {
         return;
     }
 
+    const recurrence = recurrencePayload.value;
+
     emit('create-booking', {
+        create_type: form.create_type,
+        edit_mode: Boolean(props.prefill?.edit_mode),
+        target_type: props.prefill?.target_type ?? null,
+        target_id: props.prefill?.target_id ?? null,
+        recurrence,
+        is_enabled: recurrence ? true : form.is_enabled,
+        repeats: Boolean(recurrence),
+        repeat_every: recurrence?.interval ?? 1,
+        repeat_unit: getRepeatUnitForRecurrence(recurrence),
+        public_booking_type: form.public_booking_type,
+        capacity: form.capacity,
         service_ids: form.service_ids,
         service_id: form.service_ids[0] ?? null,
         booking_slot_id: null,
@@ -281,9 +631,6 @@ const submit = () => {
         patient_name: form.patient_name,
         patient_email: form.patient_email,
         patient_phone: form.patient_phone_full || form.patient_phone,
-        patient_note: form.patient_note,
-        admin_note: form.admin_note,
-        notify_patient: form.notify_patient,
     });
 };
 </script>
@@ -295,19 +642,67 @@ const submit = () => {
         v-model:starts-at="form.starts_at"
         v-model:ends-at="form.ends_at"
         width="max-w-3xl"
-        save-label="Uložiť"
+        :save-label="submitLabel"
         :save-disabled="!canSubmit"
         :show-delete="false"
         @update:visible="emit('update:visible', $event)"
         @close="closeDialog"
         @save="submit"
-        title="Vytvoriť rezerváciu"
+        :title="dialogTitle"
     >
         <FormPage
-            submit-label="Vytvoriť rezerváciu"
+            :submit-label="submitLabel"
             :loading="false"
             :show-submit="false"
         >
+            <FormSection
+                title="Typ a opakovanie"
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Typ udalosti"
+                    for="create_type"
+                    required
+                    span="md:col-span-2"
+                >
+                    <Select
+                        id="create_type"
+                        v-model="form.create_type"
+                        :options="createTypeOptions"
+                        option-label="label"
+                        option-value="value"
+                        class="w-full"
+                    />
+                </FormField>
+
+                <RecurrencePicker
+                    v-model="form.recurrence"
+                    :date="form.date"
+                />
+            </FormSection>
+
+            <div
+                v-if="isBookingType"
+                class="rounded-md bg-soft px-4 py-3 text-sm text-accent"
+            >
+                Vybraná je rezervácia. Nižšie vyplňte služby a údaje pacienta.
+            </div>
+
+            <div
+                v-else-if="isRuleType"
+                class="rounded-md bg-soft px-4 py-3 text-sm text-accent"
+            >
+                Vybrané je pravidlo online rezervácií. Nižšie nastavte služby a opakovanie.
+            </div>
+
+            <div
+                v-else-if="isGroupEventType"
+                class="rounded-md bg-soft px-4 py-3 text-sm text-accent"
+            >
+                Vybraný je skupinový termín. Nižšie nastavte službu, kapacitu a opakovanie.
+            </div>
+
+            <template v-if="isBookingType">
             <FormSection
                 title="Služby"
                 columns="md:grid-cols-2"
@@ -401,52 +796,111 @@ const submit = () => {
                         :patient-email="form.patient_email"
                     />
                 </div>
-
-                <div class="flex items-center gap-2 md:col-span-2">
-                    <Checkbox
-                        v-model="form.notify_patient"
-                        binary
-                        input-id="notify_patient_create"
-                        :disabled="!hasPatientEmail"
-                    />
-
-                    <label
-                        for="notify_patient_create"
-                        class="cursor-pointer text-sm text-accent"
-                        :class="{ 'opacity-50': !hasPatientEmail }"
-                    >
-                        Poslať pacientovi email
-                    </label>
-                </div>
-
-                <FormField
-                    label="Správa pre pacienta"
-                    for="patient_note"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="patient_note"
-                        v-model="form.patient_note"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Správa pre pacienta"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Poznámka"
-                    for="admin_note"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="admin_note"
-                        v-model="form.admin_note"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Interná poznámka"
-                    />
-                </FormField>
             </FormSection>
+            </template>
+
+            <template v-else-if="isRuleType">
+                <FormSection
+                    title="Pravidlo online rezervácií"
+                    columns="md:grid-cols-2"
+                >
+                    <FormField
+                        label="Služby"
+                        for="rule_service_ids"
+                        required
+                        span="md:col-span-2"
+                    >
+                        <MultiSelect
+                            id="rule_service_ids"
+                            v-model="form.service_ids"
+                            :options="serviceOptions"
+                            option-label="label"
+                            option-value="value"
+                            placeholder="Vyberte službu alebo služby"
+                            display="chip"
+                            class="w-full"
+                        />
+                    </FormField>
+
+                    <div class="md:col-span-2 rounded-md bg-soft px-4 py-3 text-sm text-accent">
+                        Po potvrdení sa otvorí editor pravidla s vyplnenými službami a opakovaním.
+                    </div>
+
+                    <FormField
+                        label="Spôsob rezervácie"
+                        for="rule_public_booking_type"
+                        required
+                        span="md:col-span-2"
+                    >
+                        <Select
+                            id="rule_public_booking_type"
+                            v-model="form.public_booking_type"
+                            :options="bookingModeOptions"
+                            option-label="label"
+                            option-value="value"
+                            class="w-full"
+                        />
+                    </FormField>
+                </FormSection>
+            </template>
+
+            <template v-else-if="isGroupEventType">
+                <FormSection
+                    title="Skupinový termín"
+                    columns="md:grid-cols-2"
+                >
+                    <FormField
+                        label="Služba"
+                        for="group_service_id"
+                        required
+                    >
+                        <Select
+                            id="group_service_id"
+                            v-model="groupServiceModel"
+                            :options="serviceOptions"
+                            option-label="label"
+                            option-value="value"
+                            placeholder="Vyberte službu"
+                            class="w-full"
+                        />
+                    </FormField>
+
+                    <FormField
+                        label="Kapacita"
+                        for="group_capacity"
+                        required
+                    >
+                        <InputNumber
+                            id="group_capacity"
+                            v-model="form.capacity"
+                            :min="1"
+                            class="w-full"
+                            input-class="w-full"
+                            placeholder="Napr. 5"
+                        />
+                    </FormField>
+
+                    <FormField
+                        label="Spôsob rezervácie"
+                        for="group_public_booking_type"
+                        required
+                        span="md:col-span-2"
+                    >
+                        <Select
+                            id="group_public_booking_type"
+                            v-model="form.public_booking_type"
+                            :options="bookingModeOptions"
+                            option-label="label"
+                            option-value="value"
+                            class="w-full"
+                        />
+                    </FormField>
+
+                    <div class="md:col-span-2 rounded-md bg-soft px-4 py-3 text-sm text-accent">
+                        Po potvrdení sa otvorí editor skupinového termínu s vyplnenými údajmi.
+                    </div>
+                </FormSection>
+            </template>
         </FormPage>
     </EventDialog>
 </template>

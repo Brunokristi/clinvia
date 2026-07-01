@@ -1,14 +1,8 @@
 <script setup>
-import InputNumber from 'primevue/inputnumber';
-import MultiSelect from 'primevue/multiselect';
-import Select from 'primevue/select';
-import { computed, ref, watch } from 'vue';
+import Button from 'primevue/button';
+import { computed } from 'vue';
 
-import EventDialog from '@/Components/Calendar/EventDialog.vue';
-import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
-import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
-import FormField from '@/Components/Forms/FormField.vue';
-import FormPage from '@/Components/Forms/FormPage.vue';
+import ScopedEventDialog from '@/Components/Calendar/ScopedEventDialog.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
 const props = defineProps({
@@ -41,223 +35,51 @@ const props = defineProps({
 const emit = defineEmits([
     'update:visible',
     'close',
-    'save',
     'delete',
+    'duplicate',
+    'edit-in-unified-form',
 ]);
-
-const rescheduleChoiceVisible = ref(false);
 
 const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value),
 });
 
-const stripTimezoneFromDateTime = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    return String(value)
-        .trim()
-        .replace(' ', 'T')
-        .replace(/Z$/, '')
-        .replace(/([+-]\d{2}:?\d{2})$/, '')
-        .slice(0, 19);
-};
-
-const createTimeDate = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    if (value instanceof Date) {
-        return value;
-    }
-
-    const stringValue = stripTimezoneFromDateTime(value);
-
-    if (!stringValue) {
-        return null;
-    }
-
-    if (stringValue.includes('T')) {
-        return new Date(stringValue);
-    }
-
-    const [hours, minutes] = stringValue.slice(0, 5).split(':');
-    const date = new Date();
-
-    date.setHours(Number(hours), Number(minutes), 0, 0);
-
-    return date;
-};
-
-const formatDateForBackend = (value) => {
-    if (!value) {
-        return '';
-    }
-
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return '';
-    }
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-
-    return `${year}-${month}-${day}`;
-};
-
-const formatTimeForBackend = (value) => {
-    if (!value) {
-        return '';
-    }
-
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return '';
-    }
-
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-
-    return `${hours}:${minutes}`;
-};
-
-const addYearsToDate = (dateValue, years = 2) => {
-    if (!dateValue) {
-        return null;
-    }
-
-    const stringValue = dateValue instanceof Date
-        ? formatDateForBackend(dateValue)
-        : String(dateValue).slice(0, 10);
-
-    const date = new Date(`${stringValue}T00:00:00`);
-
-    if (Number.isNaN(date.getTime())) {
-        return null;
-    }
-
-    date.setFullYear(date.getFullYear() + years);
-
-    return formatDateForBackend(date);
-};
-
-const normalizeRepeatDefaults = () => {
-    if (!props.rule) {
-        return;
-    }
-
-    props.rule.repeat_every = Number(props.rule.repeat_every || 1);
-    props.rule.repeat_unit = props.rule.repeat_unit || 'weeks';
-
-    if (props.rule.repeats && !props.rule.repeat_ends_on) {
-        props.rule.repeat_ends_on = addYearsToDate(props.rule.date, 2);
-    }
-};
-
-watch(() => props.visible, (visible) => {
-    if (visible) {
-        normalizeRepeatDefaults();
-    }
-});
-
-watch(() => props.rule?.repeats, () => {
-    normalizeRepeatDefaults();
-});
-
-watch(() => props.rule?.date, () => {
-    if (props.rule?.repeats && !props.rule.repeat_ends_on) {
-        props.rule.repeat_ends_on = addYearsToDate(props.rule.date, 5);
-    }
-});
-
-const datePickerModel = computed({
-    get: () => {
-        if (!props.rule?.date) {
-            return null;
-        }
-
-        if (props.rule.date instanceof Date) {
-            return props.rule.date;
-        }
-
-        return new Date(`${String(props.rule.date).slice(0, 10)}T00:00:00`);
-    },
-    set: (value) => {
-        if (!props.rule) {
-            return;
-        }
-
-        props.rule.date = formatDateForBackend(value);
-
-        if (props.rule.repeats && !props.rule.repeat_ends_on) {
-            props.rule.repeat_ends_on = addYearsToDate(props.rule.date, 5);
-        }
-    },
-});
-
-const startsAtPickerModel = computed({
-    get: () => createTimeDate(props.rule?.starts_at),
-    set: (value) => {
-        if (!props.rule) {
-            return;
-        }
-
-        props.rule.starts_at = formatTimeForBackend(value);
-    },
-});
-
-const endsAtPickerModel = computed({
-    get: () => createTimeDate(props.rule?.ends_at),
-    set: (value) => {
-        if (!props.rule) {
-            return;
-        }
-
-        props.rule.ends_at = formatTimeForBackend(value);
-    },
-});
-
 const dialogTitle = computed(() => {
     if (!props.rule) {
-        return 'Voľný čas';
+        return 'Pravidlo rezervcácií';
     }
 
     return props.rule.id
-        ? 'Upraviť voľný čas'
-        : 'Nový voľný čas';
+        ? 'Pravidlo rezervácií'
+        : 'Nové pravidlo rezervácií';
 });
 
-const hasValidRepeatSettings = computed(() => {
-    if (!props.rule?.repeats) {
-        return true;
+const createDateFromRule = (timeValue = null) => {
+    if (!props.rule?.date) {
+        return null;
     }
 
-    return Boolean(props.rule.repeat_ends_on)
-        && Number(props.rule.repeat_every ?? 0) >= 1
-        && ['days', 'weeks', 'months'].includes(props.rule.repeat_unit);
+    const datePart = String(props.rule.date).slice(0, 10);
+    const timePart = timeValue
+        ? String(timeValue).slice(0, 5)
+        : '00:00';
+
+    const parsed = new Date(`${datePart}T${timePart}:00`);
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const ruleDateModel = computed(() => {
+    return createDateFromRule();
 });
 
-const canSave = computed(() => {
-    return Boolean(props.rule)
-        && Boolean(props.rule.date)
-        && Boolean(props.rule.starts_at)
-        && Boolean(props.rule.ends_at)
-        && (props.rule.service_ids ?? []).length > 0
-        && hasValidRepeatSettings.value;
+const ruleStartsAtModel = computed(() => {
+    return createDateFromRule(props.rule?.starts_at ?? null);
 });
 
-const isExistingRepeatedRule = computed(() => {
-    return Boolean(props.rule?.id && props.rule?.repeats);
+const ruleEndsAtModel = computed(() => {
+    return createDateFromRule(props.rule?.ends_at ?? null);
 });
 
 const closeDialog = () => {
@@ -265,23 +87,15 @@ const closeDialog = () => {
     emit('close');
 };
 
-const saveRule = () => {
-    if (!canSave.value) {
+const openUnifiedEditor = () => {
+    if (!props.rule) {
         return;
     }
 
-    if (isExistingRepeatedRule.value) {
-        rescheduleChoiceVisible.value = true;
-
-        return;
-    }
-
-    emit('save');
-};
-
-const submitRescheduleScope = (scope) => {
-    rescheduleChoiceVisible.value = false;
-    emit('save', scope);
+    emit('edit-in-unified-form', {
+        rule: props.rule,
+        selectedRuleOccurrence: props.selectedRuleOccurrence,
+    });
 };
 
 const deleteOccurrence = () => {
@@ -295,79 +109,63 @@ const deleteFromNowOn = () => {
 const deleteAll = () => {
     emit('delete', 'series');
 };
+
+const duplicateRule = () => {
+    emit('duplicate');
+};
 </script>
 
 <template>
-    <EventDialog
+    <ScopedEventDialog
         v-model:visible="dialogVisible"
         :title="dialogTitle"
-        v-model:date="datePickerModel"
-        v-model:starts-at="startsAtPickerModel"
-        v-model:ends-at="endsAtPickerModel"
         width="max-w-3xl"
-        save-label="Uložiť"
+        :date="ruleDateModel"
+        :starts-at="ruleStartsAtModel"
+        :ends-at="ruleEndsAtModel"
+        :date-time-disabled="true"
         :loading="loading"
-        :save-disabled="loading || !canSave"
-        :show-save="Boolean(rule)"
+        :show-save="false"
         show-delete
         :delete-disabled="!rule"
         :is-repeatable="Boolean(rule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate ?? rule?.date"
+        :show-duplicate="true"
+        scope-mode="update"
+        scope-subject-label="voľný čas"
         @close="closeDialog"
-        @save="saveRule"
         @delete-occurrence="deleteOccurrence"
         @delete-from-now-on="deleteFromNowOn"
         @delete-all="deleteAll"
+        @duplicate="duplicateRule"
     >
-        <FormPage
-            v-if="rule"
-            submit-label="Uložiť"
-            :loading="loading"
-            :show-submit="false"
-        >
-            <FormSection
-                title="Služby"
-                description="Toto je voľný čas pre vybrané rezervovateľné služby. Nevytvára skupinový termín."
-                columns="md:grid-cols-1"
-            >
-                <FormField
-                    label="Priradené rezervovateľné služby"
-                    for="availability_service_ids"
-                    required
-                >
-                    <MultiSelect
-                        id="availability_service_ids"
-                        v-model="rule.service_ids"
-                        :options="services"
-                        option-label="name"
-                        option-value="id"
-                        display="chip"
-                        placeholder="Vyberte jednu alebo viac služieb"
-                        class="w-full"
-                    />
-                </FormField>
-            </FormSection>
-
-            <RepeatingSection
-                :model="rule"
-                :repeat-unit-options="repeatUnitOptions"
-                title="Opakovanie"
-                description="Nastavte, či sa má dostupnosť opakovať."
-                enabled-id="availability_rule_is_enabled"
-                repeats-id="availability_rule_repeats"
-                repeat-every-id="availability_repeat_every"
-                repeat-unit-id="availability_repeat_unit"
-                enabled-label="Pravidlo dostupnosti je aktívne"
-                repeats-label="Toto pravidlo sa opakuje periodicky"
+        <template #footer-start>
+            <Button
+                v-if="rule"
+                type="button"
+                label="Duplikovať"
+                outlined
+                @click="duplicateRule"
             />
 
-            <div
-                v-if="rule.repeats && !hasValidRepeatSettings"
-                class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
-            >
-                Pri opakovaní musí byť vyplnený dátum ukončenia opakovania, interval a jednotka opakovania.
-            </div>
-        </FormPage>
+            <Button
+                v-if="rule"
+                type="button"
+                label="Upraviť"
+                @click="openUnifiedEditor"
+            />
+        </template>
+
+        <div v-if="rule" class="space-y-4">
+            <FormSection title="Prehľad pravidla" columns="md:grid-cols-2">
+                <div class="rounded-md bg-soft p-4 text-sm text-accent md:col-span-2">
+                    <p><strong class="text-dark">Dátum:</strong> {{ rule.date }}</p>
+                    <p><strong class="text-dark">Čas:</strong> {{ rule.starts_at }} - {{ rule.ends_at }}</p>
+                    <p><strong class="text-dark">Služby:</strong> {{ services.filter((service) => rule.service_ids?.includes(service.id)).map((service) => service.name).join(', ') || '—' }}</p>
+                    <p><strong class="text-dark">Opakovanie:</strong> {{ rule.repeats ? 'Opakuje sa' : 'Neopakuje sa' }}</p>
+                </div>
+            </FormSection>
+        </div>
 
         <div
             v-else
@@ -375,12 +173,5 @@ const deleteAll = () => {
         >
             Pravidlo sa nepodarilo načítať.
         </div>
-    </EventDialog>
-
-    <OccurrenceScopeDialog
-        v-model:visible="rescheduleChoiceVisible"
-        mode="reschedule"
-        subject-label="voľný čas"
-        @select="submitRescheduleScope"
-    />
+    </ScopedEventDialog>
 </template>

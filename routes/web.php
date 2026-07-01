@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\ApiClientController;
 use App\Http\Controllers\Admin\BranchAvailabilityRuleController;
 use App\Http\Controllers\Admin\BranchBookingCalendarController;
 use App\Http\Controllers\Admin\BranchBookingController;
+use App\Http\Controllers\Admin\BranchDisabledDayController;
 use App\Http\Controllers\Admin\BranchCapacityWindowController;
 use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchController;
@@ -202,6 +203,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::put('/booking/services', [BranchBookingCalendarController::class, 'updateServices'])
                     ->name('booking.services.update');
 
+                Route::get('/booking/events', [BranchBookingCalendarController::class, 'events'])
+                    ->name('booking.events.index');
+
                 /*
                 |--------------------------------------------------------------------------
                 | Availability rules
@@ -229,6 +233,25 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 /*
                 |--------------------------------------------------------------------------
+                | Disabled days
+                |--------------------------------------------------------------------------
+                */
+
+                Route::get('/booking/disabled-days', [BranchDisabledDayController::class, 'index'])
+                    ->name('booking.disabled-days.index');
+
+                Route::post('/booking/disabled-days', [BranchDisabledDayController::class, 'store'])
+                    ->name('booking.disabled-days.store');
+
+                Route::patch('/booking/disabled-days/{disabledDay}', [BranchDisabledDayController::class, 'update'])
+                    ->name('booking.disabled-days.update');
+
+                Route::delete('/booking/disabled-days/{disabledDay}', [BranchDisabledDayController::class, 'destroy'])
+                    ->name('booking.disabled-days.destroy');
+
+
+                /*
+                |--------------------------------------------------------------------------
                 | Bookings
                 |--------------------------------------------------------------------------
                 */
@@ -244,6 +267,9 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingController::class, 'reschedule'])
                     ->name('booking.bookings.reschedule');
+
+                Route::post('/booking/bookings/{booking}/duplicate', [BranchBookingController::class, 'duplicate'])
+                    ->name('booking.bookings.duplicate');
 
                 /*
                 |--------------------------------------------------------------------------

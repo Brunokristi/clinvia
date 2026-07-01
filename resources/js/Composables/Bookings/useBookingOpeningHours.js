@@ -34,6 +34,18 @@ export function useBookingOpeningHours({ props, dateTime }) {
         return openingDay.intervals ?? [];
     };
 
+    const isDateDisabled = (date) => {
+        if (!date) {
+            return false;
+        }
+
+        const dateOnly = getDateFromDate(date);
+
+        return (props.disabledDays ?? []).some((disabledDay) => {
+            return String(disabledDay.date).slice(0, 10) === dateOnly;
+        });
+    };
+
     const getDayOpeningHours = (date) => {
         const databaseDay = getDatabaseDayFromDate(date);
 
@@ -49,6 +61,10 @@ export function useBookingOpeningHours({ props, dateTime }) {
 
     const isDateRangeInsideOpeningHours = (start, end) => {
         if (!start || !end) {
+            return false;
+        }
+
+        if (isDateDisabled(start) || isDateDisabled(end)) {
             return false;
         }
 
@@ -77,6 +93,10 @@ export function useBookingOpeningHours({ props, dateTime }) {
     };
 
     const isEventAllowed = (dropInfo, draggedEvent) => {
+        if (isDateDisabled(dropInfo.start) || isDateDisabled(dropInfo.end ?? dropInfo.start)) {
+            return false;
+        }
+
         const type = draggedEvent?.extendedProps?.type;
 
         if (type === 'booking') {

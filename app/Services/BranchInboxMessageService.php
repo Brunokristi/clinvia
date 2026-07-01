@@ -35,7 +35,7 @@ class BranchInboxMessageService
         $this->notifyBranchRecipients(
             branch: $branch,
             settingKey: 'notify_new_contact_form',
-            subject: 'Nová správa',
+            subject: 'Nová správa'
             message: collect([
                 'Máte novú správu od '. $senderName . '.'
             ])->filter()->join("\n"),

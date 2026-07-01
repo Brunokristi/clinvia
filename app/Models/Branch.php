@@ -98,6 +98,11 @@ class Branch extends Model
         return $this->hasMany(BookingAvailabilityRule::class);
     }
 
+    public function disabledDays(): HasMany
+    {
+        return $this->hasMany(BranchDisabledDay::class)->orderBy('date');
+    }
+
     public function bookingSlots(): HasMany
     {
         return $this->hasMany(BookingSlot::class);

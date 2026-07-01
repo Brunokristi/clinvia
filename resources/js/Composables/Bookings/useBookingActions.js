@@ -31,6 +31,10 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         createBookingDialogVisible,
         groupEventOccurrenceDialogVisible,
         pendingCalendarSelection,
+        openCreateBookingWithPrefill,
+        selectedBooking,
+        suppressNextEventClick,
+        suppressEventClicksFor,
     } = dialogs;
 
     const bookingNotes = ref({});
@@ -40,6 +44,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             only: [
                 'calendarBookings',
                 'calendarCapacityWindows',
+                'disabledDays',
                 'pendingAppointmentRequests',
                 'todayBookingsCount',
                 'unreadMessagesCount',
@@ -97,13 +102,23 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             patient_name: data.patient_name,
             patient_email: data.patient_email,
             patient_phone: data.patient_phone,
-            patient_note: data.patient_note,
-            admin_note: data.admin_note,
-            notify_patient: Boolean(data.notify_patient ?? true),
+            notify_patient: true,
+            recurrence: data.recurrence ?? null,
         }, {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
+                bookingDialogVisible.value = false;
+                selectedBooking.value = null;
+
+                if (typeof suppressNextEventClick === 'function') {
+                    suppressNextEventClick();
+                }
+
+                if (typeof suppressEventClicksFor === 'function') {
+                    suppressEventClicksFor(2000);
+                }
+
                 createBookingDialogVisible.value = false;
                 pendingCalendarSelection.value = null;
                 showSuccess('Rezervácia bola vytvorená.');
@@ -121,9 +136,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             booking.id,
         ]), {
             status,
-            admin_note: bookingNotes.value[booking.id] ?? '',
-            notify_patient: Boolean(options.notify_patient ?? false),
-            notification_reason: options.notification_reason ?? null,
+            notify_patient: true,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -143,9 +156,9 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             props.branch.id,
             booking.id,
         ]), {
-            admin_note: bookingNotes.value[booking.id] ?? '',
-            notify_patient: Boolean(options.notify_patient ?? true),
-            notification_reason: options.notification_reason ?? null,
+            notify_patient: true,
+            delete_scope: options.delete_scope ?? null,
+            date: options.date ?? booking.occurrence_date ?? booking.starts_at ?? null,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -195,9 +208,9 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             service_ids: serviceIds,
             starts_at: data.starts_at ?? null,
             ends_at: data.ends_at ?? null,
-            admin_note: bookingNotes.value[booking.id] ?? '',
-            notify_patient: Boolean(data.notify_patient ?? false),
-            notification_reason: data.notification_reason ?? null,
+            notify_patient: true,
+            reschedule_scope: data.reschedule_scope ?? null,
+            date: data.date ?? booking.occurrence_date ?? booking.starts_at ?? null,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -210,6 +223,26 @@ export function useBookingActions({ props, dateTime, dialogs }) {
                 showError('Rezerváciu sa nepodarilo presunúť.', errors);
             },
         });
+    };
+
+    const duplicateBooking = (booking) => {
+        const serviceIds = getBookingServiceIds(booking);
+
+        openCreateBookingWithPrefill({
+            create_type: 'booking',
+            date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
+            starts_at: booking.starts_at,
+            ends_at: booking.ends_at,
+            service_ids: serviceIds,
+            service_id: serviceIds[0] ?? booking.service_id,
+            patient_name: booking.patient_name ?? '',
+            patient_email: booking.patient_email ?? '',
+            patient_phone: booking.patient_phone ?? '',
+            public_booking_type: booking.service?.public_booking_type ?? 'immediate_booking',
+            recurrence: booking.recurrence ?? null,
+        });
+
+        closeBookingDialogs();
     };
 
     const rescheduleBookingByCalendarChange = (changeInfo) => {
@@ -233,9 +266,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             ends_at: changeInfo.event.end
                 ? toLocalDateTimeString(changeInfo.event.end)
                 : booking.ends_datetime ?? booking.ends_at,
-            admin_note: bookingNotes.value[booking.id] ?? '',
             notify_patient: true,
-            notification_reason: 'Termín rezervácie bol presunutý.',
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -286,6 +317,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         bookingNotes,
         cancelBooking,
         createAdminBooking,
+        duplicateBooking,
         rescheduleBooking,
         rescheduleBookingByCalendarChange,
         updateBooking,

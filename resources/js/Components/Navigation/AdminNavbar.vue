@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import PanelMenu from 'primevue/panelmenu';
 import Menu from 'primevue/menu';
 import Button from 'primevue/button';
@@ -9,6 +8,7 @@ import Button from 'primevue/button';
 const page = usePage();
 
 const userMenu = ref(null);
+const sidebarCollapsed = ref(false);
 
 const user = computed(() => page.props.auth?.user);
 const branch = computed(() => page.props.branch ?? null);
@@ -241,7 +241,6 @@ const panelMenuKey = computed(() => {
 
 const profileDialogVisible = ref(false);
 
-
 const userMenuItems = computed(() => {
     const items = [];
 
@@ -271,18 +270,37 @@ const userMenuItems = computed(() => {
 const toggleUserMenu = (event) => {
     userMenu.value.toggle(event);
 };
+
+const toggleSidebar = () => {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+};
 </script>
 
 <template>
-    <aside class="flex h-screen w-80 shrink-0 flex-col bg-accent p-4">
-        <div class="mb-4 flex items-center justify-center">
-            <Link :href="route('dashboard')">
-                <ApplicationLogo class="h-8" type="textual" />
-            </Link>
+    <aside
+        class="flex h-screen shrink-0 flex-col bg-accent p-4 transition-all duration-200"
+        :class="sidebarCollapsed ? 'w-16' : 'w-80'"
+    >
+        <div
+            class="mb-4 flex items-center"
+            :class="sidebarCollapsed ? 'justify-center' : 'justify-between'"
+        >
+            
+
+            <button
+                v-if="!sidebarCollapsed"
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/10 text-white transition hover:bg-white/20"
+                title="Zbaliť menu"
+                @click="toggleSidebar"
+            >
+                <i class="pi pi-angle-left text-sm text-white" />
+            </button>
         </div>
 
-        <nav class="flex-1 overflow-y-auto">
+        <nav class="flex-1 overflow-y-auto overflow-x-hidden">
             <PanelMenu
+                v-if="!sidebarCollapsed"
                 :key="panelMenuKey"
                 v-model:expandedKeys="expandedMenuKeys"
                 :model="navigationItems"
@@ -292,29 +310,83 @@ const toggleUserMenu = (event) => {
                     <span />
                 </template>
             </PanelMenu>
+
+            <div
+                v-else
+                class="space-y-1"
+            >
+                <div
+                    v-for="group in navigationItems"
+                    :key="group.key"
+                    class="space-y-1"
+                >
+                    <div
+                        class="flex h-10 items-center justify-center rounded-md text-white/70"
+                        :title="group.label"
+                    >
+                        <i
+                            :class="group.icon"
+                            class="text-sm text-white/70"
+                        />
+                    </div>
+
+                    <button
+                        v-for="item in group.items"
+                        :key="item.label"
+                        type="button"
+                        class="flex h-10 w-full items-center justify-center rounded-md text-white/80 transition hover:bg-dark/40 hover:text-white"
+                        :class="item.class === 'p-focus'
+                            ? 'bg-dark text-white'
+                            : ''"
+                        :title="item.label"
+                        @click="item.command"
+                    >
+                        <i
+                            :class="item.icon"
+                            class="text-sm text-white"
+                        />
+                    </button>
+                </div>
+            </div>
         </nav>
+
+        <button
+            v-if="sidebarCollapsed"
+            type="button"
+            class="mt-3 flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-white/10 text-white transition hover:bg-white/20"
+            title="Rozbaliť menu"
+            @click="toggleSidebar"
+        >
+            <i class="pi pi-angle-right text-sm text-white" />
+        </button>
 
         <div class="mt-4 space-y-3">
             <Button
                 type="button"
-                class="!flex !w-full !items-center !justify-start !gap-3 !rounded-md !border !border-white/10 !bg-dark !px-3 !py-3 !text-white hover:!bg-dark/90"
+                class="!flex !w-full !items-center !rounded-md !border !border-white/10 !bg-dark !text-white hover:!bg-dark/90"
+                :class="sidebarCollapsed
+                    ? '!justify-center !px-2 !py-2'
+                    : '!justify-start !gap-3 !px-3 !py-3'"
+                :title="sidebarCollapsed ? userName : null"
                 @click="toggleUserMenu"
             >
                 <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm font-semibold text-white">
                     {{ userInitials }}
                 </span>
 
-                <span class="min-w-0 flex-1 text-left">
-                    <span class="block truncate text-sm font-semibold text-white">
-                        {{ userName }}
+                <template v-if="!sidebarCollapsed">
+                    <span class="min-w-0 flex-1 text-left">
+                        <span class="block truncate text-sm font-semibold text-white">
+                            {{ userName }}
+                        </span>
+
+                        <span class="block truncate text-xs text-white/60">
+                            {{ contextTitle }}
+                        </span>
                     </span>
 
-                    <span class="block truncate text-xs text-white/60">
-                        {{ contextTitle }}
-                    </span>
-                </span>
-
-                <i class="pi pi-chevron-up text-xs text-white" />
+                    <i class="pi pi-chevron-up text-xs text-white" />
+                </template>
             </Button>
 
             <Menu

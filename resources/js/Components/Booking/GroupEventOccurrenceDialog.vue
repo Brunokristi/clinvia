@@ -1,8 +1,6 @@
 <script setup>
 import Button from 'primevue/button';
-import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
 import { computed, reactive, ref, watch } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
@@ -32,6 +30,7 @@ const emit = defineEmits([
     'update:visible',
     'close',
     'edit-capacity-window',
+    'duplicate-capacity-window',
     'cancel-booking',
     'cancel-capacity-window',
     'reschedule-capacity-window',
@@ -50,8 +49,6 @@ const groupForm = reactive({
     date: null,
     starts_at: null,
     ends_at: null,
-    notify_patient: true,
-    notification_reason: '',
 });
 
 const patientForm = reactive({
@@ -60,15 +57,13 @@ const patientForm = reactive({
     patient_phone: '',
     patient_phone_country: 'SK',
     patient_phone_full: '',
-    patient_note: '',
-    admin_note: '',
-    notify_patient: true,
 });
 
 const rescheduleChoiceVisible = ref(false);
 const pendingReschedulePayload = ref(null);
 const isResettingGroupForm = ref(false);
 const hasManuallyChangedDateTime = ref(false);
+const isDetailMode = ref(true);
 
 const bookings = computed(() => {
     return props.capacityWindow?.bookings ?? [];
@@ -126,14 +121,58 @@ const hasGroupEventTimeChanged = computed(() => {
     return hasManuallyChangedDateTime.value;
 });
 
-const canNotifyNewPatient = computed(() => {
-    return Boolean(patientForm.patient_email.trim());
-});
-
 const canAddPatient = computed(() => {
     return Boolean(props.capacityWindow)
         && hasFreeCapacity.value
         && Boolean(patientForm.patient_name.trim());
+});
+
+const formatDateForDisplay = (value) => {
+    if (!value) {
+        return '—';
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}.${month}.${year}`;
+};
+
+const formatTimeForDisplay = (value) => {
+    if (!value) {
+        return '—';
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
+};
+
+const detailDateDisplay = computed(() => {
+    return formatDateForDisplay(groupForm.date ?? capacityWindowDate.value);
+});
+
+const detailTimeDisplay = computed(() => {
+    const startsAt = groupForm.starts_at
+        ?? parseTimeValue(props.capacityWindow?.starts_datetime ?? props.capacityWindow?.starts_at, groupForm.date);
+    const endsAt = groupForm.ends_at
+        ?? parseTimeValue(props.capacityWindow?.ends_datetime ?? props.capacityWindow?.ends_at, groupForm.date);
+
+    return `${formatTimeForDisplay(startsAt)} - ${formatTimeForDisplay(endsAt)}`;
 });
 
 const stripTimezoneFromDateTime = (value) => {
@@ -298,9 +337,6 @@ const resetGroupForm = () => {
             date,
         );
 
-    groupForm.notify_patient = true;
-    groupForm.notification_reason = '';
-
     pendingReschedulePayload.value = null;
     rescheduleChoiceVisible.value = false;
 
@@ -315,9 +351,6 @@ const resetPatientForm = () => {
     patientForm.patient_phone = '';
     patientForm.patient_phone_country = 'SK';
     patientForm.patient_phone_full = '';
-    patientForm.patient_note = '';
-    patientForm.admin_note = '';
-    patientForm.notify_patient = true;
 };
 
 watch(
@@ -333,6 +366,7 @@ watch(
     () => props.visible,
     (visible) => {
         if (visible) {
+            isDetailMode.value = true;
             resetGroupForm();
             resetPatientForm();
         }
@@ -354,23 +388,27 @@ watch(
     },
 );
 
-watch(
-    () => patientForm.patient_email,
-    (email) => {
-        if (email.trim()) {
-            patientForm.notify_patient = true;
-        }
-    },
-);
-
 const editCapacityWindow = () => {
     emit('edit-capacity-window', props.capacityWindow);
+};
+
+const enableEditMode = () => {
+    editCapacityWindow();
+};
+
+const openPatientManagementMode = () => {
+    isDetailMode.value = false;
+};
+
+const duplicateCapacityWindow = () => {
+    emit('duplicate-capacity-window', props.capacityWindow);
 };
 
 const closeDialog = () => {
     pendingReschedulePayload.value = null;
     rescheduleChoiceVisible.value = false;
     hasManuallyChangedDateTime.value = false;
+    isDetailMode.value = true;
 
     emit('update:visible', false);
     emit('close');
@@ -381,8 +419,7 @@ const buildReschedulePayload = () => {
         date: selectedDateForBackend.value,
         starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
         ends_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.ends_at)),
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     };
 };
 
@@ -439,8 +476,7 @@ const cancelCapacityWindow = () => {
 
     emit('cancel-capacity-window', props.capacityWindow, {
         date: selectedDateForBackend.value,
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     });
 };
 
@@ -452,8 +488,7 @@ const deleteCapacityWindowOccurrence = () => {
     emit('delete-capacity-window-occurrence', props.capacityWindow, {
         date: selectedDateForBackend.value,
         delete_scope: 'occurrence',
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     });
 };
 
@@ -471,8 +506,7 @@ const deleteCapacityWindowFromDate = () => {
     emit('delete-capacity-window-from-date', props.capacityWindow, {
         date: selectedDateForBackend.value,
         delete_scope: 'from_date',
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     });
 };
 
@@ -484,15 +518,13 @@ const deleteCapacityWindowSeries = () => {
     emit('delete-capacity-window-series', props.capacityWindow, {
         date: selectedDateForBackend.value,
         delete_scope: 'series',
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     });
 };
 
 const cancelPatientBooking = (booking) => {
     emit('cancel-booking', booking, {
-        notify_patient: groupForm.notify_patient,
-        notification_reason: groupForm.notification_reason,
+        notify_patient: true,
     });
 };
 
@@ -511,9 +543,7 @@ const addPatientToCapacityWindow = () => {
         patient_name: patientForm.patient_name,
         patient_email: patientForm.patient_email,
         patient_phone: patientForm.patient_phone_full || patientForm.patient_phone,
-        patient_note: patientForm.patient_note,
-        admin_note: patientForm.admin_note,
-        notify_patient: canNotifyNewPatient.value && patientForm.notify_patient,
+        notify_patient: true,
     });
 
     resetPatientForm();
@@ -527,9 +557,10 @@ const addPatientToCapacityWindow = () => {
         v-model:date="groupForm.date"
         v-model:starts-at="groupForm.starts_at"
         v-model:ends-at="groupForm.ends_at"
+        :date-time-disabled="isDetailMode"
         width="max-w-5xl"
         save-label="Presunúť"
-        :show-save="Boolean(capacityWindow)"
+        :show-save="!isDetailMode && Boolean(capacityWindow)"
         :save-disabled="!canSaveGroupEvent || !hasGroupEventTimeChanged"
         show-delete
         :delete-disabled="!capacityWindow"
@@ -544,20 +575,63 @@ const addPatientToCapacityWindow = () => {
         <template #footer-start>
             <Button
                 v-if="capacityWindow"
+                v-show="isDetailMode"
                 type="button"
-                label="Viac"
+                label="Pacienti"
                 outlined
-                @click="editCapacityWindow"
+                @click="openPatientManagementMode"
+            />
+
+            <Button
+                v-if="capacityWindow"
+                v-show="isDetailMode"
+                type="button"
+                label="Duplikovať"
+                outlined
+                @click="duplicateCapacityWindow"
+            />
+
+            <Button
+                v-if="capacityWindow"
+                v-show="isDetailMode"
+                type="button"
+                label="Upraviť"
+                outlined
+                @click="enableEditMode"
             />
         </template>
 
-        <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent md:col-span-2">
-            <strong class="text-dark">Obsadenosť:</strong>
-            {{ bookings.length }} / {{ capacity ?? '—' }}
+        <div
+            v-if="capacityWindow && isDetailMode"
+            class="space-y-4"
+        >
+            <div class="rounded-md bg-soft p-4 text-sm leading-6 text-accent md:col-span-2">
+                <p><strong class="text-dark">Obsadenosť:</strong> {{ bookings.length }} / {{ capacity ?? '—' }}</p>
+                <p><strong class="text-dark">Dátum:</strong> {{ detailDateDisplay }}</p>
+                <p><strong class="text-dark">Čas:</strong> {{ detailTimeDisplay }}</p>
+                <p><strong class="text-dark">Názov:</strong> {{ dialogTitle }}</p>
+                <p><strong class="text-dark">Opakovanie:</strong> {{ isCapacityWindowRepeatable ? 'Opakuje sa' : 'Neopakuje sa' }}</p>
+            </div>
+
+            <FormSection
+                v-if="bookings.length"
+                title="Pacienti v skupinovom termíne"
+                columns="md:grid-cols-1"
+            >
+                <div class="space-y-4">
+                    <PatientCard
+                        v-for="booking in bookings"
+                        :key="booking.id"
+                        :patient-name="booking.patient_name"
+                        :patient-phone="booking.patient_phone"
+                        :patient-email="booking.patient_email"
+                    />
+                </div>
+            </FormSection>
         </div>
 
         <FormPage
-            v-if="capacityWindow"
+            v-else-if="capacityWindow"
             submit-label="Uložiť"
             :show-submit="false"
         >
@@ -575,19 +649,6 @@ const addPatientToCapacityWindow = () => {
                         :patient-email="booking.patient_email"
                     >
                         <div class="mt-4 grid gap-4">
-                            <FormField
-                                label="Admin poznámka"
-                                :for="`capacity_booking_note_${booking.id}`"
-                            >
-                                <Textarea
-                                    :id="`capacity_booking_note_${booking.id}`"
-                                    v-model="bookingNotes[booking.id]"
-                                    rows="3"
-                                    class="w-full"
-                                    placeholder="Admin poznámka"
-                                />
-                            </FormField>
-
                             <div>
                                 <Button
                                     type="button"
@@ -649,53 +710,6 @@ const addPatientToCapacityWindow = () => {
                     />
                 </FormField>
 
-                <div class="flex items-center gap-2 md:col-span-2">
-                    <Checkbox
-                        v-model="patientForm.notify_patient"
-                        binary
-                        input-id="capacity_new_patient_notify"
-                        :disabled="!canNotifyNewPatient || !hasFreeCapacity"
-                    />
-
-                    <label
-                        for="capacity_new_patient_notify"
-                        class="cursor-pointer text-sm text-accent"
-                        :class="{ 'opacity-50': !canNotifyNewPatient || !hasFreeCapacity }"
-                    >
-                        Upozorniť pacienta o rezervácií a zmenách v nej
-                    </label>
-                </div>
-
-                <FormField
-                    label="Správa pre pacienta"
-                    for="capacity_new_patient_note"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="capacity_new_patient_note"
-                        v-model="patientForm.patient_note"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Správa pre pacienta"
-                        :disabled="!hasFreeCapacity"
-                    />
-                </FormField>
-
-                <FormField
-                    label="Interná poznámka"
-                    for="capacity_new_admin_note"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="capacity_new_admin_note"
-                        v-model="patientForm.admin_note"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Interná poznámka"
-                        :disabled="!hasFreeCapacity"
-                    />
-                </FormField>
-
                 <div class="flex justify-end md:col-span-2">
                     <Button
                         type="button"
@@ -712,37 +726,6 @@ const addPatientToCapacityWindow = () => {
                 description="Tu zmeňte iba dátum alebo čas. Pri opakovanej sérii sa vás aplikácia opýta, či chcete presunúť iba tento termín alebo viac termínov."
                 columns="md:grid-cols-2"
             >
-                <div class="flex items-center gap-2 md:col-span-2">
-                    <Checkbox
-                        v-model="groupForm.notify_patient"
-                        binary
-                        input-id="capacity_notify_patient"
-                        :disabled="!bookings.length"
-                    />
-
-                    <label
-                        for="capacity_notify_patient"
-                        class="cursor-pointer text-sm text-accent"
-                        :class="{ 'opacity-50': !bookings.length }"
-                    >
-                        Poslať pacientom email pri zmene alebo odstránení
-                    </label>
-                </div>
-
-                <FormField
-                    label="Dôvod zmeny"
-                    for="capacity_notification_reason"
-                    span="md:col-span-2"
-                >
-                    <Textarea
-                        id="capacity_notification_reason"
-                        v-model="groupForm.notification_reason"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Napríklad: Termín musíme presunúť z organizačných dôvodov."
-                    />
-                </FormField>
-
                 <div class="flex justify-end md:col-span-2">
                     <Button
                         type="button"

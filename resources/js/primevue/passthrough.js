@@ -67,7 +67,7 @@ export const primevuePt = {
         item: {
             class: [
                 'flex items-center',
-                
+
             ],
         },
 
@@ -75,7 +75,7 @@ export const primevuePt = {
             class: [
                 '!text-normal !font-medium',
                 '!text-white',
-                
+
             ],
         },
 
@@ -88,7 +88,7 @@ export const primevuePt = {
         itemLabel: {
             class: [
                 '!text-normal',
-                '!text-accent',
+                '!text-white',
                 'hover:!text-dark',
             ],
         },

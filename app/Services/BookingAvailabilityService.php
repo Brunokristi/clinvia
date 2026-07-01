@@ -21,6 +21,10 @@ class BookingAvailabilityService
 
     public function getAvailableSlotsForServices(Branch $branch, Collection $services, Carbon $date): Collection
     {
+        if (app(DisabledDayService::class)->isDisabled($branch, $date)) {
+            return collect();
+        }
+
         $services = $services
             ->filter(fn (Service $service) => $service->is_bookable)
             ->values();

@@ -6,6 +6,8 @@ use App\Events\BranchCalendarUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
+use App\Models\Service;
+use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,6 +19,8 @@ class BranchAvailabilityRuleController extends Controller
     public function sync(Request $request, Branch $branch): RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        $recurrenceService = app(RecurrenceService::class);
 
         $validated = $request->validate([
             'rules' => ['required', 'array'],
@@ -32,11 +36,22 @@ class BranchAvailabilityRuleController extends Controller
 
             'rules.*.service_ids' => ['required', 'array', 'min:1'],
             'rules.*.service_ids.*' => ['integer', 'exists:services,id'],
+            'rules.*.public_booking_type' => ['nullable', 'in:appointment_request,immediate_booking'],
 
             'rules.*.repeats' => ['required', 'boolean'],
             'rules.*.repeat_every' => ['nullable', 'integer', 'min:1'],
             'rules.*.repeat_unit' => ['nullable', 'in:days,weeks,months'],
             'rules.*.repeat_ends_on' => ['nullable', 'date'],
+
+            'rules.*.recurrence' => ['nullable', 'array'],
+            'rules.*.recurrence.frequency' => ['required_with:rules.*.recurrence', 'in:daily,weekly,monthly,yearly'],
+            'rules.*.recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'rules.*.recurrence.weekdays' => ['nullable', 'array'],
+            'rules.*.recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'rules.*.recurrence.ends' => ['nullable', 'array'],
+            'rules.*.recurrence.ends.type' => ['required_with:rules.*.recurrence.ends', 'in:never,on,after'],
+            'rules.*.recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'rules.*.recurrence.ends.until' => ['nullable', 'date'],
 
             'rules.*.excluded_dates' => ['nullable', 'array'],
             'rules.*.excluded_dates.*' => ['date'],
@@ -44,7 +59,7 @@ class BranchAvailabilityRuleController extends Controller
             'rules.*.is_enabled' => ['required', 'boolean'],
         ]);
 
-        DB::transaction(function () use ($branch, $validated): void {
+        DB::transaction(function () use ($branch, $validated, $recurrenceService): void {
             $keepIds = [];
 
             foreach ($validated['rules'] as $ruleData) {
@@ -80,10 +95,10 @@ class BranchAvailabilityRuleController extends Controller
                     'service_ids' => $serviceIds,
                     'bookable_places' => 1,
 
-                    'repeats' => $repeats,
-                    'repeat_every' => $repeats ? (int) ($ruleData['repeat_every'] ?? 1) : 1,
-                    'repeat_unit' => $repeats ? ($ruleData['repeat_unit'] ?? 'weeks') : 'weeks',
-                    'repeat_ends_on' => $repeats ? ($ruleData['repeat_ends_on'] ?? null) : null,
+                    'repeats' => $repeats || filled($ruleData['recurrence'] ?? null),
+                    'repeat_every' => $this->resolveRepeatEvery($ruleData, $recurrenceService),
+                    'repeat_unit' => $this->resolveRepeatUnit($ruleData, $recurrenceService),
+                    'repeat_ends_on' => $this->resolveRepeatEndsOn($ruleData, $recurrenceService),
 
                     'excluded_dates' => $this->normalizeDateStrings($ruleData['excluded_dates'] ?? []),
                     'is_enabled' => (bool) $ruleData['is_enabled'],
@@ -91,6 +106,15 @@ class BranchAvailabilityRuleController extends Controller
 
                 $rule->save();
                 $rule->services()->sync($serviceIds);
+
+                if (filled($ruleData['public_booking_type'] ?? null)) {
+                    Service::query()
+                        ->where('branch_id', $branch->id)
+                        ->whereIn('id', $serviceIds)
+                        ->update([
+                            'public_booking_type' => $ruleData['public_booking_type'],
+                        ]);
+                }
 
                 $keepIds[] = $rule->id;
             }
@@ -460,5 +484,41 @@ class BranchAvailabilityRuleController extends Controller
             ->sort()
             ->values()
             ->all();
+    }
+
+    private function resolveRepeatEvery(array $ruleData, RecurrenceService $recurrenceService): int
+    {
+        if (filled($ruleData['recurrence'] ?? null)) {
+            return (int) ($ruleData['recurrence']['interval'] ?? 1);
+        }
+
+        return (int) ($ruleData['repeat_every'] ?? 1);
+    }
+
+    private function resolveRepeatUnit(array $ruleData, RecurrenceService $recurrenceService): string
+    {
+        if (filled($ruleData['recurrence'] ?? null)) {
+            return match ($ruleData['recurrence']['frequency'] ?? 'weekly') {
+                'daily' => 'days',
+                'monthly' => 'months',
+                'yearly' => 'months',
+                default => 'weeks',
+            };
+        }
+
+        return $ruleData['repeat_unit'] ?? 'weeks';
+    }
+
+    private function resolveRepeatEndsOn(array $ruleData, RecurrenceService $recurrenceService): ?string
+    {
+        if (filled($ruleData['recurrence'] ?? null)) {
+            $ends = $ruleData['recurrence']['ends'] ?? [];
+
+            return ($ends['type'] ?? 'never') === 'on'
+                ? ($ends['until'] ?? null)
+                : null;
+        }
+
+        return $ruleData['repeat_ends_on'] ?? null;
     }
 }

@@ -1,0 +1,143 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Branch;
+use App\Models\BranchDisabledDay;
+use App\Services\DisabledDayService;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+
+class BranchDisabledDayController extends Controller
+{
+    public function index(Request $request, Branch $branch, DisabledDayService $disabledDayService): JsonResponse|RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        if (! Schema::hasTable('branch_disabled_days')) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'data' => [],
+                ]);
+            }
+
+            return back();
+        }
+
+        if (! $request->wantsJson()) {
+            return back();
+        }
+
+        $validated = $request->validate([
+            'start' => ['nullable', 'date'],
+            'end' => ['nullable', 'date', 'after_or_equal:start'],
+        ]);
+
+        $rangeStart = isset($validated['start'])
+            ? Carbon::parse($validated['start'])
+            : now()->copy()->startOfYear();
+
+        $rangeEnd = isset($validated['end'])
+            ? Carbon::parse($validated['end'])
+            : now()->copy()->addYear()->endOfYear();
+
+        return response()->json([
+            'data' => $disabledDayService->getDisabledDaysForRange($branch, $rangeStart, $rangeEnd)->values(),
+        ]);
+    }
+
+    public function store(Request $request, Branch $branch, DisabledDayService $disabledDayService): RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        if (! Schema::hasTable('branch_disabled_days')) {
+            return back()->with('warning', 'Zakázané dni zatiaľ nie sú dostupné. Je potrebné spustiť migrácie.');
+        }
+
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'title' => ['required', 'string', 'max:255'],
+            'type' => ['nullable', 'string', 'max:100'],
+            'reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $disabledDay = BranchDisabledDay::query()->updateOrCreate(
+            [
+                'branch_id' => $branch->id,
+                'date' => Carbon::parse($validated['date'])->toDateString(),
+            ],
+            [
+                'created_by' => $request->user()->id,
+                'title' => $validated['title'],
+                'type' => $validated['type'] ?? null,
+                'reason' => $validated['reason'] ?? null,
+            ],
+        );
+
+        $bookingCount = $disabledDayService->bookingCountOnDate($branch, $disabledDay->date);
+
+        return back()->with([
+            'success' => 'Zakázaný deň bol uložený.',
+            'warning' => $bookingCount > 0
+                ? "Tento deň už obsahuje {$bookingCount} rezervácií. Neboli zmazané."
+                : null,
+        ]);
+    }
+
+    public function update(Request $request, Branch $branch, int $disabledDay, DisabledDayService $disabledDayService): RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        if (! Schema::hasTable('branch_disabled_days')) {
+            return back()->with('warning', 'Zakázané dni zatiaľ nie sú dostupné. Je potrebné spustiť migrácie.');
+        }
+
+        $disabledDayModel = BranchDisabledDay::query()
+            ->where('branch_id', $branch->id)
+            ->findOrFail($disabledDay);
+
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'title' => ['required', 'string', 'max:255'],
+            'type' => ['nullable', 'string', 'max:100'],
+            'reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $disabledDayModel->update([
+            'date' => Carbon::parse($validated['date'])->toDateString(),
+            'title' => $validated['title'],
+            'type' => $validated['type'] ?? null,
+            'reason' => $validated['reason'] ?? null,
+        ]);
+
+        $bookingCount = $disabledDayService->bookingCountOnDate($branch, $disabledDayModel->date);
+
+        return back()->with([
+            'success' => 'Zakázaný deň bol upravený.',
+            'warning' => $bookingCount > 0
+                ? "Tento deň už obsahuje {$bookingCount} rezervácií. Neboli zmazané."
+                : null,
+        ]);
+    }
+
+    public function destroy(Request $request, Branch $branch, int $disabledDay): RedirectResponse
+    {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        if (! Schema::hasTable('branch_disabled_days')) {
+            return back()->with('warning', 'Zakázané dni zatiaľ nie sú dostupné. Je potrebné spustiť migrácie.');
+        }
+
+        $disabledDayModel = BranchDisabledDay::query()
+            ->where('branch_id', $branch->id)
+            ->findOrFail($disabledDay);
+
+        $disabledDayModel->delete();
+
+        return back()->with('success', 'Zakázaný deň bol odstránený.');
+    }
+}

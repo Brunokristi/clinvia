@@ -9,21 +9,79 @@ use App\Models\AppointmentRequest;
 use App\Models\Booking;
 use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
+use App\Models\BranchDisabledDay;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Notifications\RequestCancelledNotification;
 use App\Services\AdminBookingCalendarService;
 use App\Services\CapacityWindowService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class BranchBookingCalendarController extends Controller
 {
+    public function events(
+        Request $request,
+        Branch $branch,
+        AdminBookingCalendarService $calendarService,
+        CapacityWindowService $capacityWindowService,
+    ): JsonResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        $validated = $request->validate([
+            'start' => ['required', 'date'],
+            'end' => ['required', 'date', 'after_or_equal:start'],
+        ]);
+
+        $rangeStart = Carbon::parse($validated['start'])->startOfDay();
+        $rangeEnd = Carbon::parse($validated['end'])->endOfDay();
+
+        $availabilityRules = BookingAvailabilityRule::query()
+            ->where('branch_id', $branch->id)
+            ->with('services')
+            ->orderBy('date')
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn (BookingAvailabilityRule $rule): array => $this->formatAvailabilityRuleForFrontend($rule))
+            ->values();
+
+        $calendarBookings = $calendarService->getCalendarBookings(
+            branch: $branch,
+            rangeStart: $rangeStart,
+            rangeEnd: $rangeEnd,
+        );
+
+        $calendarCapacityWindows = $capacityWindowService->getCalendarCapacityWindows(
+            branch: $branch,
+            rangeStart: $rangeStart,
+            rangeEnd: $rangeEnd,
+        );
+
+        $disabledDays = Schema::hasTable('branch_disabled_days')
+            ? BranchDisabledDay::query()
+                ->where('branch_id', $branch->id)
+                ->whereBetween('date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                ->orderBy('date')
+                ->get()
+            : collect();
+
+        return response()->json([
+            'data' => [
+                'availabilityRules' => $availabilityRules,
+                'calendarBookings' => $calendarBookings,
+                'calendarCapacityWindows' => $calendarCapacityWindows,
+                'disabledDays' => $disabledDays,
+            ],
+        ]);
+    }
+
     public function index(
         Request $request,
         Branch $branch,
@@ -33,8 +91,13 @@ class BranchBookingCalendarController extends Controller
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
         $date = Carbon::parse($request->string('date', now()->toDateString()));
-        $rangeStart = now()->copy()->subMonth()->startOfDay();
-        $rangeEnd = now()->copy()->addMonths(6)->endOfDay();
+        $rangeStart = $request->filled('start')
+            ? Carbon::parse($request->string('start'))->startOfDay()
+            : now()->copy()->subMonth()->startOfDay();
+
+        $rangeEnd = $request->filled('end')
+            ? Carbon::parse($request->string('end'))->endOfDay()
+            : now()->copy()->addMonths(6)->endOfDay();
 
         $branch->load([
             'company:id,legal_name,slug',
@@ -85,13 +148,21 @@ class BranchBookingCalendarController extends Controller
             
             'calendarCapacityWindows' => $calendarCapacityWindows,
 
+            'disabledDays' => Schema::hasTable('branch_disabled_days')
+                ? BranchDisabledDay::query()
+                    ->where('branch_id', $branch->id)
+                    ->whereBetween('date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                    ->orderBy('date')
+                    ->get()
+                : collect(),
+
             'pendingAppointmentRequests' => $this->getPendingAppointmentRequests($branch),
 
-            'todayBookingsCount' => Booking::query()
-                ->where('branch_id', $branch->id)
-                ->whereNotIn('status', ['cancelled', 'rejected'])
-                ->whereDate('starts_at', $date->toDateString())
-                ->count(),
+            'todayBookingsCount' => $calendarService->getCalendarBookings(
+                branch: $branch,
+                rangeStart: $date->copy()->startOfDay(),
+                rangeEnd: $date->copy()->endOfDay(),
+            )->count(),
 
             'unreadMessagesCount' => BranchInboxMessage::query()
                 ->where('branch_id', $branch->id)
@@ -102,40 +173,37 @@ class BranchBookingCalendarController extends Controller
         ]);
     }
 
-    public function dashboard(Request $request, Branch $branch): Response
+    public function dashboard(Request $request, Branch $branch, AdminBookingCalendarService $calendarService): Response
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
         $today = now()->toDateString();
 
-        $todayBookings = Booking::query()
-            ->with(['service', 'services'])
-            ->where('branch_id', $branch->id)
-            ->whereNotIn('status', ['cancelled', 'rejected'])
-            ->whereDate('starts_at', $today)
-            ->orderBy('starts_at')
-            ->get();
+        $todayBookings = $calendarService->getCalendarBookings(
+            branch: $branch,
+            rangeStart: Carbon::parse($today)->startOfDay(),
+            rangeEnd: Carbon::parse($today)->endOfDay(),
+        );
 
         return Inertia::render('Admin/Branches/Dashboard', [
             'branch' => $branch->load(['company:id,legal_name,slug']),
 
             'todayBookingsCount' => $todayBookings->count(),
 
-            'todayAgenda' => $todayBookings->map(function (Booking $booking): array {
-                $serviceName = $booking->services?->pluck('name')->filter()->join(', ')
-                    ?: $booking->service?->name;
+            'todayAgenda' => $todayBookings->map(function (array $booking): array {
+                $serviceName = $booking['service_name'] ?? '—';
 
                 return [
-                    'id' => $booking->id,
-                    'time' => $booking->starts_at
-                        ? Carbon::parse($booking->starts_at)->format('H:i')
+                    'id' => $booking['id'],
+                    'time' => $booking['starts_at']
+                        ? Carbon::parse($booking['starts_at'])->format('H:i')
                         : '—',
-                    'patient_name' => $booking->patient_name,
-                    'patient_email' => $booking->patient_email,
-                    'patient_phone' => $booking->patient_phone,
+                    'patient_name' => $booking['patient_name'],
+                    'patient_email' => $booking['patient_email'],
+                    'patient_phone' => $booking['patient_phone'],
                     'service_name' => $serviceName,
-                    'status' => $booking->status,
-                    'status_label' => match ($booking->status) {
+                    'status' => $booking['status'],
+                    'status_label' => match ($booking['status']) {
                         'confirmed' => 'Potvrdené',
                         'pending' => 'Čaká',
                         'completed' => 'Dokončené',

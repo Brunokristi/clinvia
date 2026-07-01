@@ -226,6 +226,7 @@ class BookingSlotGenerator
     private function ruleDates(BookingAvailabilityRule $rule, Carbon $today, int $days): Collection
     {
         $endDate = $today->copy()->addDays($days)->endOfDay();
+        $disabledDayService = app(DisabledDayService::class);
 
         $excludedDates = collect($rule->excluded_dates ?? [])
             ->map(fn ($date) => Carbon::parse($date)->toDateString())
@@ -251,6 +252,7 @@ class BookingSlotGenerator
 
                 return $baseDate->betweenIncluded($today, $effectiveEndDate)
                     && ! in_array($baseDateString, $excludedDates, true)
+                    && ! $disabledDayService->isDisabled($rule->branch, $baseDate)
                         ? collect([$baseDate])
                         : collect();
             }
@@ -266,7 +268,9 @@ class BookingSlotGenerator
                 $currentDateString = $current->toDateString();
 
                 if (! in_array($currentDateString, $excludedDates, true)) {
-                    $dates->push($current->copy());
+                    if (! $disabledDayService->isDisabled($rule->branch, $current)) {
+                        $dates->push($current->copy());
+                    }
                 }
 
                 $current = $this->nextRepeatedDate($current, $rule);
@@ -280,7 +284,8 @@ class BookingSlotGenerator
             ->filter(function (Carbon $date) use ($rule, $excludedDates, $effectiveEndDate) {
                 return $date->lessThanOrEqualTo($effectiveEndDate)
                     && (int) $date->dayOfWeekIso === (int) $rule->day_of_week
-                    && ! in_array($date->toDateString(), $excludedDates, true);
+                    && ! in_array($date->toDateString(), $excludedDates, true)
+                    && ! app(DisabledDayService::class)->isDisabled($rule->branch, $date);
             })
             ->values();
     }

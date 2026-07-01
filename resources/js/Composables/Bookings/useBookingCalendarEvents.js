@@ -10,6 +10,18 @@ export function useBookingCalendarEvents({
     getRuleOccurrences,
     getRuleTitle,
 }) {
+    const normalizeDateOnly = (value) => {
+        if (!value) {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return value.toISOString().slice(0, 10);
+        }
+
+        return String(value).slice(0, 10);
+    };
+
     const getDateTimeValue = (date, time) => {
         if (typeof getDateTime === 'function') {
             return getDateTime(date, time);
@@ -125,8 +137,39 @@ export function useBookingCalendarEvents({
         });
     });
 
+    const disabledDayEvents = computed(() => {
+        return (props.disabledDays ?? []).map((disabledDay) => {
+            const date = normalizeDateOnly(disabledDay.date);
+
+            if (!date) {
+                return null;
+            }
+
+            const end = new Date(`${date}T00:00:00`);
+            end.setDate(end.getDate() + 1);
+
+            return {
+                id: `disabled-day-${disabledDay.id}`,
+                title: disabledDay.title ?? 'Zakázaný deň',
+                start: `${date}T00:00:00`,
+                end: `${end.toISOString().slice(0, 10)}T00:00:00`,
+                display: 'background',
+                editable: false,
+                overlap: false,
+                classNames: [
+                    'booking-disabled-day-event',
+                ],
+                extendedProps: {
+                    type: 'disabled_day',
+                    disabledDay,
+                },
+            };
+        }).filter(Boolean);
+    });
+
     const calendarEvents = computed(() => {
         return [
+            ...disabledDayEvents.value,
             ...ruleEvents.value,
             ...capacityWindowEvents.value,
             ...bookingEvents.value,

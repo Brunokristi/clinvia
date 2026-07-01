@@ -10,6 +10,8 @@ use App\Models\CapacityWindow;
 use App\Models\Service;
 use App\Services\AdminBookingNotificationService;
 use App\Services\CapacityWindowService;
+use App\Services\DisabledDayService;
+use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,24 +25,58 @@ class BranchCapacityWindowController extends Controller
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
+        $recurrenceService = app(RecurrenceService::class);
+
         $validated = $request->validate([
             'service_id' => ['required', 'integer', 'exists:services,id'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
             'capacity' => ['required', 'integer', 'min:1'],
             'admin_note' => ['nullable', 'string'],
+            'public_booking_type' => ['nullable', 'in:appointment_request,immediate_booking'],
 
             'repeats' => ['nullable', 'boolean'],
             'repeat_every' => ['nullable', 'integer', 'min:1'],
             'repeat_unit' => ['nullable', 'in:days,weeks,months'],
             'repeat_ends_on' => ['nullable', 'required_if:repeats,true', 'date'],
+
+            'recurrence' => ['nullable', 'array'],
+            'recurrence.frequency' => ['required_with:recurrence', 'in:daily,weekly,monthly,yearly'],
+            'recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'recurrence.weekdays' => ['nullable', 'array'],
+            'recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'recurrence.ends' => ['nullable', 'array'],
+            'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
+            'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'recurrence.ends.until' => ['nullable', 'date'],
         ]);
 
-        $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
+        if (filled($validated['recurrence'] ?? null)) {
+            $validated['recurrence'] = $recurrenceService->normalize($validated['recurrence']);
+            $validated['repeats'] = true;
+            $validated['repeat_every'] = $this->resolveRepeatEvery($validated);
+            $validated['repeat_unit'] = $this->resolveRepeatUnit($validated);
+            $validated['repeat_ends_on'] = $this->resolveRepeatEndsOn($validated);
+        }
 
-        $createdCount = DB::transaction(function () use ($branch, $service, $validated): int {
+        $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
+        $disabledDayService = app(DisabledDayService::class);
+
+        if (filled($validated['public_booking_type'] ?? null)) {
+            $service->update([
+                'public_booking_type' => $validated['public_booking_type'],
+            ]);
+        }
+
+        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService): int {
             $startsAt = Carbon::parse($validated['starts_at']);
             $endsAt = Carbon::parse($validated['ends_at']);
+
+            if ($disabledDayService->isDisabled($branch, $startsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Tento deň je v kalendári zakázaný.',
+                ]);
+            }
 
             if (! ($validated['repeats'] ?? false)) {
                 $this->createWindow($branch, $service, $startsAt, $endsAt, $validated, null);
@@ -70,6 +106,12 @@ class BranchCapacityWindowController extends Controller
             $createdCount = 0;
 
             while ($cursorStart->lte($repeatEndsOn)) {
+                if ($disabledDayService->isDisabled($branch, $cursorStart)) {
+                    throw ValidationException::withMessages([
+                        'repeat_ends_on' => 'Opakovanie obsahuje zakázaný deň.',
+                    ]);
+                }
+
                 $this->createWindow($branch, $service, $cursorStart, $cursorEnd, $validated, $seriesUuid);
 
                 $createdCount++;
@@ -111,6 +153,7 @@ class BranchCapacityWindowController extends Controller
             'service_id' => ['required', 'integer', 'exists:services,id'],
             'capacity' => ['required', 'integer', 'min:1'],
             'admin_note' => ['nullable', 'string'],
+            'public_booking_type' => ['nullable', 'in:appointment_request,immediate_booking'],
 
             /**
              * occurrence = only this one capacity window
@@ -125,9 +168,37 @@ class BranchCapacityWindowController extends Controller
             'apply_to_series' => ['nullable', 'boolean'],
 
             'from_date' => ['nullable', 'date'],
+
+            'recurrence' => ['nullable', 'array'],
+            'recurrence.frequency' => ['required_with:recurrence', 'in:daily,weekly,monthly,yearly'],
+            'recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'recurrence.weekdays' => ['nullable', 'array'],
+            'recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'recurrence.ends' => ['nullable', 'array'],
+            'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
+            'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'recurrence.ends.until' => ['nullable', 'date'],
         ]);
 
+        if (filled($validated['recurrence'] ?? null)) {
+            $validated['recurrence'] = app(RecurrenceService::class)->normalize($validated['recurrence']);
+            $validated['update_scope'] = $validated['update_scope'] ?? 'series';
+        }
+
         $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
+        $disabledDayService = app(DisabledDayService::class);
+
+        if (filled($validated['public_booking_type'] ?? null)) {
+            $service->update([
+                'public_booking_type' => $validated['public_booking_type'],
+            ]);
+        }
+
+        if ($disabledDayService->isDisabled($branch, $capacityWindow->starts_at)) {
+            throw ValidationException::withMessages([
+                'service_id' => 'Tento deň je v kalendári zakázaný.',
+            ]);
+        }
 
         DB::transaction(function () use ($capacityWindow, $service, $validated): void {
             $scope = $this->resolveSeriesScope(
@@ -196,6 +267,7 @@ class BranchCapacityWindowController extends Controller
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
         $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
+        $disabledDayService = app(DisabledDayService::class);
 
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
@@ -216,6 +288,12 @@ class BranchCapacityWindowController extends Controller
         $newEndsAt = Carbon::parse($validated['ends_at']);
         $notifyPatient = $request->boolean('notify_patient', true);
         $reason = $validated['notification_reason'] ?? null;
+
+        if ($disabledDayService->isDisabled($branch, $newStartsAt)) {
+            throw ValidationException::withMessages([
+                'starts_at' => 'Tento deň je v kalendári zakázaný.',
+            ]);
+        }
 
         if ($scope === 'occurrence') {
             DB::transaction(function () use (
@@ -518,6 +596,42 @@ class BranchCapacityWindowController extends Controller
             ->orderBy('starts_at')
             ->lockForUpdate()
             ->get();
+    }
+
+    private function resolveRepeatEvery(array $validated): int
+    {
+        if (filled($validated['recurrence'] ?? null)) {
+            return (int) ($validated['recurrence']['interval'] ?? 1);
+        }
+
+        return max(1, (int) ($validated['repeat_every'] ?? 1));
+    }
+
+    private function resolveRepeatUnit(array $validated): string
+    {
+        if (filled($validated['recurrence'] ?? null)) {
+            return match ($validated['recurrence']['frequency'] ?? 'weekly') {
+                'daily' => 'days',
+                'monthly' => 'months',
+                'yearly' => 'months',
+                default => 'weeks',
+            };
+        }
+
+        return $validated['repeat_unit'] ?? 'weeks';
+    }
+
+    private function resolveRepeatEndsOn(array $validated): ?string
+    {
+        if (filled($validated['recurrence'] ?? null)) {
+            $ends = $validated['recurrence']['ends'] ?? [];
+
+            return ($ends['type'] ?? 'never') === 'on'
+                ? ($ends['until'] ?? null)
+                : null;
+        }
+
+        return $validated['repeat_ends_on'] ?? null;
     }
 
     private function resolveSeriesScope(

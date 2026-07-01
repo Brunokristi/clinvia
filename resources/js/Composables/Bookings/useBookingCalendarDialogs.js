@@ -6,7 +6,6 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         getTimeFromDate,
     } = dateTime;
 
-    const createChoiceDialogVisible = ref(false);
     const createBookingDialogVisible = ref(false);
     const bookingDialogVisible = ref(false);
     const availabilityRuleDialogVisible = ref(false);
@@ -22,6 +21,61 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     const selectedGroupEvent = ref(null);
     const selectedRuleOccurrence = ref(null);
     const pendingCalendarSelection = ref(null);
+    const createBookingPrefill = ref(null);
+    const suppressEventClickUntil = ref(0);
+    const skipNextEventClick = ref(false);
+
+    const suppressEventClicksFor = (milliseconds = 700) => {
+        suppressEventClickUntil.value = Date.now() + milliseconds;
+    };
+
+    const isEventClickSuppressed = () => {
+        return skipNextEventClick.value || Date.now() < suppressEventClickUntil.value;
+    };
+
+    const suppressNextEventClick = () => {
+        skipNextEventClick.value = true;
+    };
+
+    const consumeSuppressedEventClick = () => {
+        if (!skipNextEventClick.value) {
+            return false;
+        }
+
+        skipNextEventClick.value = false;
+
+        return true;
+    };
+
+    const getDatePart = (value) => {
+        if (!value) {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return getDateFromDate(value);
+        }
+
+        return String(value).slice(0, 10);
+    };
+
+    const getTimePart = (value) => {
+        if (!value) {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return getTimeFromDate(value);
+        }
+
+        const stringValue = String(value).replace('T', ' ');
+
+        if (stringValue.includes(' ')) {
+            return stringValue.slice(11, 16);
+        }
+
+        return stringValue.slice(0, 5);
+    };
 
     const getSelectionFromDateClick = (clickInfo) => {
         const start = clickInfo.date;
@@ -39,12 +93,42 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     };
 
     const getSelectionFromCreateChoiceData = (data) => {
+        const date = data.date
+            ?? getDatePart(data.starts_at)
+            ?? getDatePart(data.ends_at);
+
+        if (!date) {
+            return null;
+        }
+
+        const startsAt = getTimePart(data.starts_at) ?? '09:00';
+        let endsAt = getTimePart(data.ends_at);
+
+        if (!endsAt) {
+            const fallbackEnd = new Date(`${date}T${startsAt}:00`);
+            fallbackEnd.setMinutes(fallbackEnd.getMinutes() + 30);
+            endsAt = getTimeFromDate(fallbackEnd);
+        }
+
+        const start = new Date(`${date}T${startsAt}:00`);
+        let end = new Date(`${date}T${endsAt}:00`);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return null;
+        }
+
+        if (end <= start) {
+            end = new Date(start);
+            end.setMinutes(end.getMinutes() + 30);
+            endsAt = getTimeFromDate(end);
+        }
+
         return {
-            start: new Date(`${data.date}T${data.starts_at}:00`),
-            end: new Date(`${data.date}T${data.ends_at}:00`),
-            date: data.date,
-            starts_at: data.starts_at,
-            ends_at: data.ends_at,
+            start,
+            end,
+            date,
+            starts_at: startsAt,
+            ends_at: endsAt,
         };
     };
 
@@ -53,16 +137,20 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
             return;
         }
 
+        createBookingPrefill.value = null;
         pendingCalendarSelection.value = selectionInfo;
-        createChoiceDialogVisible.value = true;
+        createBookingDialogVisible.value = true;
     };
 
     const closeCreateChoiceDialog = () => {
         pendingCalendarSelection.value = null;
-        createChoiceDialogVisible.value = false;
+        createBookingPrefill.value = null;
+        createBookingDialogVisible.value = false;
     };
 
     const closeCreateBookingDialog = () => {
+        pendingCalendarSelection.value = null;
+        createBookingPrefill.value = null;
         createBookingDialogVisible.value = false;
     };
 
@@ -97,8 +185,37 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     };
 
     const openCreateChoiceFromButton = () => {
+        createBookingPrefill.value = null;
         pendingCalendarSelection.value = getDefaultSelectionForCreateChoice();
-        createChoiceDialogVisible.value = true;
+        createBookingDialogVisible.value = true;
+    };
+
+    const openCreateBookingWithPrefill = (prefill = {}) => {
+        const date = prefill.date
+            ?? getDatePart(prefill.starts_at)
+            ?? getDatePart(prefill.ends_at)
+            ?? getDateFromDate(new Date());
+
+        const startsAt = getTimePart(prefill.starts_at) ?? '09:00';
+        const endsAt = getTimePart(prefill.ends_at) ?? '09:30';
+
+        createBookingPrefill.value = {
+            ...prefill,
+            date,
+            starts_at: prefill.starts_at ?? `${date} ${startsAt}:00`,
+            ends_at: prefill.ends_at ?? `${date} ${endsAt}:00`,
+        };
+
+        pendingCalendarSelection.value = {
+            start: new Date(`${date}T${startsAt}:00`),
+            end: new Date(`${date}T${endsAt}:00`),
+            date,
+            starts_at: startsAt,
+            ends_at: endsAt,
+            allDay: false,
+        };
+
+        createBookingDialogVisible.value = true;
     };
 
     const closeRuleDialog = () => {
@@ -121,7 +238,6 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     };
 
     return {
-        createChoiceDialogVisible,
         createBookingDialogVisible,
         bookingDialogVisible,
         availabilityRuleDialogVisible,
@@ -137,17 +253,25 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         selectedGroupEvent,
         selectedRuleOccurrence,
         pendingCalendarSelection,
+        createBookingPrefill,
+        suppressEventClickUntil,
+        skipNextEventClick,
 
         getSelectionFromCreateChoiceData,
         getSelectionFromDateClick,
+        consumeSuppressedEventClick,
+        isEventClickSuppressed,
         openCreateChoiceDialog,
         closeCreateChoiceDialog,
         closeCreateBookingDialog,
         openCreateChoiceFromButton,
+        openCreateBookingWithPrefill,
+        suppressNextEventClick,
+        suppressEventClicksFor,
         closeRuleDialog,
         closeGroupEventDialog,
         openDeleteRuleDialog,
         closeDeleteRuleDialog,
-        
+
     };
 }

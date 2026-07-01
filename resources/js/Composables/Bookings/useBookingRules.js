@@ -31,6 +31,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 'availabilityRules',
                 'calendarBookings',
                 'calendarCapacityWindows',
+                'disabledDays',
                 'pendingAppointmentRequests',
                 'todayBookingsCount',
                 'unreadMessagesCount',
@@ -58,6 +59,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         deleteRuleDialogVisible,
         ruleRescheduleScopeDialogVisible,
         pendingCalendarSelection,
+        openCreateBookingWithPrefill,
         selectedRuleIndex,
         selectedRuleOccurrence,
         closeRuleDialog,
@@ -178,6 +180,43 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         return ruleForm.rules[selectedRuleIndex.value] ?? null;
+    };
+
+    const duplicateCurrentRule = () => {
+        const rule = getSelectedRule();
+
+        if (!rule) {
+            return;
+        }
+
+        const date = selectedRuleOccurrence.value?.occurrenceDate ?? rule.date;
+        const repeatUnit = rule.repeat_unit ?? 'weeks';
+        const recurrenceFrequency = repeatUnit === 'months' ? 'monthly' : 'weekly';
+
+        openCreateBookingWithPrefill({
+            create_type: 'rule',
+            date,
+            starts_at: `${date} ${rule.starts_at}:00`,
+            ends_at: `${date} ${rule.ends_at}:00`,
+            service_ids: [...(rule.service_ids ?? [])],
+            service_id: rule.service_ids?.[0] ?? null,
+            public_booking_type: rule.public_booking_type ?? 'immediate_booking',
+            recurrence: rule.repeats
+                ? {
+                    frequency: recurrenceFrequency,
+                    interval: Number(rule.repeat_every ?? 1),
+                    weekdays: [],
+                    ends: {
+                        type: rule.repeat_ends_on ? 'on' : 'never',
+                        count: null,
+                        until: rule.repeat_ends_on ?? null,
+                    },
+                }
+                : null,
+            is_enabled: Boolean(rule.is_enabled ?? true),
+        });
+
+        closeRuleDialogSafely();
     };
 
     const getSelectedOccurrenceDate = () => {
@@ -309,6 +348,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             ends_at: rule.ends_at,
 
             service_ids: rule.service_ids ?? [],
+            public_booking_type: rule.public_booking_type ?? null,
 
             repeats: Boolean(rule.repeats),
             repeat_every: rule.repeats ? Number(rule.repeat_every || 1) : 1,
@@ -606,6 +646,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         deleteCurrentRuleEverywhere,
         deleteCurrentRuleFromNowOn,
         deleteCurrentRuleOccurrence,
+        duplicateCurrentRule,
         saveRules,
         updateRuleFromDrop,
     };

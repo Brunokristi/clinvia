@@ -1,7 +1,6 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
-import CalendarCreateChoiceDialog from '@/Components/Booking/CalendarCreateChoiceDialog.vue';
 import BookingCreateDialog from '@/Components/Booking/BookingCreateDialog.vue';
 import BookingEditDialog from '@/Components/Booking/BookingEditDialog.vue';
 import AvailabilityRuleCreateEditDialog from '@/Components/Booking/AvailabilityRuleCreateEditDialog.vue';
@@ -48,6 +47,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    disabledDays: {
+        type: Array,
+        default: () => [],
+    },
     pendingAppointmentRequests: {
         type: Array,
         default: () => [],
@@ -62,12 +65,134 @@ const props = defineProps({
     },
 });
 
+const formatDateOnly = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const disabledDayByDate = computed(() => {
+    return new Map((props.disabledDays ?? []).map((disabledDay) => [
+        String(disabledDay.date).slice(0, 10),
+        disabledDay,
+    ]));
+});
+
+const isDateDisabled = (date) => {
+    const dateOnly = formatDateOnly(date);
+
+    if (!dateOnly) {
+        return false;
+    }
+
+    return disabledDayByDate.value.has(dateOnly);
+};
+
+const getBranchOpeningHours = () => {
+    return props.branch?.opening_hours ?? props.branch?.openingHours ?? [];
+};
+
+const getDatabaseDayFromDate = (date) => {
+    const day = date.getDay();
+
+    return day === 0 ? 7 : day;
+};
+
+const isDateClosedByOpeningHours = (date) => {
+    const normalizedDate = date instanceof Date ? date : new Date(date);
+
+    if (Number.isNaN(normalizedDate.getTime())) {
+        return false;
+    }
+
+    const databaseDay = getDatabaseDayFromDate(normalizedDate);
+    const openingDay = getBranchOpeningHours().find((day) => {
+        return Number(day.day_of_week) === databaseDay;
+    });
+
+    if (!openingDay || openingDay.is_closed) {
+        return true;
+    }
+
+    return !(openingDay.intervals ?? []).length;
+};
+
+const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
+    if (isDateClosedByOpeningHours(date)) {
+        return;
+    }
+
+    const dateOnly = formatDateOnly(date);
+
+    if (!dateOnly) {
+        return;
+    }
+
+    const existing = disabledDayByDate.value.get(dateOnly);
+
+    if (checked) {
+        if (existing) {
+            return;
+        }
+
+        router.post(route('branches.booking.disabled-days.store', props.branch.id), {
+            date: dateOnly,
+            title: 'Zatvorený deň',
+            type: 'closed',
+            reason: null,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                callbacks.onSuccess?.();
+                reloadCalendarData();
+            },
+            onError: () => {
+                callbacks.onError?.();
+            },
+        });
+
+        return;
+    }
+
+    if (!existing?.id) {
+        return;
+    }
+
+    router.delete(route('branches.booking.disabled-days.destroy', [
+        props.branch.id,
+        existing.id,
+    ]), {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            callbacks.onSuccess?.();
+            reloadCalendarData();
+        },
+        onError: () => {
+            callbacks.onError?.();
+        },
+    });
+};
+
 const {
     showAvailabilityRules,
     showReservations,
     showGroupEvents,
-
-    createChoiceDialogVisible,
 
     createBookingDialogVisible,
     bookingDialogVisible,
@@ -83,6 +208,7 @@ const {
     selectedGroupEvent,
     selectedRuleOccurrence,
     pendingCalendarSelection,
+    createBookingPrefill,
 
     ruleForm,
     currentRule,
@@ -91,31 +217,33 @@ const {
 
     bookingNotes,
     calendarOptions,
+    currentCalendarRange,
 
     availableSlotsForBooking,
 
     openCreateChoiceFromButton,
     closeCreateBookingDialog,
 
-    closeCreateChoiceDialog,
     continueFromCreateChoice,
+    openBookingInUnifiedEditor,
+    openRuleInUnifiedEditor,
 
     closeRuleDialogSafely,
     saveRules,
     deleteCurrentRuleByScope,
+    duplicateCurrentRule,
 
     closeGroupEventDialog,
     saveCapacityWindow,
 
-    createAdminBooking,
-    updateBooking,
     cancelBooking,
-    rescheduleBooking,
+    duplicateBooking,
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
     submitPendingCapacityWindowRescheduleScope,
     cancelPendingCapacityWindowReschedule,
+    duplicateCapacityWindow,
 
     deleteCapacityWindowOccurrence,
     deleteCapacityWindowFromDate,
@@ -123,18 +251,29 @@ const {
     addPatientToCapacityWindow,
 
     openCapacityWindowEditor,
-} = useBookingCalendar(props);
+} = useBookingCalendar(props, {
+    isDateDisabled,
+    isDateClosedByOpeningHours,
+    toggleDisabledDayByDate,
+});
 
 const bookingCalendar = ref(null);
+const fullCalendar = ref(null);
 const requestSidebar = ref(null);
 const requestSidebarHeight = ref(null);
+let pendingCalendarResizeFrame = null;
 
 const reloadCalendarData = () => {
     router.reload({
+        data: {
+            start: currentCalendarRange.value?.start?.toISOString?.(),
+            end: currentCalendarRange.value?.end?.toISOString?.(),
+        },
         only: [
             'availabilityRules',
             'calendarBookings',
             'calendarCapacityWindows',
+            'disabledDays',
             'pendingAppointmentRequests',
             'todayBookingsCount',
             'unreadMessagesCount',
@@ -184,6 +323,17 @@ const updateRequestSidebarHeight = () => {
     const calendarElement = bookingCalendar.value;
 
     requestSidebarHeight.value = Math.round(calendarElement.getBoundingClientRect().height);
+};
+
+const updateCalendarWidth = () => {
+    if (pendingCalendarResizeFrame !== null) {
+        cancelAnimationFrame(pendingCalendarResizeFrame);
+    }
+
+    pendingCalendarResizeFrame = requestAnimationFrame(() => {
+        pendingCalendarResizeFrame = null;
+        fullCalendar.value?.getApi?.()?.updateSize?.();
+    });
 };
 
 const openCancelAppointmentRequestDialog = (request) => {
@@ -291,10 +441,12 @@ onMounted(() => {
 
     nextTick(() => {
         updateRequestSidebarHeight();
+        updateCalendarWidth();
 
         if (bookingCalendar.value) {
             calendarResizeObserver = new ResizeObserver(() => {
                 updateRequestSidebarHeight();
+                updateCalendarWidth();
             });
 
             calendarResizeObserver.observe(bookingCalendar.value);
@@ -302,6 +454,7 @@ onMounted(() => {
     });
 
     window.addEventListener('resize', updateRequestSidebarHeight);
+    window.addEventListener('resize', updateCalendarWidth);
 });
 
 onBeforeUnmount(() => {
@@ -309,6 +462,12 @@ onBeforeUnmount(() => {
     calendarResizeObserver?.disconnect();
 
     window.removeEventListener('resize', updateRequestSidebarHeight);
+    window.removeEventListener('resize', updateCalendarWidth);
+
+    if (pendingCalendarResizeFrame !== null) {
+        cancelAnimationFrame(pendingCalendarResizeFrame);
+        pendingCalendarResizeFrame = null;
+        }
 });
 </script>
 
@@ -320,31 +479,28 @@ onBeforeUnmount(() => {
                     ref="bookingCalendar"
                     class="booking-calendar flex min-w-0 flex-col gap-4"
                 >
-                    <FullCalendar :options="calendarOptions" />
+                    <FullCalendar
+                        ref="fullCalendar"
+                        :options="calendarOptions"
+                    />
 
-                    <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex flex-wrap gap-4">
                         <div class="flex flex-wrap gap-6">
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showAvailabilityRules" />
-                                Zobraziť pravidlá
+                                Pravidlá rezervácií
                             </label>
 
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showReservations" />
-                                Zobraziť rezervácie
+                                Rezervácie
                             </label>
 
                             <label class="flex items-center gap-2 text-sm text-dark">
                                 <ToggleSwitch v-model="showGroupEvents" />
-                                Zobraziť skupinové termíny
+                                Skupinové termíny
                             </label>
                         </div>
-
-                        <Button
-                            type="button"
-                            label="Vytvoriť udalosť"
-                            @click="openCreateChoiceFromButton"
-                        />
                     </div>
                 </div>
 
@@ -441,19 +597,13 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <CalendarCreateChoiceDialog
-            v-model:visible="createChoiceDialogVisible"
-            :selection="pendingCalendarSelection"
-            @close="closeCreateChoiceDialog"
-            @continue="continueFromCreateChoice"
-        />
-
         <BookingCreateDialog
             v-model:visible="createBookingDialogVisible"
             :services="services"
             :selection="pendingCalendarSelection"
+            :prefill="createBookingPrefill"
             @close="closeCreateBookingDialog"
-            @create-booking="createAdminBooking"
+            @create-booking="continueFromCreateChoice"
         />
 
         <BookingEditDialog
@@ -462,9 +612,9 @@ onBeforeUnmount(() => {
             :booking-notes="bookingNotes"
             :services="services"
             :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
-            @update-booking="updateBooking"
+            @edit-in-unified-form="openBookingInUnifiedEditor"
             @cancel-booking="cancelBooking"
-            @reschedule-booking="rescheduleBooking"
+            @duplicate-booking="duplicateBooking"
         />
 
         <AvailabilityRuleCreateEditDialog
@@ -475,8 +625,10 @@ onBeforeUnmount(() => {
             :repeat-unit-options="repeatUnitOptions"
             :loading="ruleForm.processing"
             @close="closeRuleDialogSafely"
+            @edit-in-unified-form="openRuleInUnifiedEditor"
             @save="saveRules"
             @delete="deleteCurrentRuleByScope"
+            @duplicate="duplicateCurrentRule"
         />
 
         <OccurrenceScopeDialog
@@ -502,6 +654,7 @@ onBeforeUnmount(() => {
             :loading="false"
             @close="closeGroupEventDialog"
             @save="saveCapacityWindow"
+            @duplicate="duplicateCapacityWindow"
         />
 
         <GroupEventOccurrenceDialog
@@ -509,6 +662,7 @@ onBeforeUnmount(() => {
             :capacity-window="selectedCapacityWindow"
             :booking-notes="bookingNotes"
             @edit-capacity-window="openCapacityWindowEditor"
+            @duplicate-capacity-window="duplicateCapacityWindow"
             @reschedule-capacity-window="rescheduleCapacityWindow"
             @cancel-capacity-window="cancelCapacityWindow"
             @delete-capacity-window-occurrence="deleteCapacityWindowOccurrence"
@@ -528,6 +682,7 @@ onBeforeUnmount(() => {
             @cancel="closeCancelAppointmentRequestDialog"
             @confirm="confirmCancelAppointmentRequest"
         />
+
     </AdminLayout>
 </template>
 
@@ -582,11 +737,10 @@ onBeforeUnmount(() => {
 }
 
 .booking-calendar :deep(.booking-rule-free-time) {
-    border: 1px dashed #FFE5E5;
+    border: 1px #FFE5E5;
     background: #FFE5E5;
     border-radius: 8px;
     padding: 2px 4px;
-    opacity: 0.75;
     overflow: hidden;
     z-index: 1;
     cursor: pointer;
@@ -635,6 +789,59 @@ onBeforeUnmount(() => {
     opacity: 0.75;
 }
 
+.booking-calendar :deep(.booking-disabled-day-event) {
+    background: rgba(193, 121, 121, 0.12) !important;
+    border: none !important;
+    opacity: 1 !important;
+}
+
+.booking-calendar :deep(.booking-disabled-day-column) {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(193, 121, 121, 0.14) 0,
+        rgba(193, 121, 121, 0.14) 10px,
+        rgba(193, 121, 121, 0.08) 10px,
+        rgba(193, 121, 121, 0.08) 20px
+    ) !important;
+}
+
+.booking-calendar :deep(.booking-disabled-day-header) {
+    background: rgba(193, 121, 121, 0.08) !important;
+}
+
+.booking-calendar :deep(.fc-disabled-day-tag) {
+    display: inline-block;
+    border: 1px solid #C17979;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #C17979;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 4px 8px;
+    max-width: min(100%, 84px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.booking-calendar :deep(.fc-disabled-day-tag.is-open:hover) {
+    background: #FFE5E5;
+}
+
+.booking-calendar :deep(.fc-disabled-day-tag.is-closed) {
+    background: #C17979;
+    color: #ffffff;
+}
+
+.booking-calendar :deep(.fc-disabled-day-tag.is-locked),
+.booking-calendar :deep(.fc-disabled-day-tag:disabled) {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .booking-calendar :deep(.booking-capacity-window-event .fc-event-title) {
     font-weight: 800;
 }
@@ -662,5 +869,10 @@ onBeforeUnmount(() => {
 
 .booking-calendar :deep(.fc-event-time) {
     font-size: 11px;
+}
+
+.booking-calendar :deep(.fc-theme-standard tr > *:last-child) {
+    border-right: none !important;
+    border-bottom: none !important;
 }
 </style>

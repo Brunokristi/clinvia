@@ -1,13 +1,11 @@
 <script setup>
-import Checkbox from 'primevue/checkbox';
+import Button from 'primevue/button';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
-import Textarea from 'primevue/textarea';
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 
-import EventDialog from '@/Components/Calendar/EventDialog.vue';
+import ScopedEventDialog from '@/Components/Calendar/ScopedEventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
-import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -39,18 +37,23 @@ const emit = defineEmits([
     'update:visible',
     'close',
     'save',
+    'duplicate',
 ]);
 
-const updateChoiceVisible = ref(false);
+const bookingModeOptions = [
+    {
+        label: 'Priama rezervácia',
+        value: 'immediate_booking',
+    },
+    {
+        label: 'Len cez žiadosť',
+        value: 'appointment_request',
+    },
+];
 
 const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value),
-});
-
-const notificationForm = reactive({
-    notify_patient: true,
-    notification_reason: '',
 });
 
 const stripTimezoneFromDateTime = (value) => {
@@ -167,11 +170,11 @@ const normalizeRepeatDefaults = () => {
 
 watch(() => props.visible, (visible) => {
     if (visible) {
-        notificationForm.notify_patient = true;
-        notificationForm.notification_reason = '';
-        updateChoiceVisible.value = false;
-
         normalizeRepeatDefaults();
+
+        if (props.groupEvent && !props.groupEvent.public_booking_type) {
+            props.groupEvent.public_booking_type = 'immediate_booking';
+        }
     }
 });
 
@@ -278,12 +281,12 @@ const canSave = computed(() => {
         && Boolean(props.groupEvent.date)
         && Boolean(props.groupEvent.starts_at)
         && Boolean(props.groupEvent.ends_at)
+        && Boolean(props.groupEvent.public_booking_type)
         && Number(props.groupEvent.capacity ?? props.groupEvent.bookable_places ?? 0) > 0
         && hasValidRepeatSettings.value;
 });
 
 const closeDialog = () => {
-    updateChoiceVisible.value = false;
     emit('update:visible', false);
     emit('close');
 };
@@ -295,8 +298,9 @@ const buildSavePayload = (scope = 'occurrence') => {
         repeat_ends_on: props.groupEvent.repeats
             ? String(props.groupEvent.repeat_ends_on).slice(0, 10)
             : null,
-        notify_patient: notificationForm.notify_patient,
-        notification_reason: notificationForm.notification_reason,
+        admin_note: null,
+        notify_patient: true,
+        notification_reason: null,
     };
 };
 
@@ -305,27 +309,20 @@ const saveGroupEvent = () => {
         return;
     }
 
-    if (isEditing.value && isPartOfSeries.value) {
-        updateChoiceVisible.value = true;
-
-        return;
-    }
-
     emit('save', buildSavePayload('occurrence'));
 };
 
 const submitUpdateScope = (scope) => {
-    updateChoiceVisible.value = false;
     emit('save', buildSavePayload(scope));
 };
 
-const cancelUpdateScope = () => {
-    updateChoiceVisible.value = false;
+const duplicateGroupEvent = () => {
+    emit('duplicate', props.groupEvent);
 };
 </script>
 
 <template>
-    <EventDialog
+    <ScopedEventDialog
         v-model:visible="dialogVisible"
         :title="dialogTitle"
         v-model:date="datePickerModel"
@@ -337,8 +334,14 @@ const cancelUpdateScope = () => {
         :save-disabled="loading || !canSave"
         :show-save="Boolean(groupEvent)"
         :show-delete="false"
+        :is-repeatable="Boolean(groupEvent?.repeats)"
+        scope-mode="update"
+        scope-subject-label="skupinový termín"
+        :show-duplicate="true"
         @close="closeDialog"
         @save="saveGroupEvent"
+        @save-scope="submitUpdateScope"
+        @duplicate="duplicateGroupEvent"
     >
         <FormPage
             v-if="groupEvent"
@@ -383,15 +386,17 @@ const cancelUpdateScope = () => {
                 </FormField>
 
                 <FormField
-                    label="Interná poznámka"
-                    for="group_admin_note"
+                    label="Spôsob rezervácie"
+                    for="group_public_booking_type"
+                    required
                 >
-                    <Textarea
-                        id="group_admin_note"
-                        v-model="groupEvent.admin_note"
-                        rows="3"
+                    <Select
+                        id="group_public_booking_type"
+                        v-model="groupEvent.public_booking_type"
+                        :options="bookingModeOptions"
+                        option-label="label"
+                        option-value="value"
                         class="w-full"
-                        placeholder="Voliteľná poznámka pre administráciu"
                     />
                 </FormField>
             </FormSection>
@@ -419,40 +424,6 @@ const cancelUpdateScope = () => {
                 Pri opakovaní musí byť vyplnený dátum ukončenia opakovania, interval a jednotka opakovania.
             </div>
 
-            <FormSection
-                title="Upozornenie pacientov"
-                description="Pri presune alebo úprave skupinového termínu môžete pacientom poslať email."
-                columns="md:grid-cols-1"
-            >
-                <div class="flex items-center gap-2">
-                    <Checkbox
-                        v-model="notificationForm.notify_patient"
-                        binary
-                        input-id="group_notify_patient"
-                    />
-
-                    <label
-                        for="group_notify_patient"
-                        class="cursor-pointer text-sm font-medium text-dark"
-                    >
-                        Pripraviť upozornenie pacientom
-                    </label>
-                </div>
-
-                <FormField
-                    v-if="notificationForm.notify_patient"
-                    label="Dôvod správy pre pacientov"
-                    for="group_notification_reason"
-                >
-                    <Textarea
-                        id="group_notification_reason"
-                        v-model="notificationForm.notification_reason"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Napríklad: Skupinový termín sa presúva z organizačných dôvodov."
-                    />
-                </FormField>
-            </FormSection>
         </FormPage>
 
         <div
@@ -462,13 +433,5 @@ const cancelUpdateScope = () => {
             <i class="pi pi-exclamation-circle mb-2 block text-2xl text-red-400"></i>
             Skupinový termín sa nepodarilo načítať.
         </div>
-    </EventDialog>
-
-    <OccurrenceScopeDialog
-        v-model:visible="updateChoiceVisible"
-        mode="update"
-        subject-label="skupinový termín"
-        @select="submitUpdateScope"
-        @cancel="cancelUpdateScope"
-    />
+    </ScopedEventDialog>
 </template>

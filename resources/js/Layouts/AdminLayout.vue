@@ -1,9 +1,10 @@
 <script setup>
 import AdminNavigation from '@/Components/Navigation/AdminNavbar.vue';
-import { router, usePage } from '@inertiajs/vue3';
+import { router, usePage, Link } from '@inertiajs/vue3';
 import Breadcrumb from 'primevue/breadcrumb';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
+import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 
 const toast = useToast();
@@ -170,11 +171,25 @@ watch(
         <Toast />
 
         <main class="min-w-0 flex-1 overflow-y-auto">
-            <header class="bg-soft px-8 py-4 sticky top-0 z-10">
-                <Breadcrumb
-                    v-if="breadcrumbs.length"
-                    :model="breadcrumbs"
-                />
+            <header class="sticky top-0 z-10 flex w-full items-stretch">
+                <Link
+                    :href="route('dashboard')"
+                    class="flex items-center bg-accent px-8"
+                    :title="sidebarCollapsed ? 'Dashboard' : null"
+                >
+                    <ApplicationLogo
+                        class="h-10"
+                        type="symbolic"
+                    />
+                </Link>
+
+
+                <div class="flex min-w-0 flex-1 items-center bg-accent pr-4 py-4 text-white">
+                    <Breadcrumb
+                        v-if="breadcrumbs.length"
+                        :model="breadcrumbs"
+                    />
+                </div>
             </header>
             <div class="p-8">
                 <div class="pb-4">
