@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Services\AdminBookingNotificationService;
 use App\Services\CapacityWindowService;
 use App\Services\DisabledDayService;
+use App\Services\OpeningHoursService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -104,6 +105,7 @@ class BranchCapacityWindowController extends Controller
 
         $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
         $disabledDayService = app(DisabledDayService::class);
+        $openingHoursService = app(OpeningHoursService::class);
 
         if (filled($validated['public_booking_type'] ?? null)) {
             $service->update([
@@ -111,13 +113,19 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService, $patients, $createBookingAction, $hasExplicitRepeatEnd): int {
+        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService, $openingHoursService, $patients, $createBookingAction, $hasExplicitRepeatEnd): int {
             $startsAt = Carbon::parse($validated['starts_at']);
             $endsAt = Carbon::parse($validated['ends_at']);
 
             if (! ($validated['repeats'] ?? false) && $disabledDayService->isDisabled($branch, $startsAt)) {
                 throw ValidationException::withMessages([
                     'starts_at' => 'Tento deň je v kalendári zakázaný.',
+                ]);
+            }
+
+            if (! ($validated['repeats'] ?? false) && ! $openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Termín musí byť v rámci otváracích hodín.',
                 ]);
             }
 
@@ -166,6 +174,10 @@ class BranchCapacityWindowController extends Controller
                 }
 
                 if ($disabledDayService->isDisabled($branch, $cursorStart)) {
+                    continue;
+                }
+
+                if (! $openingHoursService->isWithinOpeningHours($branch, $cursorStart, $cursorEnd)) {
                     continue;
                 }
 
@@ -273,6 +285,7 @@ class BranchCapacityWindowController extends Controller
 
         $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
         $disabledDayService = app(DisabledDayService::class);
+        $openingHoursService = app(OpeningHoursService::class);
 
         if (filled($validated['public_booking_type'] ?? null)) {
             $service->update([
@@ -302,7 +315,7 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($branch, $capacityWindow, $service, $validated, $disabledDayService, $patients, $hasPatientPayload, $notificationService, $hasExplicitRepeatEnd): void {
+        DB::transaction(function () use ($branch, $capacityWindow, $service, $validated, $disabledDayService, $openingHoursService, $patients, $hasPatientPayload, $notificationService, $hasExplicitRepeatEnd): void {
             $scope = $this->resolveSeriesScope(
                 requestedScope: $validated['update_scope'] ?? null,
                 applyToSeries: $validated['apply_to_series'] ?? null,
@@ -376,6 +389,16 @@ class BranchCapacityWindowController extends Controller
                                 continue;
                             }
 
+                            if (! $openingHoursService->isWithinOpeningHours($branch, $cursorStart, $cursorEnd)) {
+                                match ($repeatUnit) {
+                                    'days' => $this->addDays($cursorStart, $cursorEnd, $repeatEvery),
+                                    'months' => $this->addMonths($cursorStart, $cursorEnd, $repeatEvery),
+                                    default => $this->addWeeks($cursorStart, $cursorEnd, $repeatEvery),
+                                };
+
+                                continue;
+                            }
+
                             $this->createWindow(
                                 branch: $branch,
                                 service: $service,
@@ -411,6 +434,7 @@ class BranchCapacityWindowController extends Controller
                     validated: $validated,
                     scope: $scope,
                     disabledDayService: $disabledDayService,
+                    openingHoursService: $openingHoursService,
                     hasExplicitRepeatEnd: $hasExplicitRepeatEnd,
                 );
 
@@ -542,6 +566,7 @@ class BranchCapacityWindowController extends Controller
         array $validated,
         string $scope,
         DisabledDayService $disabledDayService,
+        OpeningHoursService $openingHoursService,
         bool $hasExplicitRepeatEnd,
     ): void {
         $newStartsAt = Carbon::parse($validated['starts_at'] ?? $capacityWindow->starts_at);
@@ -607,6 +632,10 @@ class BranchCapacityWindowController extends Controller
             }
 
             if ($disabledDayService->isDisabled($branch, $cursorStart)) {
+                continue;
+            }
+
+            if (! $openingHoursService->isWithinOpeningHours($branch, $cursorStart, $cursorEnd)) {
                 continue;
             }
 

@@ -114,6 +114,10 @@ const isSuperAdmin = computed(() => {
     return user.value?.global_role === 'super_admin';
 });
 
+const isBranchBookingEnabled = computed(() => {
+    return Boolean(branch.value?.booking_settings?.is_enabled);
+});
+
 const makeMenuLink = (link) => {
     return {
         label: link.label,
@@ -175,13 +179,15 @@ const branchLinks = computed(() => {
             href: route('branches.booking.dashboard.page', branch.value),
             active: route().current('branches.booking.dashboard.page'),
         },
-        {
-            label: 'Rezervácie',
-            icon: 'pi pi-calendar',
-            href: route('branches.booking.agenda.page', branch.value),
-            active: route().current('branches.booking.agenda.page')
-                || route().current('branches.booking.inbox.page'),
-        },
+        ...(isBranchBookingEnabled.value
+            ? [{
+                label: 'Rezervácie',
+                icon: 'pi pi-calendar',
+                href: route('branches.booking.agenda.page', branch.value),
+                active: route().current('branches.booking.agenda.page')
+                    || route().current('branches.booking.inbox.page'),
+            }]
+            : []),
         {
             label: 'Správy',
             icon: 'pi pi-inbox',

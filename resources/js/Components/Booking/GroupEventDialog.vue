@@ -1,6 +1,7 @@
 <script setup>
 import Button from 'primevue/button';
 import AutoComplete from 'primevue/autocomplete';
+import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
@@ -336,7 +337,8 @@ const submitUpdateScope = (scope) => {
 };
 
 const duplicateGroupEvent = () => {
-    emit('duplicate', props.groupEvent);
+    pendingDuplicatePayload.value = props.groupEvent;
+    duplicatePatientsPromptVisible.value = true;
 };
 
 const occurrenceDialogVisible = computed({
@@ -507,6 +509,8 @@ const pendingReschedulePayload = ref(null);
 const isResettingGroupForm = ref(false);
 const hasManuallyChangedDateTime = ref(false);
 const isDetailMode = ref(true);
+const duplicatePatientsPromptVisible = ref(false);
+const pendingDuplicatePayload = ref(null);
 
 const bookings = computed(() => props.capacityWindow?.bookings ?? []);
 const capacity = computed(() => props.capacityWindow?.bookable_places ?? props.capacityWindow?.capacity ?? null);
@@ -882,7 +886,26 @@ const enableEditMode = () => {
 };
 
 const duplicateCapacityWindow = () => {
-    emit('duplicate-capacity-window', props.capacityWindow);
+    pendingDuplicatePayload.value = props.capacityWindow;
+    duplicatePatientsPromptVisible.value = true;
+};
+
+const confirmDuplicateWithPatients = (copyPatients) => {
+    if (!pendingDuplicatePayload.value) {
+        duplicatePatientsPromptVisible.value = false;
+
+        return;
+    }
+
+    emit('duplicate', pendingDuplicatePayload.value, Boolean(copyPatients));
+
+    pendingDuplicatePayload.value = null;
+    duplicatePatientsPromptVisible.value = false;
+};
+
+const cancelDuplicatePatientsPrompt = () => {
+    pendingDuplicatePayload.value = null;
+    duplicatePatientsPromptVisible.value = false;
 };
 
 const closeOccurrenceDialog = () => {
@@ -1282,4 +1305,48 @@ const addPatientToCapacityWindow = () => {
         @select="submitRescheduleScope"
         @cancel="closeRescheduleChoice"
     />
+
+    <FormDialog
+        v-model:visible="duplicatePatientsPromptVisible"
+        title="Duplikovať skupinový termín"
+        description="Vyberte, či sa majú do nového termínu skopírovať aj pacienti."
+        width="max-w-lg"
+        :show-footer="true"
+        close-label="Zrušiť"
+        @close="cancelDuplicatePatientsPrompt"
+    >
+        <div class="space-y-4">
+            <div class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 rounded-md bg-soft p-3 text-sm text-accent">
+                <div class="flex h-full min-h-10 items-center justify-center rounded-md bg-white text-accent">
+                    <i class="pi pi-copy text-base" />
+                </div>
+
+                <div class="min-w-0">
+                    <p class="font-semibold text-dark">
+                        Chcete skopírovať aj pacientov?
+                    </p>
+
+                    <p class="mt-1 text-xs leading-5 text-accent">
+                        Ak ich neskopírujete, vytvorí sa iba nový skupinový termín so službou, časom a opakovaním.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <template #footer>
+            <Button
+                type="button"
+                label="Bez pacientov"
+                severity="secondary"
+                outlined
+                @click="confirmDuplicateWithPatients(false)"
+            />
+
+            <Button
+                type="button"
+                label="S pacientmi"
+                @click="confirmDuplicateWithPatients(true)"
+            />
+        </template>
+    </FormDialog>
 </template>

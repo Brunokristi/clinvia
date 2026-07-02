@@ -84,6 +84,10 @@ const reloadInboxData = () => {
 useBranchBroadcasting(props.branch.id, reloadCalendarData);
 useBranchInboxBroadcasting(props.branch.id, reloadInboxData);
 
+const isBranchBookingEnabled = computed(() => {
+    return Boolean(props.branch?.booking_settings?.is_enabled);
+});
+
 const goToAgenda = () => {
     router.visit(route('branches.booking.agenda.page', {
         branch: props.branch.id,
@@ -96,26 +100,35 @@ const goToInbox = () => {
     }));
 };
 
-const overviewCards = computed(() => [
-    {
-        title: 'Dnešné rezervácie',
-        value: props.todayBookingsCount,
-        description: 'Počet rezervácií naplánovaných na dnešný deň.',
-        onClick: goToAgenda,
-    },
-    {
-        title: 'Čakajúce žiadosti',
-        value: props.pendingAppointmentRequestsCount,
-        description: 'Žiadosti o rezerváciu, ktoré je potrebné spracovať.',
-        onClick: goToAgenda,
-    },
-    {
+const overviewCards = computed(() => {
+    const cards = [];
+
+    if (isBranchBookingEnabled.value) {
+        cards.push(
+            {
+                title: 'Dnešné rezervácie',
+                value: props.todayBookingsCount,
+                description: 'Počet rezervácií naplánovaných na dnešný deň.',
+                onClick: goToAgenda,
+            },
+            {
+                title: 'Čakajúce žiadosti',
+                value: props.pendingAppointmentRequestsCount,
+                description: 'Žiadosti o rezerváciu, ktoré je potrebné spracovať.',
+                onClick: goToAgenda,
+            },
+        );
+    }
+
+    cards.push({
         title: 'Nové správy',
         value: props.unreadMessagesCount,
         description: 'Nové správy v schránke, ktoré vyžadujú vašu pozornosť.',
         onClick: goToInbox,
-    },
-]);
+    });
+
+    return cards;
+});
 
 const agendaColumns = computed(() => [
     {
@@ -170,6 +183,7 @@ const agendaColumns = computed(() => [
             </section>
 
             <TableCard
+                v-if="isBranchBookingEnabled"
                 title="Dnešná agenda"
                 description="Prehľad dnešných rezervácií v tejto pobočke."
                 :rows="todayAgenda"

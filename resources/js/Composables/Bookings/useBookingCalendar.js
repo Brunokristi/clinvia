@@ -1159,19 +1159,7 @@ export function useBookingCalendar(props, options = {}) {
             businessHours: openingHours.getBusinessHours(),
             selectConstraint: 'businessHours',
             selectAllow: openingHours.isSelectionInsideOpeningHours,
-            eventAllow: (dropInfo, draggedEvent) => {
-                const startsAt = dropInfo.start;
-
-                if (isDateClosedByOpeningHours(startsAt)) {
-                    return false;
-                }
-
-                if (getEffectiveDisabledState(startsAt)) {
-                    return false;
-                }
-
-                return true;
-            },
+            eventAllow: openingHours.isEventAllowed,
 
             eventDidMount: setEventLayer,
             eventsSet: () => {

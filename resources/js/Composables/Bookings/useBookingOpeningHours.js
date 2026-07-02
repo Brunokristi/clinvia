@@ -76,6 +76,10 @@ export function useBookingOpeningHours({ props, dateTime }) {
             return false;
         }
 
+        if (!(getOpeningHours() ?? []).length) {
+            return true;
+        }
+
         if (getDateFromDate(start) !== getDateFromDate(end)) {
             return false;
         }
@@ -108,7 +112,13 @@ export function useBookingOpeningHours({ props, dateTime }) {
     };
 
     const isEventAllowed = (dropInfo, draggedEvent) => {
-        if (isDateDisabled(dropInfo.start) || isDateDisabled(dropInfo.end ?? dropInfo.start)) {
+        const end = dropInfo.end ?? draggedEvent?.end ?? dropInfo.start;
+
+        if (isDateDisabled(dropInfo.start) || isDateDisabled(end)) {
+            return false;
+        }
+
+        if (!isDateRangeInsideOpeningHours(dropInfo.start, end)) {
             return false;
         }
 
@@ -123,11 +133,11 @@ export function useBookingOpeningHours({ props, dateTime }) {
         }
 
         if (type === 'appointment_request') {
-            return isDateRangeInsideOpeningHours(dropInfo.start, dropInfo.end);
+            return true;
         }
 
         if (type === 'rule') {
-            return isDateRangeInsideOpeningHours(dropInfo.start, dropInfo.end);
+            return true;
         }
 
         return false;

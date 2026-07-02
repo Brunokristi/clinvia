@@ -342,6 +342,24 @@ export function useCapacityWindowActions({
             .filter((patient) => String(patient.patient_name).trim().length > 0);
     };
 
+    const getGroupPatientsFromGroupEvent = (groupEvent) => {
+        if (Array.isArray(groupEvent?.bookings)) {
+            return getGroupPatientsFromCapacityWindow(groupEvent);
+        }
+
+        const rawPatients = Array.isArray(groupEvent?.group_patients)
+            ? groupEvent.group_patients
+            : (Array.isArray(groupEvent?.patients) ? groupEvent.patients : []);
+
+        return rawPatients
+            .map((patient) => ({
+                patient_name: String(patient?.patient_name ?? '').trim(),
+                patient_email: patient?.patient_email ?? null,
+                patient_phone: patient?.patient_phone ?? null,
+            }))
+            .filter((patient) => patient.patient_name.length > 0);
+    };
+
     const createCapacityWindow = (groupEvent) => {
         router.post(route('branches.booking.capacity-windows.store', {
             branch: props.branch.id,
@@ -368,16 +386,19 @@ export function useCapacityWindowActions({
         });
     };
 
-    const duplicateCapacityWindow = (groupEvent) => {
+    const duplicateCapacityWindow = (groupEvent, copyPatients = false) => {
         if (!groupEvent) {
             return;
         }
 
+        const groupPatients = copyPatients
+            ? getGroupPatientsFromGroupEvent(groupEvent)
+            : [];
+
         const date = getDateOnly(groupEvent.date ?? getExistingStart(groupEvent));
         const startsAt = getExistingStart(groupEvent) ?? toDateTimeString(groupEvent.date, groupEvent.starts_at);
         const endsAt = getExistingEnd(groupEvent) ?? toDateTimeString(groupEvent.date, groupEvent.ends_at);
-
-        openCreateBookingWithPrefill({
+        const prefill = {
             create_type: 'group_event',
             date,
             starts_at: startsAt,
@@ -398,7 +419,13 @@ export function useCapacityWindowActions({
                     },
                 }
                 : (inferRecurrenceFromSeries(groupEvent) ?? null),
-        });
+        };
+
+        if (copyPatients) {
+            prefill.group_patients = groupPatients;
+        }
+
+        openCreateBookingWithPrefill(prefill);
 
         closeCapacityWindowDialog();
         closeGroupEventDialog();

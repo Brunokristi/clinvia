@@ -9,6 +9,7 @@ use App\Models\CapacityWindow;
 use App\Models\Service;
 use App\Notifications\BookingCreatedNotification;
 use App\Services\DisabledDayService;
+use App\Services\OpeningHoursService;
 use App\Services\PatientDirectoryService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
@@ -23,6 +24,7 @@ class CreateBookingAction
 {
     public function __construct(
         private DisabledDayService $disabledDayService,
+        private OpeningHoursService $openingHoursService,
         private RecurrenceService $recurrenceService,
         private PatientDirectoryService $patientDirectoryService,
     )
@@ -61,6 +63,12 @@ class CreateBookingAction
             $endsAt = $capacityWindow
                 ? $capacityWindow->ends_at->copy()
                 : $this->resolveEndsAt($startsAt, $services, $data);
+
+            if (! $this->openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Termín musí byť v rámci otváracích hodín.',
+                ]);
+            }
 
             $recurrence = ! empty($data['recurrence'])
                 ? $this->recurrenceService->normalize($data['recurrence'])

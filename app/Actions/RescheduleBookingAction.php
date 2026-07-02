@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Service;
 use App\Services\DisabledDayService;
+use App\Services\OpeningHoursService;
 use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -19,6 +20,7 @@ class RescheduleBookingAction
 {
     public function __construct(
         private DisabledDayService $disabledDayService,
+        private OpeningHoursService $openingHoursService,
         private PatientDirectoryService $patientDirectoryService,
     )
     {
@@ -53,6 +55,13 @@ class RescheduleBookingAction
             }
 
             $endsAt = $this->resolveEndsAt($startsAt, $services, $data);
+
+            if (! $this->openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Termín musí byť v rámci otváracích hodín.',
+                ]);
+            }
+
             $recurrence = $data['recurrence'] ?? $lockedBooking->recurrence;
 
             $supportsRecurrenceColumns = Schema::hasColumn('bookings', 'series_uuid')
