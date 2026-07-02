@@ -106,6 +106,108 @@ class CapacityWindowTest extends TestCase
         $this->assertSame(0, $duplicatedWindow->activeBookings()->count());
     }
 
+    public function test_patient_can_be_added_to_one_recurring_occurrence_without_affecting_series(): void
+    {
+        $fixture = $this->createFixture();
+        $seriesUuid = (string) Str::uuid();
+
+        $firstWindow = CapacityWindow::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'service_id' => $fixture['service']->id,
+            'series_uuid' => $seriesUuid,
+            'starts_at' => '2026-08-03 10:00:00',
+            'ends_at' => '2026-08-03 11:00:00',
+            'capacity' => 5,
+            'status' => 'active',
+            'admin_note' => null,
+        ]);
+
+        $secondWindow = CapacityWindow::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'service_id' => $fixture['service']->id,
+            'series_uuid' => $seriesUuid,
+            'starts_at' => '2026-08-10 10:00:00',
+            'ends_at' => '2026-08-10 11:00:00',
+            'capacity' => 5,
+            'status' => 'active',
+            'admin_note' => null,
+        ]);
+
+        $response = $this->actingAs($fixture['user'])->put(route('branches.booking.capacity-windows.update', [
+            $fixture['branch']->id,
+            $firstWindow->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'capacity' => 5,
+            'public_booking_type' => 'immediate_booking',
+            'update_scope' => 'occurrence',
+            'starts_at' => '2026-08-03 10:00:00',
+            'ends_at' => '2026-08-03 11:00:00',
+            'sync_patients' => true,
+            'group_patients' => [
+                [
+                    'patient_name' => 'Recurring Occurrence Patient',
+                    'patient_email' => 'patient@example.com',
+                    'patient_phone' => '+421900000333',
+                ],
+            ],
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-09-01',
+                    'count' => null,
+                ],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $firstWindow->refresh();
+        $secondWindow->refresh();
+
+        $this->assertSame(1, $firstWindow->activeBookings()->count());
+        $this->assertSame(0, $secondWindow->activeBookings()->count());
+    }
+
+    public function test_recurring_group_event_weekdays_creates_all_selected_weekdays(): void
+    {
+        $fixture = $this->createFixture();
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.capacity-windows.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'starts_at' => '2026-08-03 10:00:00', // Monday
+            'ends_at' => '2026-08-03 11:00:00',
+            'capacity' => 5,
+            'public_booking_type' => 'immediate_booking',
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO', 'WE', 'FR'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-08-07',
+                    'count' => null,
+                ],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $dates = CapacityWindow::query()
+            ->where('branch_id', $fixture['branch']->id)
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn (CapacityWindow $window): string => $window->starts_at->toDateString())
+            ->all();
+
+        $this->assertSame(['2026-08-03', '2026-08-05', '2026-08-07'], $dates);
+    }
+
     private function createFixture(): array
     {
         $user = User::query()->create([

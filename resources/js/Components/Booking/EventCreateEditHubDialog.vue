@@ -174,7 +174,12 @@ const parseDateValue = (value) => {
         ? String(value)
         : String(value).replace(' ', 'T');
 
-    const parsed = new Date(normalized);
+    // Keep wall-clock time stable by ignoring timezone suffixes in admin form prefills.
+    const withoutTimezone = normalized
+        .replace(/Z$/, '')
+        .replace(/([+-]\d{2}:?\d{2})$/, '');
+
+    const parsed = new Date(withoutTimezone);
 
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
@@ -356,6 +361,15 @@ const canAddGroupPatient = computed(() => {
     return Boolean(form.group_patient_name.trim());
 });
 
+const canManageGroupPatientsOnCreate = computed(() => {
+    if (!isGroupEventType.value) {
+        return false;
+    }
+
+    // For recurring group-event creation, patients are added per concrete occurrence later.
+    return isEditMode.value || !form.recurrence;
+});
+
 const remainingGroupCapacity = computed(() => {
     const capacity = Number(form.capacity ?? 0);
 
@@ -514,6 +528,19 @@ watch(() => props.selection, () => {
     }
 });
 
+watch(
+    () => [form.create_type, form.recurrence],
+    () => {
+        if (!isGroupEventType.value || canManageGroupPatientsOnCreate.value) {
+            return;
+        }
+
+        form.group_patients = [];
+        resetGroupPatientDraft();
+    },
+    { deep: true },
+);
+
 watch(calculatedEndsAtDate, (endsAt) => {
     if (!isBookingType.value || !endsAt) {
         return;
@@ -525,6 +552,10 @@ watch(calculatedEndsAtDate, (endsAt) => {
 watch(
     () => [form.service_ids, form.date, form.starts_at],
     () => {
+        if (!isBookingType.value) {
+            return;
+        }
+
         if (!form.date || !form.starts_at || !selectedServicesDuration.value) {
             return;
         }
@@ -552,7 +583,9 @@ const submitCreate = (saveScope = null) => {
         return;
     }
 
-    const recurrence = form.recurrence ? { ...form.recurrence } : null;
+    const recurrence = form.recurrence
+        ? JSON.parse(JSON.stringify(form.recurrence))
+        : null;
     const repeatEvery = recurrence
         ? Math.max(1, Number(recurrence.interval ?? 1))
         : 1;
@@ -569,11 +602,26 @@ const submitCreate = (saveScope = null) => {
         normalizedRepeatEvery = repeatEvery * 12;
     }
 
+    const submittedGroupPatients = canManageGroupPatientsOnCreate.value
+        ? [...form.group_patients]
+        : [];
+
+    if (canManageGroupPatientsOnCreate.value && canAddGroupPatient.value) {
+        submittedGroupPatients.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            patient_name: form.group_patient_name.trim(),
+            patient_email: form.group_patient_email?.trim() || null,
+            patient_phone: (form.group_patient_phone_full || form.group_patient_phone || '').trim() || null,
+        });
+    }
+
     emit('create-booking', {
         create_type: form.create_type,
         edit_mode: Boolean(props.prefill?.edit_mode),
         target_type: props.prefill?.target_type ?? null,
         target_id: props.prefill?.target_id ?? null,
+        original_starts_at: props.prefill?.original_starts_at ?? null,
+        original_ends_at: props.prefill?.original_ends_at ?? null,
         target_calendar_event_id: props.prefill?.target_calendar_event_id ?? null,
         target_occurrence_date: props.prefill?.target_occurrence_date ?? null,
         target_is_recurring: Boolean(props.prefill?.target_is_recurring),
@@ -594,7 +642,7 @@ const submitCreate = (saveScope = null) => {
         patient_name: form.patient_name,
         patient_email: form.patient_email,
         patient_phone: form.patient_phone_full || form.patient_phone,
-        group_patients: form.group_patients.map((patient) => ({
+        group_patients: submittedGroupPatients.map((patient) => ({
             patient_name: patient.patient_name,
             patient_email: patient.patient_email,
             patient_phone: patient.patient_phone,
@@ -629,10 +677,26 @@ const submitCreate = (saveScope = null) => {
         <FormField
             label="Typ udalosti"
             for="create_type"
-            required
             class="space-y-1"
         >
+            <template v-if="isEditMode">
+                <div class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 text-sm">
+                    <div class="flex h-full min-h-10 items-center justify-center rounded-md bg-soft text-dark">
+                        <i class="pi pi-lock text-base" />
+                    </div>
+
+                    <div class="flex min-w-0 items-center rounded-md border border-stroke bg-white px-3 py-2 font-medium text-dark">
+                        {{ currentEntityLabel }}
+                    </div>
+                </div>
+
+                <p class="text-xs text-accent">
+                    Typ udalosti sa pri úprave nedá meniť.
+                </p>
+            </template>
+
             <Select
+                v-else
                 id="create_type"
                 v-model="form.create_type"
                 :options="createTypeOptions"
@@ -724,6 +788,8 @@ const submitCreate = (saveScope = null) => {
                             option-value="value"
                             placeholder="Vyberte jednu alebo viac služieb"
                             display="chip"
+                            filter
+                            filter-placeholder="Hľadať služby"
                             class="w-full"
                         />
                     </FormField>
@@ -750,6 +816,8 @@ const submitCreate = (saveScope = null) => {
                             option-value="value"
                             placeholder="Vyberte jednu alebo viac služieb"
                             display="chip"
+                            filter
+                            filter-placeholder="Hľadať služby"
                             class="w-full"
                         />
                     </FormField>
@@ -855,6 +923,7 @@ const submitCreate = (saveScope = null) => {
                 </FormSection>
 
                 <FormSection
+                    v-if="canManageGroupPatientsOnCreate"
                     title="Pacienti v skupine"
                     description="Pacientov môžete pridať hneď teraz, nie je to povinné."
                     columns="md:grid-cols-2"
@@ -935,6 +1004,17 @@ const submitCreate = (saveScope = null) => {
 
                     <div class="rounded-md bg-soft p-3 text-sm text-accent md:col-span-2">
                         Obsadenosť pri vytvorení: {{ form.group_patients.length }} / {{ Number(form.capacity ?? 0) || '0' }}
+                    </div>
+                </FormSection>
+
+                <FormSection
+                    v-else
+                    title="Pacienti v skupine"
+                    description="Pri opakovanom skupinovom termíne sa pacienti pridávajú až do konkrétneho výskytu po vytvorení série."
+                    columns="md:grid-cols-1"
+                >
+                    <div class="rounded-md bg-soft p-3 text-sm text-accent">
+                        Najprv uložte opakovanie, potom otvorte konkrétny termín a pridajte pacienta tam.
                     </div>
                 </FormSection>
             </template>

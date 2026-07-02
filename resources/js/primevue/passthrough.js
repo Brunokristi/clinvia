@@ -749,6 +749,7 @@ export const primevuePt = {
                 '!bg-white',
                 '!shadow-lg',
                 '!overflow-hidden',
+                '!max-w-[400px]',
             ],
         },
 
@@ -784,6 +785,9 @@ export const primevuePt = {
         optionLabel: {
             class: [
                 '!font-medium',
+                '!whitespace-normal',
+                '!break-words',
+                '!leading-snug',
             ],
         },
 

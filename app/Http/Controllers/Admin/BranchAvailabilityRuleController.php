@@ -185,6 +185,7 @@ class BranchAvailabilityRuleController extends Controller
             if (! $rule->repeats) {
                 $this->moveRuleSeries(
                     rule: $rule,
+                    sourceDate: $occurrenceDate,
                     targetDate: $targetDate,
                     startsAt: $validated['starts_at'],
                     endsAt: $validated['ends_at'],
@@ -196,6 +197,7 @@ class BranchAvailabilityRuleController extends Controller
             if ($scope === 'series') {
                 $this->moveRuleSeries(
                     rule: $rule,
+                    sourceDate: $occurrenceDate,
                     targetDate: $targetDate,
                     startsAt: $validated['starts_at'],
                     endsAt: $validated['ends_at'],
@@ -365,13 +367,17 @@ class BranchAvailabilityRuleController extends Controller
             ->sort()
             ->values();
 
-        $rule->update([
-            'repeat_ends_on' => $occurrenceDate->copy()->subDay()->toDateString(),
-            'excluded_dates' => $oldExcludedDates
-                ->filter(fn (string $date): bool => $date < $occurrenceDate->toDateString())
-                ->values()
-                ->all(),
-        ]);
+        BookingAvailabilityRule::query()
+            ->whereKey($rule->id)
+            ->update([
+                'repeat_ends_on' => $occurrenceDate->copy()->subDay()->toDateString(),
+                'excluded_dates' => $oldExcludedDates
+                    ->filter(fn (string $date): bool => $date < $occurrenceDate->toDateString())
+                    ->values()
+                    ->all(),
+            ]);
+
+        $rule->refresh();
 
         $futureExcludedDates = $oldExcludedDates
             ->filter(fn (string $date): bool => $date >= $occurrenceDate->toDateString())
@@ -384,7 +390,8 @@ class BranchAvailabilityRuleController extends Controller
             startsAt: $startsAt,
             endsAt: $endsAt,
             repeats: true,
-            repeatEndsOn: $originalRepeatEndsOn,
+            repeatEndsOn: $originalRepeatEndsOn?->toDateString(),
+            weekdayShiftDays: $occurrenceDate->copy()->startOfDay()->diffInDays($targetDate->copy()->startOfDay(), false),
             excludedDates: $futureExcludedDates,
         );
     }
@@ -420,16 +427,31 @@ class BranchAvailabilityRuleController extends Controller
 
     private function moveRuleSeries(
         BookingAvailabilityRule $rule,
+        Carbon $sourceDate,
         Carbon $targetDate,
         string $startsAt,
         string $endsAt,
     ): void {
-        $rule->update([
+        $payload = [
             'date' => $targetDate->toDateString(),
             'day_of_week' => $targetDate->dayOfWeekIso,
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
-        ]);
+        ];
+
+        if ($rule->repeats && $this->supportsRepeatWeekdaysColumn() && ($rule->repeat_unit ?? 'weeks') === 'weeks') {
+            $payload['repeat_weekdays'] = $this->replaceWeekdayCode(
+                $rule->repeat_weekdays ?? [],
+                $this->weekdayCodeFromDate($sourceDate),
+                $this->weekdayCodeFromDate($targetDate),
+            );
+
+            if ($payload['repeat_weekdays'] === ($rule->repeat_weekdays ?? [])) {
+                unset($payload['repeat_weekdays']);
+            }
+        }
+
+        $rule->forceFill($payload)->save();
     }
 
     private function createRuleCopy(
@@ -439,6 +461,7 @@ class BranchAvailabilityRuleController extends Controller
         string $endsAt,
         bool $repeats,
         ?string $repeatEndsOn,
+        int $weekdayShiftDays = 0,
         array $excludedDates = [],
     ): BookingAvailabilityRule {
         $serviceIds = $sourceRule->services()
@@ -479,7 +502,11 @@ class BranchAvailabilityRuleController extends Controller
 
         if ($this->supportsRepeatWeekdaysColumn()) {
             $payload['repeat_weekdays'] = $repeats
-                ? $this->normalizeWeekdayCodes($sourceRule->repeat_weekdays ?? [])
+                ? $this->replaceWeekdayCode(
+                    $sourceRule->repeat_weekdays ?? [],
+                    $this->weekdayCodeFromDate($occurrenceDate),
+                    $this->weekdayCodeFromDate($targetDate),
+                )
                 : [];
         }
 
@@ -564,6 +591,41 @@ class BranchAvailabilityRuleController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function replaceWeekdayCode(array $weekdays, string $sourceWeekday, string $targetWeekday): array
+    {
+        $normalized = $this->normalizeWeekdayCodes($weekdays);
+
+        if ($normalized === []) {
+            return $normalized;
+        }
+
+        $sourceWeekday = strtoupper($sourceWeekday);
+        $targetWeekday = strtoupper($targetWeekday);
+
+        return collect($normalized)
+            ->map(function (string $weekday) use ($sourceWeekday, $targetWeekday): string {
+                return $weekday === $sourceWeekday
+                    ? $targetWeekday
+                    : $weekday;
+            })
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function weekdayCodeFromDate(Carbon $date): string
+    {
+        return match ($date->dayOfWeekIso) {
+            1 => 'MO',
+            2 => 'TU',
+            3 => 'WE',
+            4 => 'TH',
+            5 => 'FR',
+            6 => 'SA',
+            7 => 'SU',
+        };
     }
 
     private function supportsRepeatWeekdaysColumn(): bool

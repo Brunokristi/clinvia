@@ -890,6 +890,8 @@ const addPatientToCapacityWindow = () => {
                         option-label="name"
                         option-value="id"
                         placeholder="Vyberte službu"
+                        filter
+                        filter-placeholder="Hľadať službu"
                         class="w-full"
                     />
                 </FormField>
@@ -977,8 +979,7 @@ const addPatientToCapacityWindow = () => {
     >
         <template #footer-start>
             <EventOccurrenceActions
-                v-if="capacityWindow"
-                v-show="isDetailMode"
+                v-if="capacityWindow && isDetailMode"
                 @duplicate="duplicateCapacityWindow"
                 @edit="enableEditMode"
             />

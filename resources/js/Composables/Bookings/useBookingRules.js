@@ -5,14 +5,8 @@ import { computed, watch } from 'vue';
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
 
-    const showSuccess = (message) => {
-        toast.add({
-            severity: 'success',
-            summary: 'Hotovo',
-            detail: message,
-            life: 3500,
-        });
-    };
+    // Success notifications are shown centrally from flash messages in AdminLayout.
+    const showSuccess = () => { };
 
     const showError = (fallback, errors = {}) => {
         const firstError = Object.values(errors ?? {})?.[0];

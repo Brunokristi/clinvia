@@ -81,7 +81,7 @@ class BranchDisabledDayController extends Controller
         $bookingCount = $disabledDayService->bookingCountOnDate($branch, $disabledDay->date);
 
         return back()->with([
-            'success' => 'Zakázaný deň bol uložený.',
+            'success' => 'Deň bol zatvorený.',
             'warning' => $bookingCount > 0
                 ? "Tento deň už obsahuje {$bookingCount} rezervácií. Neboli zmazané."
                 : null,
@@ -117,7 +117,7 @@ class BranchDisabledDayController extends Controller
         $bookingCount = $disabledDayService->bookingCountOnDate($branch, $disabledDayModel->date);
 
         return back()->with([
-            'success' => 'Zakázaný deň bol upravený.',
+            'success' => 'Deň bol upravený.',
             'warning' => $bookingCount > 0
                 ? "Tento deň už obsahuje {$bookingCount} rezervácií. Neboli zmazané."
                 : null,
@@ -138,6 +138,6 @@ class BranchDisabledDayController extends Controller
 
         $disabledDayModel->delete();
 
-        return back()->with('success', 'Zakázaný deň bol odstránený.');
+        return back()->with('success', 'Deň bol otvorený.');
     }
 }

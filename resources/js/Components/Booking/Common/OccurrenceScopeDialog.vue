@@ -71,6 +71,18 @@ const actionVerb = computed(() => {
     return 'Presunúť';
 });
 
+const description = computed(() => {
+    if (props.mode === 'delete') {
+        return `Vyberte rozsah, v ktorom chcete vymazať ${props.subjectLabel}.`;
+    }
+
+    if (props.mode === 'update') {
+        return `Vyberte rozsah, v ktorom chcete upraviť ${props.subjectLabel}.`;
+    }
+
+    return `Vyberte rozsah, v ktorom chcete presunúť ${props.subjectLabel}.`;
+});
+
 const getOccurrenceWord = (count) => {
     if (count === 1) {
         return 'výskyt';

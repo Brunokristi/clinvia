@@ -6,14 +6,8 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     const toast = useToast();
     const { toLocalDateTimeString } = dateTime;
 
-    const showSuccess = (message) => {
-        toast.add({
-            severity: 'success',
-            summary: 'Hotovo',
-            detail: message,
-            life: 3500,
-        });
-    };
+    // Success notifications are shown centrally from flash messages in AdminLayout.
+    const showSuccess = () => { };
 
     const showError = (fallback, errors = {}) => {
         const firstError = Object.values(errors ?? {})?.[0];

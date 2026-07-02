@@ -130,6 +130,32 @@ class ReservationRuleTest extends TestCase
         $this->assertSame(1, BookingAvailabilityRule::query()->where('branch_id', $fixture['branch']->id)->count());
     }
 
+    public function test_rescheduling_series_shifts_weekly_custom_weekdays(): void
+    {
+        $fixture = $this->createFixture();
+        $rule = $this->createRecurringRule($fixture, ['TH', 'FR'], '2026-07-09');
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.rules.reschedule', [
+            $fixture['branch']->id,
+            $rule->id,
+        ]), [
+            'occurrence_date' => '2026-07-09',
+            'date' => '2026-07-13',
+            'starts_at' => '10:00',
+            'ends_at' => '12:00',
+            'reschedule_scope' => 'series',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $rule->refresh();
+
+        $this->assertSame('2026-07-13', $rule->date?->toDateString());
+        $this->assertSame('10:00', $rule->starts_at);
+        $this->assertSame('12:00', $rule->ends_at);
+        $this->assertSame(['MO', 'FR'], $rule->repeat_weekdays ?? []);
+    }
+
     public function test_rescheduling_from_date_splits_rule_series(): void
     {
         $fixture = $this->createFixture();
@@ -199,12 +225,12 @@ class ReservationRuleTest extends TestCase
         ]);
     }
 
-    private function createRecurringRule(array $fixture): BookingAvailabilityRule
+    private function createRecurringRule(array $fixture, array $repeatWeekdays = [], string $date = '2026-07-07'): BookingAvailabilityRule
     {
         $this->actingAs($fixture['user'])->put(route('branches.booking.rules.update', $fixture['branch']->id), [
             'rules' => [[
                 'id' => null,
-                'date' => '2026-07-07',
+                'date' => $date,
                 'starts_at' => '09:00',
                 'ends_at' => '11:00',
                 'service_ids' => [$fixture['service']->id],
@@ -212,6 +238,7 @@ class ReservationRuleTest extends TestCase
                 'repeats' => true,
                 'repeat_every' => 1,
                 'repeat_unit' => 'weeks',
+                'repeat_weekdays' => $repeatWeekdays,
                 'repeat_ends_on' => '2026-09-30',
                 'excluded_dates' => [],
                 'is_enabled' => true,

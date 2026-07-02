@@ -290,7 +290,13 @@ export function useBookingCalendar(props, options = {}) {
         repeats: Boolean(data.repeats),
         repeat_every: data.repeat_every ?? 1,
         repeat_unit: data.repeat_unit ?? 'weeks',
-        repeat_ends_on: null,
+        repeat_weekdays: data.recurrence?.frequency === 'weekly'
+            ? [...(data.recurrence?.weekdays ?? [])]
+            : [],
+        repeat_ends_on: data.recurrence?.ends?.type === 'on'
+            ? (data.recurrence?.ends?.until ?? null)
+            : null,
+        recurrence: data.recurrence ?? null,
         apply_to_series: false,
         is_enabled: true,
         group_patients: Array.isArray(data.group_patients)
@@ -499,27 +505,38 @@ export function useBookingCalendar(props, options = {}) {
                 const targetRule = rules.ruleForm.rules[targetRuleIndex];
                 const previousRepeatSignature = normalizeRuleRepeatForCompare(targetRule);
 
-                targetRule.date = selectionInfo.date;
-                targetRule.starts_at = selectionInfo.starts_at;
-                targetRule.ends_at = selectionInfo.ends_at;
-                targetRule.service_ids = data.service_ids ?? [];
-                targetRule.public_booking_type = data.public_booking_type ?? targetRule.public_booking_type;
-                targetRule.repeats = Boolean(data.repeats);
                 const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
-                targetRule.repeat_every = Number(repeatSettings.repeat_every ?? data.repeat_every ?? 1);
-                targetRule.repeat_unit = repeatSettings.repeat_unit ?? data.repeat_unit ?? 'weeks';
-                targetRule.repeat_weekdays = targetRule.repeat_unit === 'weeks'
+
+                const nextRule = {
+                    ...targetRule,
+                    date: selectionInfo.date,
+                    starts_at: selectionInfo.starts_at,
+                    ends_at: selectionInfo.ends_at,
+                    service_ids: data.service_ids ?? [],
+                    public_booking_type: data.public_booking_type ?? targetRule.public_booking_type,
+                    repeats: Boolean(data.repeats),
+                    repeat_every: Number(repeatSettings.repeat_every ?? data.repeat_every ?? 1),
+                    repeat_unit: repeatSettings.repeat_unit ?? data.repeat_unit ?? 'weeks',
+                };
+
+                nextRule.repeat_weekdays = nextRule.repeat_unit === 'weeks'
                     ? [...(data.recurrence?.weekdays ?? [])]
                     : [];
-                targetRule.repeat_ends_on = data.repeats
+
+                nextRule.repeat_ends_on = data.repeats
                     ? resolveRepeatEndsOn(selectionInfo.date, data.recurrence ?? null)
                     : null;
-                targetRule.is_enabled = Boolean(data.is_enabled ?? true);
 
-                const nextRepeatSignature = normalizeRuleRepeatForCompare(targetRule);
+                nextRule.is_enabled = Boolean(data.is_enabled ?? true);
+
+                const nextRules = [...rules.ruleForm.rules];
+                nextRules[targetRuleIndex] = nextRule;
+                rules.ruleForm.rules = nextRules;
+
+                const nextRepeatSignature = normalizeRuleRepeatForCompare(nextRule);
 
                 if (JSON.stringify(previousRepeatSignature) !== JSON.stringify(nextRepeatSignature)) {
-                    targetRule.excluded_dates = [];
+                    nextRule.excluded_dates = [];
                 }
 
                 dialogs.selectedRuleIndex.value = targetRuleIndex;
@@ -530,6 +547,12 @@ export function useBookingCalendar(props, options = {}) {
 
             if (data.target_type === 'group_event' && data.target_id) {
                 const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
+                const requestedScope = data.save_scope ?? 'occurrence';
+                const resolvedScope = data.target_is_recurring
+                    && data.save_scope === 'occurrence'
+                    && JSON.stringify(normalizeRecurrenceForCompare(data.target_original_recurrence ?? null)) !== JSON.stringify(normalizeRecurrenceForCompare(data.recurrence ?? null))
+                    ? 'series'
+                    : requestedScope;
 
                 capacityWindowActions.saveCapacityWindow({
                     id: Number(data.target_id),
@@ -544,12 +567,21 @@ export function useBookingCalendar(props, options = {}) {
                     repeat_ends_on: data.recurrence
                         ? resolveRepeatEndsOn(selectionInfo.date, data.recurrence ?? null)
                         : null,
+                    recurrence: data.recurrence ?? null,
+                    target_original_recurrence: data.target_original_recurrence ?? null,
                     date: selectionInfo.date,
                     starts_at: selectionInfo.starts_at,
                     ends_at: selectionInfo.ends_at,
                     original_starts_at: data.original_starts_at ?? data.starts_at,
                     original_ends_at: data.original_ends_at ?? data.ends_at,
-                    update_scope: data.save_scope ?? 'series',
+                    group_patients: Array.isArray(data.group_patients)
+                        ? data.group_patients.map((patient) => ({
+                            patient_name: patient?.patient_name ?? '',
+                            patient_email: patient?.patient_email ?? null,
+                            patient_phone: patient?.patient_phone ?? null,
+                        }))
+                        : [],
+                    update_scope: resolvedScope,
                 });
             }
 
@@ -590,13 +622,14 @@ export function useBookingCalendar(props, options = {}) {
         }
 
         if (data.create_type === 'group_event') {
-            dialogs.selectedGroupEvent.value = createGroupEventDraft({
+            capacityWindowActions.saveCapacityWindow(createGroupEventDraft({
                 ...data,
                 date: selectionInfo.date,
                 starts_at: selectionInfo.starts_at,
                 ends_at: selectionInfo.ends_at,
-            });
-            dialogs.groupEventDialogVisible.value = true;
+            }));
+
+            return;
         }
     };
 
