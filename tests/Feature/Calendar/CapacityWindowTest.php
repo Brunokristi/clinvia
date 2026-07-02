@@ -3,6 +3,7 @@
 namespace Tests\Feature\Calendar;
 
 use App\Models\Branch;
+use App\Models\BranchDisabledDay;
 use App\Models\Booking;
 use App\Models\CapacityWindow;
 use App\Models\Company;
@@ -206,6 +207,83 @@ class CapacityWindowTest extends TestCase
             ->all();
 
         $this->assertSame(['2026-08-03', '2026-08-05', '2026-08-07'], $dates);
+    }
+
+    public function test_recurring_group_event_skips_disabled_days_and_creates_remaining_series(): void
+    {
+        $fixture = $this->createFixture();
+
+        BranchDisabledDay::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'created_by' => null,
+            'date' => '2026-08-05', // Wednesday
+            'title' => 'Closed day',
+            'type' => 'holiday',
+            'reason' => null,
+        ]);
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.capacity-windows.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'starts_at' => '2026-08-03 10:00:00', // Monday
+            'ends_at' => '2026-08-03 11:00:00',
+            'capacity' => 5,
+            'public_booking_type' => 'immediate_booking',
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO', 'WE', 'FR'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-08-07',
+                    'count' => null,
+                ],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $dates = CapacityWindow::query()
+            ->where('branch_id', $fixture['branch']->id)
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn (CapacityWindow $window): string => $window->starts_at->toDateString())
+            ->all();
+
+        $this->assertSame(['2026-08-03', '2026-08-07'], $dates);
+    }
+
+    public function test_recurring_group_event_without_end_is_auto_capped(): void
+    {
+        $fixture = $this->createFixture();
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.capacity-windows.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'starts_at' => '2026-08-03 10:00:00',
+            'ends_at' => '2026-08-03 11:00:00',
+            'capacity' => 5,
+            'public_booking_type' => 'immediate_booking',
+            'recurrence' => [
+                'frequency' => 'daily',
+                'interval' => 1,
+                'ends' => [
+                    'type' => 'never',
+                    'count' => null,
+                    'until' => null,
+                ],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $count = CapacityWindow::query()
+            ->where('branch_id', $fixture['branch']->id)
+            ->count();
+
+        $this->assertSame(370, $count);
     }
 
     private function createFixture(): array

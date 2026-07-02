@@ -70,4 +70,8 @@
     <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #A75A5A;">
         V prípade otázok nás prosím kontaktujte.
     </p>
+
+    <p style="margin: 16px 0 0 0; font-size: 13px; line-height: 1.6; color: #A75A5A;">
+        Aktualizovaný termín môžete pridať do Google Kalendára (Gmail) cez priložený súbor <strong>.ics</strong>.
+    </p>
 @endsection

@@ -21,6 +21,8 @@ use Illuminate\Validation\ValidationException;
 
 class BranchCapacityWindowController extends Controller
 {
+    private const MAX_RECURRING_OCCURRENCES = 370;
+
     public function store(Request $request, Branch $branch, CreateBookingAction $createBookingAction): RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
@@ -94,6 +96,8 @@ class BranchCapacityWindowController extends Controller
             $validated['repeat_ends_on'] = $this->resolveRepeatEndsOn($validated);
         }
 
+        $hasExplicitRepeatEnd = $this->hasExplicitRepeatEnd($validated);
+
         if (($validated['repeats'] ?? false) && blank($validated['repeat_ends_on'] ?? null)) {
             $validated['repeat_ends_on'] = Carbon::parse($validated['starts_at'])->addYears(2)->toDateString();
         }
@@ -107,11 +111,11 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService, $patients, $createBookingAction): int {
+        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService, $patients, $createBookingAction, $hasExplicitRepeatEnd): int {
             $startsAt = Carbon::parse($validated['starts_at']);
             $endsAt = Carbon::parse($validated['ends_at']);
 
-            if ($disabledDayService->isDisabled($branch, $startsAt)) {
+            if (! ($validated['repeats'] ?? false) && $disabledDayService->isDisabled($branch, $startsAt)) {
                 throw ValidationException::withMessages([
                     'starts_at' => 'Tento deň je v kalendári zakázaný.',
                 ]);
@@ -151,21 +155,29 @@ class BranchCapacityWindowController extends Controller
             $createdCount = 0;
 
             foreach ($this->buildRecurringOccurrenceDateTimes($startsAt, $endsAt, $repeatEndsOn, $validated, $repeatEvery, $repeatUnit) as [$cursorStart, $cursorEnd]) {
+                if ($createdCount >= self::MAX_RECURRING_OCCURRENCES) {
+                    if ($hasExplicitRepeatEnd) {
+                        throw ValidationException::withMessages([
+                            'repeat_ends_on' => 'Opakovanie je príliš dlhé. Skráťte dátum ukončenia.',
+                        ]);
+                    }
+
+                    break;
+                }
+
                 if ($disabledDayService->isDisabled($branch, $cursorStart)) {
-                    throw ValidationException::withMessages([
-                        'repeat_ends_on' => 'Opakovanie obsahuje zakázaný deň.',
-                    ]);
+                    continue;
                 }
 
                 $this->createWindow($branch, $service, $cursorStart, $cursorEnd, $validated, $seriesUuid);
 
                 $createdCount++;
+            }
 
-                if ($createdCount > 370) {
-                    throw ValidationException::withMessages([
-                        'repeat_ends_on' => 'Opakovanie je príliš dlhé. Skráťte dátum ukončenia.',
-                    ]);
-                }
+            if ($createdCount === 0) {
+                throw ValidationException::withMessages([
+                    'repeat_ends_on' => 'V zadanom rozsahu opakovania nie je žiadny dostupný deň.',
+                ]);
             }
 
             return $createdCount;
@@ -257,6 +269,8 @@ class BranchCapacityWindowController extends Controller
             $validated['update_scope'] = $validated['update_scope'] ?? 'series';
         }
 
+        $hasExplicitRepeatEnd = $this->hasExplicitRepeatEnd($validated);
+
         $service = $this->resolveBranchService($branch, (int) $validated['service_id']);
         $disabledDayService = app(DisabledDayService::class);
 
@@ -288,7 +302,7 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($branch, $capacityWindow, $service, $validated, $disabledDayService, $patients, $hasPatientPayload, $notificationService): void {
+        DB::transaction(function () use ($branch, $capacityWindow, $service, $validated, $disabledDayService, $patients, $hasPatientPayload, $notificationService, $hasExplicitRepeatEnd): void {
             $scope = $this->resolveSeriesScope(
                 requestedScope: $validated['update_scope'] ?? null,
                 applyToSeries: $validated['apply_to_series'] ?? null,
@@ -342,10 +356,24 @@ class BranchCapacityWindowController extends Controller
                         $createdCount = 0;
 
                         while ($cursorStart->lte($repeatEndsOn)) {
+                            if ($createdCount >= self::MAX_RECURRING_OCCURRENCES) {
+                                if ($hasExplicitRepeatEnd) {
+                                    throw ValidationException::withMessages([
+                                        'recurrence' => 'Opakovanie je príliš dlhé. Skráťte rozsah opakovania.',
+                                    ]);
+                                }
+
+                                break;
+                            }
+
                             if ($disabledDayService->isDisabled($branch, $cursorStart)) {
-                                throw ValidationException::withMessages([
-                                    'recurrence' => 'Opakovanie obsahuje zakázaný deň.',
-                                ]);
+                                match ($repeatUnit) {
+                                    'days' => $this->addDays($cursorStart, $cursorEnd, $repeatEvery),
+                                    'months' => $this->addMonths($cursorStart, $cursorEnd, $repeatEvery),
+                                    default => $this->addWeeks($cursorStart, $cursorEnd, $repeatEvery),
+                                };
+
+                                continue;
                             }
 
                             $this->createWindow(
@@ -359,17 +387,17 @@ class BranchCapacityWindowController extends Controller
 
                             $createdCount++;
 
-                            if ($createdCount > 370) {
-                                throw ValidationException::withMessages([
-                                    'recurrence' => 'Opakovanie je príliš dlhé. Skráťte rozsah opakovania.',
-                                ]);
-                            }
-
                             match ($repeatUnit) {
                                 'days' => $this->addDays($cursorStart, $cursorEnd, $repeatEvery),
                                 'months' => $this->addMonths($cursorStart, $cursorEnd, $repeatEvery),
                                 default => $this->addWeeks($cursorStart, $cursorEnd, $repeatEvery),
                             };
+                        }
+
+                        if ($createdCount === 0) {
+                            throw ValidationException::withMessages([
+                                'recurrence' => 'V zadanom rozsahu opakovania nie je žiadny dostupný deň.',
+                            ]);
                         }
 
                         return;
@@ -383,6 +411,7 @@ class BranchCapacityWindowController extends Controller
                     validated: $validated,
                     scope: $scope,
                     disabledDayService: $disabledDayService,
+                    hasExplicitRepeatEnd: $hasExplicitRepeatEnd,
                 );
 
                 return;
@@ -513,6 +542,7 @@ class BranchCapacityWindowController extends Controller
         array $validated,
         string $scope,
         DisabledDayService $disabledDayService,
+        bool $hasExplicitRepeatEnd,
     ): void {
         $newStartsAt = Carbon::parse($validated['starts_at'] ?? $capacityWindow->starts_at);
         $newEndsAt = Carbon::parse($validated['ends_at'] ?? $capacityWindow->ends_at);
@@ -566,21 +596,29 @@ class BranchCapacityWindowController extends Controller
         $createdCount = 0;
 
         foreach ($this->buildRecurringOccurrenceDateTimes($newStartsAt, $newEndsAt, $repeatEndsOn, $validated, $repeatEvery, $repeatUnit) as [$cursorStart, $cursorEnd]) {
+            if ($createdCount >= self::MAX_RECURRING_OCCURRENCES) {
+                if ($hasExplicitRepeatEnd) {
+                    throw ValidationException::withMessages([
+                        'recurrence' => 'Opakovanie je príliš dlhé. Skráťte rozsah opakovania.',
+                    ]);
+                }
+
+                break;
+            }
+
             if ($disabledDayService->isDisabled($branch, $cursorStart)) {
-                throw ValidationException::withMessages([
-                    'recurrence' => 'Opakovanie obsahuje zakázaný deň.',
-                ]);
+                continue;
             }
 
             $this->createWindow($branch, $service, $cursorStart, $cursorEnd, $validated, $seriesUuid);
 
             $createdCount++;
+        }
 
-            if ($createdCount > 370) {
-                throw ValidationException::withMessages([
-                    'recurrence' => 'Opakovanie je príliš dlhé. Skráťte rozsah opakovania.',
-                ]);
-            }
+        if ($createdCount === 0) {
+            throw ValidationException::withMessages([
+                'recurrence' => 'V zadanom rozsahu opakovania nie je žiadny dostupný deň.',
+            ]);
         }
     }
 
@@ -1042,6 +1080,30 @@ class BranchCapacityWindowController extends Controller
         }
 
         return $validated['repeat_ends_on'] ?? null;
+    }
+
+    private function hasExplicitRepeatEnd(array $validated): bool
+    {
+        if (filled($validated['repeat_ends_on'] ?? null)) {
+            return true;
+        }
+
+        if (! filled($validated['recurrence'] ?? null)) {
+            return false;
+        }
+
+        $ends = $validated['recurrence']['ends'] ?? [];
+        $type = $ends['type'] ?? 'never';
+
+        if ($type === 'on') {
+            return filled($ends['until'] ?? null);
+        }
+
+        if ($type === 'after') {
+            return filled($ends['count'] ?? null);
+        }
+
+        return false;
     }
 
     private function resolveSeriesScope(

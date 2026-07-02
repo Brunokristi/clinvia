@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Booking;
+use App\Support\BookingCalendarInvite;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -49,7 +50,9 @@ class BookingCreatedNotification extends Notification
             }
         }
 
-        return (new MailMessage)
+        $isRecurring = ! empty($this->booking->recurrence);
+
+        $mail = (new MailMessage)
             ->subject('Nová rezervácia')
             ->view('emails.bookings.created', [
                 'patientName' => $this->booking->patient_name,
@@ -59,6 +62,21 @@ class BookingCreatedNotification extends Notification
                 'branchName' => $this->booking->branch?->name ?? '—',
                 'appointmentLabel' => $appointmentLabel,
                 'patientNote' => $this->booking->patient_note,
+                'isRecurring' => $isRecurring,
             ]);
+
+        if ($startsAt) {
+            $mail->attachData(
+                BookingCalendarInvite::buildIcs(
+                    booking: $this->booking,
+                    startsAt: $startsAt->copy(),
+                    endsAt: $endsAt?->copy(),
+                ),
+                'reservation.ics',
+                ['mime' => 'text/calendar; charset=UTF-8; method=PUBLISH'],
+            );
+        }
+
+        return $mail;
     }
 }

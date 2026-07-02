@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Booking;
+use App\Support\BookingCalendarInvite;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -32,9 +33,16 @@ class BookingRescheduledNotification extends Notification
             'service',
             'services',
             'bookingSlot',
+            'capacityWindow',
         ]);
 
-        $slot = $this->booking->bookingSlot;
+        $startsAt = $this->booking->starts_at
+            ?? $this->booking->capacityWindow?->starts_at
+            ?? $this->booking->bookingSlot?->starts_at;
+
+        $endsAt = $this->booking->ends_at
+            ?? $this->booking->capacityWindow?->ends_at
+            ?? $this->booking->bookingSlot?->ends_at;
 
         $oldAppointmentLabel = null;
 
@@ -48,15 +56,17 @@ class BookingRescheduledNotification extends Notification
 
         $newAppointmentLabel = null;
 
-        if ($slot?->starts_at && $slot?->ends_at) {
-            $newAppointmentLabel = $slot->starts_at->format('d.m.Y')
+        if ($startsAt) {
+            $newAppointmentLabel = $startsAt->format('d.m.Y')
                 . ' o '
-                . $slot->starts_at->format('H:i')
-                . ' – '
-                . $slot->ends_at->format('H:i');
+                . $startsAt->format('H:i');
+
+            if ($endsAt) {
+                $newAppointmentLabel .= ' – ' . $endsAt->format('H:i');
+            }
         }
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Rezervácia bola upravená')
             ->view('emails.bookings.rescheduled', [
                 'patientName' => $this->booking->patient_name,
@@ -66,6 +76,20 @@ class BookingRescheduledNotification extends Notification
                 'newAppointmentLabel' => $newAppointmentLabel,
                 'reason' => $this->reason,
             ]);
+
+        if ($startsAt) {
+            $mail->attachData(
+                BookingCalendarInvite::buildIcs(
+                    booking: $this->booking,
+                    startsAt: $startsAt->copy(),
+                    endsAt: $endsAt?->copy(),
+                ),
+                'reservation-updated.ics',
+                ['mime' => 'text/calendar; charset=UTF-8; method=PUBLISH'],
+            );
+        }
+
+        return $mail;
     }
 
     private function serviceName(): string

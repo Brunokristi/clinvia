@@ -1,10 +1,11 @@
 <script setup>
 import Button from 'primevue/button';
+import AutoComplete from 'primevue/autocomplete';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import EventCreateEditDialog from '@/Components/Booking/Common/EventCreateEditDialog.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
@@ -20,6 +21,10 @@ const props = defineProps({
         required: true,
     },
     services: {
+        type: Array,
+        default: () => [],
+    },
+    patients: {
         type: Array,
         default: () => [],
     },
@@ -91,6 +96,155 @@ const serviceOptions = computed(() => {
         .filter((service) => service.is_bookable ?? true)
         .map((service) => ({ label: service.name, value: service.id }));
 });
+
+const patientRecords = computed(() => {
+    return (props.patients ?? [])
+        .map((patient) => ({
+            patient_name: String(patient?.patient_name ?? '').trim(),
+            patient_email: String(patient?.patient_email ?? '').trim(),
+            patient_phone: String(patient?.patient_phone ?? '').trim(),
+        }))
+        .filter((patient) => patient.patient_name);
+});
+
+const bookingPatientNameSuggestions = ref([]);
+const bookingPatientEmailSuggestions = ref([]);
+const groupPatientNameSuggestions = ref([]);
+
+const normalizeSearch = (value) => String(value ?? '').trim().toLowerCase();
+
+const uniqueValues = (values) => {
+    const seen = new Set();
+
+    return values.filter((value) => {
+        const key = String(value ?? '').trim().toLowerCase();
+
+        if (!key || seen.has(key)) {
+            return false;
+        }
+
+        seen.add(key);
+
+        return true;
+    });
+};
+
+const getMatchingPatients = (query) => {
+    const needle = normalizeSearch(query);
+
+    return patientRecords.value.filter((patient) => {
+        if (!needle) {
+            return true;
+        }
+
+        return normalizeSearch(patient.patient_name).includes(needle)
+            || normalizeSearch(patient.patient_email).includes(needle)
+            || normalizeSearch(patient.patient_phone).includes(needle);
+    });
+};
+
+const applyBookingPatient = (patient) => {
+    if (!patient) {
+        return;
+    }
+
+    if (patient.patient_name) {
+        form.patient_name = patient.patient_name;
+    }
+
+    if (patient.patient_email) {
+        form.patient_email = patient.patient_email;
+    }
+
+    if (patient.patient_phone) {
+        const phone = parsePhoneValue(patient.patient_phone, form.patient_phone_country);
+        form.patient_phone_country = phone.countryCode;
+        form.patient_phone = phone.localNumber;
+        form.patient_phone_full = phone.fullNumber;
+    }
+};
+
+const applyGroupPatient = (patient) => {
+    if (!patient) {
+        return;
+    }
+
+    if (patient.patient_name) {
+        form.group_patient_name = patient.patient_name;
+    }
+
+    if (patient.patient_email) {
+        form.group_patient_email = patient.patient_email;
+    }
+
+    if (patient.patient_phone) {
+        const phone = parsePhoneValue(patient.patient_phone, form.group_patient_phone_country);
+        form.group_patient_phone_country = phone.countryCode;
+        form.group_patient_phone = phone.localNumber;
+        form.group_patient_phone_full = phone.fullNumber;
+    }
+};
+
+const completeBookingPatientName = (event) => {
+    const matches = getMatchingPatients(event?.query ?? '');
+
+    bookingPatientNameSuggestions.value = uniqueValues(
+        matches.map((patient) => patient.patient_name),
+    );
+};
+
+const completeBookingPatientEmail = (event) => {
+    const matches = getMatchingPatients(event?.query ?? '')
+        .filter((patient) => patient.patient_email);
+
+    bookingPatientEmailSuggestions.value = uniqueValues(
+        matches.map((patient) => patient.patient_email),
+    );
+};
+
+const completeGroupPatientName = (event) => {
+    const matches = getMatchingPatients(event?.query ?? '');
+
+    groupPatientNameSuggestions.value = uniqueValues(
+        matches.map((patient) => patient.patient_name),
+    );
+};
+
+const findPatientByName = (name) => {
+    const normalizedName = normalizeSearch(name);
+
+    if (!normalizedName) {
+        return null;
+    }
+
+    return patientRecords.value.find((patient) => {
+        return normalizeSearch(patient.patient_name) === normalizedName;
+    }) ?? null;
+};
+
+const findPatientByEmail = (email) => {
+    const normalizedEmail = normalizeSearch(email);
+
+    if (!normalizedEmail) {
+        return null;
+    }
+
+    return patientRecords.value.find((patient) => {
+        return normalizeSearch(patient.patient_email) === normalizedEmail;
+    }) ?? null;
+};
+
+const onBookingPatientNameSelect = (event) => {
+    applyBookingPatient(findPatientByName(event?.value));
+};
+
+const onBookingPatientEmailSelect = (event) => {
+    applyBookingPatient(findPatientByEmail(event?.value));
+};
+
+const onGroupPatientNameSelect = (event) => {
+    applyGroupPatient(findPatientByName(event?.value));
+};
 
 const selectedServices = computed(() => {
     return props.services.filter((service) => {
@@ -736,11 +890,16 @@ const submitCreate = (saveScope = null) => {
                         required
                         span="md:col-span-2"
                     >
-                        <InputText
+                        <AutoComplete
                             id="patient_name"
                             v-model="form.patient_name"
+                            :suggestions="bookingPatientNameSuggestions"
+                            dropdown
+                            complete-on-focus
                             class="w-full"
                             placeholder="Meno a priezvisko"
+                            @complete="completeBookingPatientName"
+                            @item-select="onBookingPatientNameSelect"
                         />
                     </FormField>
 
@@ -748,12 +907,16 @@ const submitCreate = (saveScope = null) => {
                         label="E-mail"
                         for="patient_email"
                     >
-                        <InputText
+                        <AutoComplete
                             id="patient_email"
                             v-model="form.patient_email"
-                            type="email"
+                            :suggestions="bookingPatientEmailSuggestions"
+                            dropdown
+                            complete-on-focus
                             class="w-full"
                             placeholder="napr. pacient@email.sk"
+                            @complete="completeBookingPatientEmail"
+                            @item-select="onBookingPatientEmailSelect"
                         />
                     </FormField>
 
@@ -933,12 +1096,17 @@ const submitCreate = (saveScope = null) => {
                         for="group_patient_name"
                         span="md:col-span-2"
                     >
-                        <InputText
+                        <AutoComplete
                             id="group_patient_name"
                             v-model="form.group_patient_name"
+                            :suggestions="groupPatientNameSuggestions"
+                            dropdown
+                            complete-on-focus
                             class="w-full"
                             placeholder="Meno a priezvisko"
                             :disabled="!canAddMoreGroupPatients"
+                            @complete="completeGroupPatientName"
+                            @item-select="onGroupPatientNameSelect"
                         />
                     </FormField>
 

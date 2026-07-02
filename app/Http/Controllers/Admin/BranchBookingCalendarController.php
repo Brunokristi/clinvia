@@ -15,6 +15,7 @@ use App\Models\Service;
 use App\Notifications\RequestCancelledNotification;
 use App\Services\AdminBookingCalendarService;
 use App\Services\CapacityWindowService;
+use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -87,6 +88,7 @@ class BranchBookingCalendarController extends Controller
         Branch $branch,
         AdminBookingCalendarService $calendarService,
         CapacityWindowService $capacityWindowService,
+        PatientDirectoryService $patientDirectoryService,
     ): Response {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -139,6 +141,8 @@ class BranchBookingCalendarController extends Controller
             'branch' => $branch,
 
             'services' => $services,
+
+            'patients' => $patientDirectoryService->getBranchPatientsForAutocomplete($branch),
 
             'availabilityRules' => $availabilityRules,
 

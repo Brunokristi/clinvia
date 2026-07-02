@@ -181,6 +181,7 @@ export function useBookingCalendar(props, options = {}) {
                 'pendingAppointmentRequests',
                 'todayBookingsCount',
                 'unreadMessagesCount',
+                'patients',
             ],
             preserveState: true,
             preserveScroll: true,

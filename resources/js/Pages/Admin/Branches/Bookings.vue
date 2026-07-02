@@ -30,6 +30,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    patients: {
+        type: Array,
+        default: () => [],
+    },
     availabilityRules: {
         type: Array,
         default: () => [],
@@ -298,6 +302,7 @@ const reloadCalendarData = () => {
             'pendingAppointmentRequests',
             'todayBookingsCount',
             'unreadMessagesCount',
+            'patients',
         ],
         preserveState: true,
         preserveScroll: true,
@@ -621,6 +626,7 @@ onBeforeUnmount(() => {
         <EventCreateEditHubDialog
             v-model:visible="createBookingDialogVisible"
             :services="services"
+            :patients="patients"
             :selection="pendingCalendarSelection"
             :prefill="createBookingPrefill"
             @close="closeCreateBookingDialog"
@@ -679,6 +685,7 @@ onBeforeUnmount(() => {
             :capacity-window="selectedCapacityWindow"
             :capacity-windows="calendarCapacityWindows"
             :services="services"
+            :patients="patients"
             :repeat-unit-options="repeatUnitOptions"
             :booking-notes="bookingNotes"
             :loading="false"

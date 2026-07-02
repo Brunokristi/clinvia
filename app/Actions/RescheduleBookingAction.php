@@ -6,6 +6,8 @@ use App\Events\BranchCalendarUpdated;
 use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Service;
+use App\Services\DisabledDayService;
+use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,13 @@ use Illuminate\Validation\ValidationException;
 
 class RescheduleBookingAction
 {
+    public function __construct(
+        private DisabledDayService $disabledDayService,
+        private PatientDirectoryService $patientDirectoryService,
+    )
+    {
+    }
+
     public function execute(Branch $branch, Booking $booking, array $data): Booking
     {
         $booking = DB::transaction(function () use ($branch, $booking, $data): Booking {
@@ -36,6 +45,13 @@ class RescheduleBookingAction
             $primaryService = $this->resolvePrimaryService($services, $lockedBooking, $data);
 
             $startsAt = Carbon::parse($data['starts_at']);
+
+            if ($this->disabledDayService->isDisabled($branch, $startsAt)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Tento deň je v kalendári zakázaný.',
+                ]);
+            }
+
             $endsAt = $this->resolveEndsAt($startsAt, $services, $data);
             $recurrence = $data['recurrence'] ?? $lockedBooking->recurrence;
 
@@ -90,6 +106,13 @@ class RescheduleBookingAction
             branchId: $booking->branch_id,
             action: 'booking_rescheduled',
             bookingId: $booking->id,
+        );
+
+        $this->patientDirectoryService->savePatient(
+            branch: $branch,
+            name: $booking->patient_name,
+            email: $booking->patient_email,
+            phone: $booking->patient_phone,
         );
 
         return $booking->refresh()->load([

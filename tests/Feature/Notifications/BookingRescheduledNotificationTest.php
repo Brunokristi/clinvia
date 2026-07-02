@@ -1,0 +1,75 @@
+<?php
+
+namespace Tests\Feature\Notifications;
+
+use App\Models\Booking;
+use App\Models\Branch;
+use App\Models\Company;
+use App\Models\Service;
+use App\Notifications\BookingRescheduledNotification;
+use Carbon\Carbon;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Tests\TestCase;
+
+class BookingRescheduledNotificationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_new_appointment_label_is_built_from_booking_times_without_slot(): void
+    {
+        $company = Company::query()->create([
+            'legal_name' => 'Clinvia Clinic',
+            'slug' => 'clinvia-reschedule-company-' . Str::random(8),
+            'is_active' => true,
+        ]);
+
+        $branch = Branch::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Reschedule Branch',
+            'slug' => 'reschedule-branch-' . Str::random(6),
+            'type' => 'clinic',
+            'is_active' => true,
+        ]);
+
+        $service = Service::query()->create([
+            'company_id' => $company->id,
+            'branch_id' => $branch->id,
+            'name' => 'Konzultácia',
+            'slug' => 'konzultacia-' . Str::random(8),
+            'is_bookable' => true,
+            'duration_minutes' => 30,
+            'capacity' => 1,
+            'buffer_before_minutes' => 0,
+            'buffer_after_minutes' => 0,
+            'booking_type' => 'individual',
+            'public_booking_type' => 'immediate_booking',
+            'is_active' => true,
+        ]);
+
+        $booking = Booking::query()->create([
+            'branch_id' => $branch->id,
+            'service_id' => $service->id,
+            'patient_name' => 'Test Patient',
+            'patient_email' => 'patient@example.com',
+            'starts_at' => Carbon::parse('2026-08-12 10:30:00', 'Europe/Bratislava'),
+            'ends_at' => Carbon::parse('2026-08-12 11:00:00', 'Europe/Bratislava'),
+            'booking_slot_id' => null,
+            'capacity_window_id' => null,
+        ]);
+
+        $notification = new BookingRescheduledNotification(
+            booking: $booking,
+            oldStartsAt: Carbon::parse('2026-08-10 09:00:00', 'Europe/Bratislava'),
+            oldEndsAt: Carbon::parse('2026-08-10 09:30:00', 'Europe/Bratislava'),
+            reason: 'Posun termínu',
+        );
+
+        $mail = $notification->toMail((object) []);
+        $data = $mail->viewData;
+
+        $this->assertSame('12.08.2026 o 10:30 – 11:00', $data['newAppointmentLabel']);
+        $this->assertNotEmpty($mail->rawAttachments);
+        $this->assertSame('reservation-updated.ics', $mail->rawAttachments[0]['name'] ?? null);
+    }
+}

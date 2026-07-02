@@ -11,6 +11,7 @@ use App\Models\Branch;
 use App\Services\AdminBookingNotificationService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Http\RedirectResponse;
@@ -134,6 +135,8 @@ class BranchBookingController extends Controller
         $scope = $validated['delete_scope'] ?? null;
 
         if ($booking->recurrence && $scope) {
+            $occurrenceDate = $this->resolveOccurrenceDate($booking, $validated['date'] ?? null);
+
             DB::transaction(function () use ($branch, $booking, $createBookingAction, $validated, $scope): void {
                 if ($scope === 'occurrence') {
                     $this->excludeBookingOccurrence(
@@ -165,6 +168,28 @@ class BranchBookingController extends Controller
                 action: 'booking_deleted',
                 bookingId: $booking->id,
             );
+
+            if ($request->boolean('notify_patient', true)) {
+                $booking->refresh()->load(['branch', 'service', 'services', 'capacityWindow']);
+
+                $cancelStartsAt = $scope === 'series'
+                    ? $booking->starts_at?->copy()
+                    : $this->withOccurrenceDate($booking->starts_at?->copy(), $occurrenceDate);
+
+                $cancelEndsAt = $scope === 'series'
+                    ? $booking->ends_at?->copy()
+                    : $this->withOccurrenceDate($booking->ends_at?->copy(), $occurrenceDate);
+
+                if ($booking->patient_email) {
+                    Notification::route('mail', $booking->patient_email)
+                        ->notify(new \App\Notifications\BookingCancelledNotification(
+                            booking: $booking,
+                            reason: $validated['notification_reason'] ?? null,
+                            appointmentStartsAt: $cancelStartsAt,
+                            appointmentEndsAt: $cancelEndsAt,
+                        ));
+                }
+            }
 
             return back()->with('success', 'Rezervácia bola zrušená.');
         }
@@ -437,5 +462,18 @@ class BranchBookingController extends Controller
             'notify_patient' => $data['notify_patient'] ?? false,
             'recurrence' => $data['recurrence'] ?? $seriesRecurrence,
         ]);
+    }
+
+    private function withOccurrenceDate(?Carbon $dateTime, Carbon $occurrenceDate): ?Carbon
+    {
+        if (! $dateTime) {
+            return null;
+        }
+
+        return $dateTime->copy()->setDate(
+            $occurrenceDate->year,
+            $occurrenceDate->month,
+            $occurrenceDate->day,
+        );
     }
 }

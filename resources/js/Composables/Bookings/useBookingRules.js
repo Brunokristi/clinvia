@@ -307,6 +307,16 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
     };
 
+    const blockedDateSet = computed(() => {
+        return new Set(
+            (props.disabledDays ?? [])
+                .map((disabledDay) => String(disabledDay?.date ?? '').slice(0, 10))
+                .filter(Boolean),
+        );
+    });
+
+    const isBlockedDate = (dateString) => blockedDateSet.value.has(dateString);
+
     const getRuleWeekdayCodes = (rule) => {
         if (!Array.isArray(rule?.repeat_weekdays)) {
             return [];
@@ -344,7 +354,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 : candidateWeekdayCode === weekdayCodeFromDate(startDate);
             const intervalMatches = weekDiff >= 0 && weekDiff % intervalWeeks === 0;
 
-            if (weekdayMatches && intervalMatches && !excludedDates.includes(candidateDateString)) {
+            if (
+                weekdayMatches
+                && intervalMatches
+                && !excludedDates.includes(candidateDateString)
+                && !isBlockedDate(candidateDateString)
+            ) {
                 occurrences.push(candidateDateString);
             }
 
@@ -386,6 +401,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 startDate >= calendarStart
                 && startDate <= maxEndDate
                 && !excludedDates.includes(rule.date)
+                && !isBlockedDate(rule.date)
             ) {
                 occurrences.push(rule.date);
             }
@@ -411,6 +427,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             if (
                 occurrenceDate >= calendarStart
                 && !excludedDates.includes(occurrenceDateString)
+                && !isBlockedDate(occurrenceDateString)
             ) {
                 occurrences.push(occurrenceDateString);
             }

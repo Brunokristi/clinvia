@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\CapacityWindow;
 use App\Models\Service;
+use App\Services\DisabledDayService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -13,7 +14,10 @@ use Illuminate\Support\Facades\Schema;
 
 class AdminBookingCalendarService
 {
-    public function __construct(private RecurrenceService $recurrenceService)
+    public function __construct(
+        private RecurrenceService $recurrenceService,
+        private DisabledDayService $disabledDayService,
+    )
     {
     }
 
@@ -25,6 +29,16 @@ class AdminBookingCalendarService
     public function getCalendarBookings(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): Collection
     {
         $supportsRecurringBookings = $this->supportsRecurringBookings();
+        $disabledDateLookup = $this->disabledDayService
+            ->getDisabledDaysForRange($branch, $rangeStart, $rangeEnd)
+            ->mapWithKeys(function ($disabledDay): array {
+                $date = $disabledDay->date instanceof Carbon
+                    ? $disabledDay->date->toDateString()
+                    : Carbon::parse($disabledDay->date)->toDateString();
+
+                return [$date => true];
+            })
+            ->all();
 
         $oneOffBookingsQuery = Booking::query()
             ->with([
@@ -67,8 +81,8 @@ class AdminBookingCalendarService
             ->where('starts_at', '<=', $rangeEnd)
             ->orderBy('starts_at')
             ->get()
-            ->flatMap(function (Booking $booking) use ($rangeStart, $rangeEnd) {
-                return $this->mapRecurringBookingOccurrences($booking, $rangeStart, $rangeEnd);
+            ->flatMap(function (Booking $booking) use ($rangeStart, $rangeEnd, $disabledDateLookup) {
+                return $this->mapRecurringBookingOccurrences($booking, $rangeStart, $rangeEnd, $disabledDateLookup);
             })
             ->values();
 
@@ -186,7 +200,7 @@ class AdminBookingCalendarService
         ];
     }
 
-    private function mapRecurringBookingOccurrences(Booking $booking, Carbon $rangeStart, Carbon $rangeEnd): Collection
+    private function mapRecurringBookingOccurrences(Booking $booking, Carbon $rangeStart, Carbon $rangeEnd, array $disabledDateLookup = []): Collection
     {
         if (! $booking->recurrence) {
             return collect();
@@ -199,6 +213,12 @@ class AdminBookingCalendarService
             recurrence: $booking->recurrence,
             excludedDates: $booking->recurrence_excluded_dates ?? [],
         );
+
+        if ($disabledDateLookup !== []) {
+            $occurrenceDates = $occurrenceDates
+                ->reject(fn (Carbon $occurrenceDate): bool => isset($disabledDateLookup[$occurrenceDate->toDateString()]))
+                ->values();
+        }
 
         return $occurrenceDates->map(function (Carbon $occurrenceDate) use ($booking) {
             $startsAt = Carbon::parse($occurrenceDate->toDateString() . ' ' . $booking->starts_at->format('H:i:s'));

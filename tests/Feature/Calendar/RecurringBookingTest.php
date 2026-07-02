@@ -4,12 +4,15 @@ namespace Tests\Feature\Calendar;
 
 use App\Actions\CreateBookingAction;
 use App\Models\Branch;
+use App\Models\BranchDisabledDay;
 use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\BookingCancelledNotification;
 use App\Services\AdminBookingCalendarService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -101,6 +104,8 @@ class RecurringBookingTest extends TestCase
 
     public function test_recurring_booking_occurrence_can_be_deleted_without_removing_series(): void
     {
+        Notification::fake();
+
         $fixture = $this->createRecurringBookingFixture();
 
         $booking = $fixture['branch']->bookings()->whereNotNull('series_uuid')->firstOrFail();
@@ -111,7 +116,7 @@ class RecurringBookingTest extends TestCase
         ]), [
             'delete_scope' => 'occurrence',
             'date' => '2026-07-08',
-            'notify_patient' => false,
+            'notify_patient' => true,
         ]);
 
         $response->assertSessionHasNoErrors();
@@ -129,6 +134,13 @@ class RecurringBookingTest extends TestCase
 
         $this->assertCount(4, $calendarBookings);
         $this->assertSame(['2026-07-06', '2026-07-13', '2026-07-15', '2026-07-20'], $calendarBookings->pluck('date')->all());
+
+        Notification::assertSentOnDemand(
+            BookingCancelledNotification::class,
+            function (BookingCancelledNotification $notification, array $channels, object $notifiable): bool {
+                return ($notifiable->routes['mail'] ?? null) === 'patient@example.com';
+            },
+        );
     }
 
     public function test_recurring_booking_series_can_be_split_from_date_when_rescheduled(): void
@@ -174,6 +186,39 @@ class RecurringBookingTest extends TestCase
         $this->assertSame(['2026-07-06', '2026-07-08', '2026-07-20', '2026-07-22', '2026-07-27', '2026-07-29'], $calendarBookings->pluck('date')->all());
     }
 
+    public function test_booking_reschedule_to_disabled_day_is_blocked(): void
+    {
+        $fixture = $this->createRecurringBookingFixture();
+
+        BranchDisabledDay::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'created_by' => null,
+            'date' => '2026-07-10',
+            'title' => 'Closed day',
+            'type' => 'holiday',
+            'reason' => null,
+        ]);
+
+        $booking = $fixture['branch']->bookings()->firstOrFail();
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.reschedule', [
+            $fixture['branch']->id,
+            $booking->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-10 10:00:00',
+            'ends_at' => '2026-07-10 10:30:00',
+            'notify_patient' => false,
+        ]);
+
+        $response->assertSessionHasErrors('starts_at');
+
+        $booking->refresh();
+
+        $this->assertSame('2026-07-06', $booking->starts_at->toDateString());
+    }
+
     public function test_recurring_booking_can_be_duplicated_with_recurrence(): void
     {
         $fixture = $this->createRecurringBookingFixture();
@@ -208,6 +253,29 @@ class RecurringBookingTest extends TestCase
         );
 
         $this->assertCount(8, $calendarBookings);
+    }
+
+    public function test_recurring_booking_occurrences_on_disabled_days_are_skipped_in_calendar(): void
+    {
+        $fixture = $this->createRecurringBookingFixture();
+
+        BranchDisabledDay::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'created_by' => null,
+            'date' => '2026-07-08',
+            'title' => 'Closed day',
+            'type' => 'holiday',
+            'reason' => null,
+        ]);
+
+        $calendarBookings = app(AdminBookingCalendarService::class)->getCalendarBookings(
+            $fixture['branch'],
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        );
+
+        $this->assertCount(3, $calendarBookings);
+        $this->assertSame(['2026-07-06', '2026-07-13', '2026-07-15'], $calendarBookings->pluck('date')->all());
     }
 
     private function createRecurringBookingFixture(): array

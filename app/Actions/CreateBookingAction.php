@@ -9,6 +9,7 @@ use App\Models\CapacityWindow;
 use App\Models\Service;
 use App\Notifications\BookingCreatedNotification;
 use App\Services\DisabledDayService;
+use App\Services\PatientDirectoryService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -23,6 +24,7 @@ class CreateBookingAction
     public function __construct(
         private DisabledDayService $disabledDayService,
         private RecurrenceService $recurrenceService,
+        private PatientDirectoryService $patientDirectoryService,
     )
     {
     }
@@ -111,6 +113,13 @@ class CreateBookingAction
             'services',
             'capacityWindow',
         ]);
+
+        $this->patientDirectoryService->savePatient(
+            branch: $branch,
+            name: $booking->patient_name,
+            email: $booking->patient_email,
+            phone: $booking->patient_phone,
+        );
 
         BranchCalendarUpdated::dispatch(
             branchId: $booking->branch_id,

@@ -1,5 +1,6 @@
 <script setup>
 import Button from 'primevue/button';
+import AutoComplete from 'primevue/autocomplete';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
@@ -41,6 +42,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    patients: {
+        type: Array,
+        default: () => [],
+    },
     repeatUnitOptions: {
         type: Array,
         default: () => [],
@@ -75,6 +80,14 @@ const emit = defineEmits([
 const bookingModeOptions = [
     { label: 'Priama rezervácia', value: 'immediate_booking' },
     { label: 'Len cez žiadosť', value: 'appointment_request' },
+];
+
+const phoneCountries = [
+    { value: 'SK', dialCode: '+421' },
+    { value: 'CZ', dialCode: '+420' },
+    { value: 'AT', dialCode: '+43' },
+    { value: 'HU', dialCode: '+36' },
+    { value: 'PL', dialCode: '+48' },
 ];
 
 const createDialogVisible = computed({
@@ -340,6 +353,154 @@ const patientForm = reactive({
     patient_phone_country: 'SK',
     patient_phone_full: '',
 });
+
+const patientNameSuggestions = ref([]);
+const patientEmailSuggestions = ref([]);
+
+const normalizeSearch = (value) => String(value ?? '').trim().toLowerCase();
+
+const patientRecords = computed(() => {
+    return (props.patients ?? [])
+        .map((patient) => ({
+            patient_name: String(patient?.patient_name ?? '').trim(),
+            patient_email: String(patient?.patient_email ?? '').trim(),
+            patient_phone: String(patient?.patient_phone ?? '').trim(),
+        }))
+        .filter((patient) => patient.patient_name);
+});
+
+const uniqueValues = (values) => {
+    const seen = new Set();
+
+    return values.filter((value) => {
+        const key = normalizeSearch(value);
+
+        if (!key || seen.has(key)) {
+            return false;
+        }
+
+        seen.add(key);
+
+        return true;
+    });
+};
+
+const parsePhoneValue = (value, fallbackCountry = 'SK') => {
+    const raw = String(value ?? '').trim();
+
+    if (!raw) {
+        return {
+            countryCode: fallbackCountry,
+            localNumber: '',
+            fullNumber: '',
+        };
+    }
+
+    const normalizedRaw = raw.replace(/\s+/g, ' ').trim();
+    const matchedCountry = phoneCountries.find((country) => normalizedRaw.startsWith(country.dialCode));
+
+    if (!matchedCountry) {
+        return {
+            countryCode: fallbackCountry,
+            localNumber: normalizedRaw,
+            fullNumber: normalizedRaw,
+        };
+    }
+
+    const localNumber = normalizedRaw
+        .slice(matchedCountry.dialCode.length)
+        .trim();
+
+    return {
+        countryCode: matchedCountry.value,
+        localNumber,
+        fullNumber: normalizedRaw,
+    };
+};
+
+const findPatientByName = (name) => {
+    const normalizedName = normalizeSearch(name);
+
+    if (!normalizedName) {
+        return null;
+    }
+
+    return patientRecords.value.find((patient) => {
+        return normalizeSearch(patient.patient_name) === normalizedName;
+    }) ?? null;
+};
+
+const findPatientByEmail = (email) => {
+    const normalizedEmail = normalizeSearch(email);
+
+    if (!normalizedEmail) {
+        return null;
+    }
+
+    return patientRecords.value.find((patient) => {
+        return normalizeSearch(patient.patient_email) === normalizedEmail;
+    }) ?? null;
+};
+
+const applySelectedPatient = (patient) => {
+    if (!patient) {
+        return;
+    }
+
+    if (patient.patient_name) {
+        patientForm.patient_name = patient.patient_name;
+    }
+
+    if (patient.patient_email) {
+        patientForm.patient_email = patient.patient_email;
+    }
+
+    if (patient.patient_phone) {
+        const parsedPhone = parsePhoneValue(patient.patient_phone, patientForm.patient_phone_country);
+        patientForm.patient_phone_country = parsedPhone.countryCode;
+        patientForm.patient_phone = parsedPhone.localNumber;
+        patientForm.patient_phone_full = parsedPhone.fullNumber;
+    }
+};
+
+const completePatientName = (event) => {
+    const query = normalizeSearch(event?.query ?? '');
+    const matches = patientRecords.value.filter((patient) => {
+        if (!query) {
+            return true;
+        }
+
+        return normalizeSearch(patient.patient_name).includes(query)
+            || normalizeSearch(patient.patient_email).includes(query)
+            || normalizeSearch(patient.patient_phone).includes(query);
+    });
+
+    patientNameSuggestions.value = uniqueValues(matches.map((patient) => patient.patient_name));
+};
+
+const completePatientEmail = (event) => {
+    const query = normalizeSearch(event?.query ?? '');
+    const matches = patientRecords.value
+        .filter((patient) => patient.patient_email)
+        .filter((patient) => {
+            if (!query) {
+                return true;
+            }
+
+            return normalizeSearch(patient.patient_email).includes(query)
+                || normalizeSearch(patient.patient_name).includes(query);
+        });
+
+    patientEmailSuggestions.value = uniqueValues(matches.map((patient) => patient.patient_email));
+};
+
+const onPatientNameSelected = (event) => {
+    applySelectedPatient(findPatientByName(event?.value));
+};
+
+const onPatientEmailSelected = (event) => {
+    applySelectedPatient(findPatientByEmail(event?.value));
+};
 
 const rescheduleChoiceVisible = ref(false);
 const pendingReschedulePayload = ref(null);
@@ -1049,23 +1210,32 @@ const addPatientToCapacityWindow = () => {
                 columns="md:grid-cols-2"
             >
                 <FormField label="Meno pacienta" for="capacity_new_patient_name" required span="md:col-span-2">
-                    <InputText
+                    <AutoComplete
                         id="capacity_new_patient_name"
                         v-model="patientForm.patient_name"
+                        :suggestions="patientNameSuggestions"
+                        dropdown
+                        complete-on-focus
                         class="w-full"
                         placeholder="Meno a priezvisko"
                         :disabled="!hasFreeCapacity"
+                        @complete="completePatientName"
+                        @item-select="onPatientNameSelected"
                     />
                 </FormField>
 
                 <FormField label="Email" for="capacity_new_patient_email">
-                    <InputText
+                    <AutoComplete
                         id="capacity_new_patient_email"
                         v-model="patientForm.patient_email"
-                        type="email"
+                        :suggestions="patientEmailSuggestions"
+                        dropdown
+                        complete-on-focus
                         class="w-full"
                         placeholder="email@example.com"
                         :disabled="!hasFreeCapacity"
+                        @complete="completePatientEmail"
+                        @item-select="onPatientEmailSelected"
                     />
                 </FormField>
 
