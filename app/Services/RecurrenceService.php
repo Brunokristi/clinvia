@@ -9,8 +9,9 @@ class RecurrenceService
 {
     public function normalize(array $recurrence): array
     {
-        $frequency = in_array($recurrence['frequency'] ?? 'weekly', ['daily', 'weekly', 'monthly', 'yearly'], true)
-            ? $recurrence['frequency']
+        $requestedFrequency = $recurrence['frequency'] ?? 'weekly';
+        $frequency = in_array($requestedFrequency, ['daily', 'weekly', 'monthly', 'yearly'], true)
+            ? $requestedFrequency
             : 'weekly';
 
         $interval = max(1, (int) ($recurrence['interval'] ?? 1));
@@ -23,8 +24,9 @@ class RecurrenceService
             ->all();
 
         $ends = $recurrence['ends'] ?? [];
-        $endsType = in_array($ends['type'] ?? 'never', ['never', 'on', 'after'], true)
-            ? $ends['type']
+        $requestedEndsType = $ends['type'] ?? 'never';
+        $endsType = in_array($requestedEndsType, ['never', 'on', 'after'], true)
+            ? $requestedEndsType
             : 'never';
 
         return [

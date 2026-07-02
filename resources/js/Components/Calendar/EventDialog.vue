@@ -3,6 +3,7 @@ import Button from 'primevue/button';
 import { computed, ref } from 'vue';
 
 import AppDialog from '@/Components/Dialogs/FormDialog.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
 import EventDateTimeFields from '@/Components/Calendar/EventDateTime.vue';
 
 const props = defineProps({
@@ -104,11 +105,23 @@ const props = defineProps({
     },
     deleteDialogDescription: {
         type: String,
-        default: 'Vyberte, ako chcete tento termín odstrániť.',
+        default: '',
     },
     deleteDialogImpactMessage: {
         type: String,
         default: '',
+    },
+    deleteCountOccurrence: {
+        type: Number,
+        default: 1,
+    },
+    deleteCountFromDate: {
+        type: Number,
+        default: null,
+    },
+    deleteCountSeries: {
+        type: Number,
+        default: null,
     },
     showDateTimeFields: {
         type: Boolean,
@@ -129,6 +142,8 @@ const emit = defineEmits([
 ]);
 
 const deleteDialogVisible = ref(false);
+const deleteScopeDialogVisible = ref(false);
+const selectedDeleteScope = ref('occurrence');
 
 const dialogVisible = computed({
     get: () => props.visible,
@@ -155,12 +170,95 @@ const closeDialog = () => {
     emit('close');
 };
 
+const closeDeleteDialog = () => {
+    deleteDialogVisible.value = false;
+};
+
+const closeDeleteScopeDialog = () => {
+    deleteScopeDialogVisible.value = false;
+};
+
 const openDeleteDialog = () => {
+    selectedDeleteScope.value = 'occurrence';
+
+    if (props.isRepeatable) {
+        deleteScopeDialogVisible.value = true;
+        return;
+    }
+
     deleteDialogVisible.value = true;
 };
 
-const closeDeleteDialog = () => {
-    deleteDialogVisible.value = false;
+const getDeleteCountByScope = (scope) => {
+    if (scope === 'from_date') {
+        return props.deleteCountFromDate;
+    }
+
+    if (scope === 'series') {
+        return props.deleteCountSeries;
+    }
+
+    return props.deleteCountOccurrence;
+};
+
+const getOccurrenceWord = (count) => {
+    if (count === 1) {
+        return 'výskyt';
+    }
+
+    if (count >= 2 && count <= 4) {
+        return 'výskyty';
+    }
+
+    return 'výskytov';
+};
+
+const formatCountLabel = (count) => {
+    const number = Number(count);
+
+    if (!Number.isFinite(number) || number <= 0) {
+        return null;
+    }
+
+    return `${number} ${getOccurrenceWord(number)}`;
+};
+
+const selectedDeleteCountLabel = computed(() => {
+    return formatCountLabel(getDeleteCountByScope(selectedDeleteScope.value));
+});
+
+const deleteScopeLabel = computed(() => {
+    if (selectedDeleteScope.value === 'from_date') {
+        return 'tento a nasledujúce výskyty';
+    }
+
+    if (selectedDeleteScope.value === 'series') {
+        return 'celú sériu';
+    }
+
+    return 'iba tento výskyt';
+});
+
+const deleteConfirmMessage = computed(() => {
+    if (selectedDeleteCountLabel.value) {
+        return `Naozaj chcete odstrániť ${selectedDeleteCountLabel.value}?`;
+    }
+
+    return 'Naozaj chcete odstrániť tento termín?';
+});
+
+const deleteSubMessage = computed(() => {
+    if (props.isRepeatable) {
+        return `Odstráni sa ${deleteScopeLabel.value}.`;
+    }
+
+    return 'Tento krok nie je možné vrátiť späť.';
+});
+
+const chooseDeleteScope = (scope) => {
+    selectedDeleteScope.value = scope;
+    deleteScopeDialogVisible.value = false;
+    deleteDialogVisible.value = true;
 };
 
 const deleteOccurrence = () => {
@@ -176,6 +274,20 @@ const deleteFromNowOn = () => {
 const deleteAll = () => {
     emit('delete-all');
     closeDeleteDialog();
+};
+
+const confirmDelete = () => {
+    if (selectedDeleteScope.value === 'from_date') {
+        deleteFromNowOn();
+        return;
+    }
+
+    if (selectedDeleteScope.value === 'series') {
+        deleteAll();
+        return;
+    }
+
+    deleteOccurrence();
 };
 </script>
 
@@ -202,7 +314,7 @@ const deleteAll = () => {
 
             <slot />
 
-            <div class="flex w-full flex-col-reverse gap-3 border-t border-accent pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex w-full flex-col-reverse gap-3 border-t border-soft pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex flex-wrap gap-2">
                     <Button
                         v-if="showDelete"
@@ -245,80 +357,47 @@ const deleteAll = () => {
     <AppDialog
         v-model:visible="deleteDialogVisible"
         :title="deleteDialogTitle"
-        width="max-w-xl"
+        width="max-w-md"
+        :show-footer="true"
+        close-label="Späť"
         @close="closeDeleteDialog"
     >
-        <div class="space-y-5">
-            <p class="text-sm text-dark">
-                {{ deleteDialogDescription }}
-            </p>
+        <div class="space-y-4">
+            <div class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 rounded-md bg-soft p-3 text-sm text-red-600">
+                <div class="flex h-full min-h-10 items-center justify-center rounded-md bg-white text-dark">
+                    <i class="pi pi-trash text-base" />
+                </div>
 
-            <div
-                v-if="deleteDialogImpactMessage"
-                class="rounded-xl border border-soft bg-soft p-3 text-sm text-dark"
-            >
-                {{ deleteDialogImpactMessage }}
-            </div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-dark">
+                        {{ deleteConfirmMessage }}
+                    </p>
 
-            <div
-                v-if="occurrenceDate"
-                class="flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-sm"
-            >
-                <i class="pi pi-exclamation-triangle text-lg text-amber-500"></i>
-
-                <div>
-                    <span class="block text-xs font-medium text-accent">
-                        Vybraný termín
-                    </span>
-
-                    <strong class="text-dark">
-                        {{ occurrenceDate }}
-                    </strong>
+                    <p class="mt-1 text-xs leading-5 text-dark">
+                        {{ deleteSubMessage }}
+                    </p>
                 </div>
             </div>
-
-            <div class="flex flex-col gap-2.5 pt-2">
-                <Button
-                    type="button"
-                    label="Odstrániť iba tento termín"
-                    icon="pi pi-calendar-times"
-                    severity="warn"
-                    outlined
-                    class="justify-start text-left"
-                    @click="deleteOccurrence"
-                />
-
-                <template v-if="isRepeatable">
-                    <Button
-                        type="button"
-                        label="Odstrániť tento a všetky budúce termíny"
-                        icon="pi pi-forward"
-                        severity="danger"
-                        outlined
-                        class="justify-start text-left"
-                        @click="deleteFromNowOn"
-                    />
-
-                    <Button
-                        type="button"
-                        label="Odstrániť celú sériu"
-                        icon="pi pi-trash"
-                        severity="danger"
-                        class="justify-start text-left"
-                        @click="deleteAll"
-                    />
-                </template>
-            </div>
-
-            <div class="flex justify-end border-t border-soft pt-3">
-                <Button
-                    type="button"
-                    label="Späť"
-                    severity="secondary"
-                    outlined
-                    @click="closeDeleteDialog"
-                />
-            </div>
         </div>
+
+        <template #footer>
+            <Button
+                type="button"
+                label="Odstrániť"
+                severity="danger"
+                @click="confirmDelete"
+            />
+        </template>
     </AppDialog>
+
+    <OccurrenceScopeDialog
+        v-model:visible="deleteScopeDialogVisible"
+        mode="delete"
+        subject-label="termín"
+        :count-occurrence="deleteCountOccurrence"
+        :count-from-date="deleteCountFromDate"
+        :count-series="deleteCountSeries"
+        @select="chooseDeleteScope"
+        @cancel="closeDeleteScopeDialog"
+    />
 </template>

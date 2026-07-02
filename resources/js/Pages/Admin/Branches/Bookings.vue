@@ -2,10 +2,11 @@
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
 import BookingDialog from '@/Components/Booking/BookingDialog.vue';
+import EventCreateEditHubDialog from '@/Components/Booking/EventCreateEditHubDialog.vue';
 import AvailabilityRuleDialog from '@/Components/Booking/AvailabilityRuleDialog.vue';
 import GroupEventDialog from '@/Components/Booking/GroupEventDialog.vue';
 import ConfirmDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
-import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
 
 import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
 
@@ -197,6 +198,7 @@ const {
 
     availabilityRuleDialogVisible,
     ruleRescheduleScopeDialogVisible,
+    bookingRescheduleScopeDialogVisible,
     capacityWindowRescheduleScopeDialogVisible,
     groupEventDialogVisible,
     groupEventOccurrenceDialogVisible,
@@ -236,6 +238,8 @@ const {
 
     cancelBooking,
     duplicateBooking,
+    submitPendingBookingRescheduleScope,
+    cancelPendingBookingReschedule,
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
@@ -261,11 +265,30 @@ const requestSidebar = ref(null);
 const requestSidebarHeight = ref(null);
 let pendingCalendarResizeFrame = null;
 
+const getBufferedReloadRange = () => {
+    const visibleStart = currentCalendarRange.value?.start
+        ? new Date(currentCalendarRange.value.start)
+        : new Date();
+    const visibleEnd = currentCalendarRange.value?.end
+        ? new Date(currentCalendarRange.value.end)
+        : new Date();
+
+    visibleStart.setDate(visibleStart.getDate() - 31);
+    visibleEnd.setMonth(visibleEnd.getMonth() + 6);
+
+    return {
+        start: Number.isNaN(visibleStart.getTime()) ? null : visibleStart,
+        end: Number.isNaN(visibleEnd.getTime()) ? null : visibleEnd,
+    };
+};
+
 const reloadCalendarData = () => {
+    const range = getBufferedReloadRange();
+
     router.reload({
         data: {
-            start: currentCalendarRange.value?.start?.toISOString?.(),
-            end: currentCalendarRange.value?.end?.toISOString?.(),
+            start: range.start?.toISOString?.(),
+            end: range.end?.toISOString?.(),
         },
         only: [
             'availabilityRules',
@@ -595,17 +618,18 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <BookingDialog
-            v-model:create-visible="createBookingDialogVisible"
-            v-model:detail-visible="bookingDialogVisible"
+        <EventCreateEditHubDialog
+            v-model:visible="createBookingDialogVisible"
             :services="services"
             :selection="pendingCalendarSelection"
             :prefill="createBookingPrefill"
-            :booking="selectedBooking"
-            :booking-notes="bookingNotes"
-            :available-slots="selectedBooking ? availableSlotsForBooking(selectedBooking) : []"
-            @close-create="closeCreateBookingDialog"
+            @close="closeCreateBookingDialog"
             @create-booking="continueFromCreateChoice"
+        />
+
+        <BookingDialog
+            v-model:detail-visible="bookingDialogVisible"
+            :booking="selectedBooking"
             @edit-in-unified-form="openBookingInUnifiedEditor"
             @cancel-booking="cancelBooking"
             @duplicate-booking="duplicateBooking"
@@ -633,6 +657,14 @@ onBeforeUnmount(() => {
         />
 
         <OccurrenceScopeDialog
+            v-model:visible="bookingRescheduleScopeDialogVisible"
+            mode="reschedule"
+            subject-label="rezervácia"
+            @select="submitPendingBookingRescheduleScope"
+            @cancel="cancelPendingBookingReschedule"
+        />
+
+        <OccurrenceScopeDialog
             v-model:visible="capacityWindowRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="skupinový termín"
@@ -645,6 +677,7 @@ onBeforeUnmount(() => {
             v-model:occurrence-visible="groupEventOccurrenceDialogVisible"
             :group-event="selectedGroupEvent"
             :capacity-window="selectedCapacityWindow"
+            :capacity-windows="calendarCapacityWindows"
             :services="services"
             :repeat-unit-options="repeatUnitOptions"
             :booking-notes="bookingNotes"

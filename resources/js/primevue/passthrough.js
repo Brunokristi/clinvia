@@ -1513,46 +1513,8 @@ export const primevuePt = {
                 '!text-accent',
                 '!shadow-none',
                 '!whitespace-normal',
+                'placeholder:!text-accent/50',
             ],
-        },
-
-        chipItem: {
-            class: [
-                '!min-w-0',
-                '!max-w-full',
-            ],
-        },
-
-        pcChip: {
-            root: {
-                class: [
-                    '!max-w-full',
-                    '!min-w-0',
-                    '!rounded-md',
-                    '!bg-accent',
-                    '!px-2 !py-0.5',
-                    '!text-white',
-                    '!text-xs !font-medium',
-                ],
-            },
-
-            label: {
-                class: [
-                    '!min-w-0',
-                    '!max-w-[220px]',
-                    'overflow-hidden',
-                    'truncate',
-                    '!text-white',
-                ],
-            },
-
-            removeIcon: {
-                class: [
-                    '!text-white/80 hover:!text-white',
-                    '!text-[10px] cursor-pointer',
-                    'shrink-0',
-                ],
-            },
         },
 
         dropdown: {
@@ -1574,31 +1536,39 @@ export const primevuePt = {
 
         overlay: {
             class: [
-                '!max-w-[calc(100vw-2rem)]',
                 '!rounded-md',
                 '!border !border-soft',
                 '!bg-white',
                 '!shadow-lg',
                 '!overflow-hidden',
+                '!max-w-[400px]',
             ],
         },
 
         header: {
             class: [
-                '!p-2 !border-b !border-soft',
-                'flex items-center justify-between gap-2',
-                '!bg-soft/30',
+                '!px-4 !py-2',
+                '!border-b !border-soft',
+                '!bg-white',
             ],
         },
 
         pcFilter: {
             root: {
                 class: [
-                    '!w-full !rounded-md',
-                    '!bg-white px-3 py-1.5 !border-soft shadow-none',
-                    '!text-sm !text-accent',
+                    '!w-full',
+                    '!rounded-md',
+                    '!border !border-soft',
+                    '!bg-soft',
+                    '!px-3 !py-2',
+                    '!shadow-none',
+                    '!text-normal',
+                    '!text-accent',
+                    'placeholder:!text-accent/50',
                     'hover:!border-accent',
                     'focus:!border-accent',
+                    'focus:!bg-white',
+                    'focus:!ring-0',
                 ],
             },
         },
@@ -1621,14 +1591,14 @@ export const primevuePt = {
             class: [
                 '!rounded-md',
                 '!px-3 !py-2',
-                'flex items-center gap-2',
                 '!text-normal',
                 '!text-accent',
                 'transition-all duration-150',
                 'hover:!bg-soft',
-                'data-[p-selected=true]:!bg-soft',
-                'data-[p-selected=true]:!text-dark',
+                'data-[p-selected=true]:!bg-accent',
+                'data-[p-selected=true]:!text-white',
                 'data-[p-focused=true]:!bg-soft',
+                'data-[p-focused=true]:!text-accent',
             ],
         },
 
@@ -1642,13 +1612,16 @@ export const primevuePt = {
 
         checkbox: {
             root: {
-                class: 'inline-flex items-center',
+                class: [
+                    'inline-flex items-center',
+                ],
             },
 
             box: {
                 class: [
                     'h-4 w-4 rounded',
-                    '!bg-soft !border-soft border',
+                    '!border !border-soft',
+                    '!bg-soft',
                     'transition-all duration-200',
                     'data-[p-checked=true]:!border-accent',
                     'data-[p-checked=true]:!bg-accent',
@@ -1656,7 +1629,50 @@ export const primevuePt = {
             },
 
             icon: {
-                class: 'text-white text-[10px]',
+                class: [
+                    '!text-white',
+                    '!text-[10px]',
+                ],
+            },
+        },
+
+        chipItem: {
+            class: [
+                '!min-w-0',
+                '!max-w-full',
+            ],
+        },
+
+        pcChip: {
+            root: {
+                class: [
+                    '!min-w-0',
+                    '!rounded-md',
+                    '!bg-accent',
+                    '!px-2 !py-0.5',
+                    '!text-white',
+                    '!text-xs !font-medium',
+                ],
+            },
+
+            label: {
+                class: [
+                    '!min-w-0',
+                    '!max-w-[300px]',
+                    '!overflow-hidden',
+                    '!truncate',
+                    '!text-white',
+                ],
+            },
+
+            removeIcon: {
+                class: [
+                    'shrink-0',
+                    '!text-white',
+                    'hover:!text-white',
+                    '!text-[10px]',
+                    'cursor-pointer',
+                ],
             },
         },
 

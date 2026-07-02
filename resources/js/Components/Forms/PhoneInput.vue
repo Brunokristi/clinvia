@@ -89,6 +89,30 @@ watch(fullValue, (value) => {
     emit('update:fullValue', value);
 }, { immediate: true });
 
+watch(() => props.modelValue, (value) => {
+    const normalized = String(value || '').trim();
+
+    if (!normalized) {
+        return;
+    }
+
+    const matchedCountry = phoneCountries.find((item) => normalized.startsWith(item.dialCode));
+
+    if (!matchedCountry) {
+        return;
+    }
+
+    if (matchedCountry.value !== props.countryCode) {
+        emit('update:countryCode', matchedCountry.value);
+    }
+
+    const localValue = normalized.slice(matchedCountry.dialCode.length).trim();
+
+    if (localValue !== normalized) {
+        emit('update:modelValue', localValue);
+    }
+}, { immediate: true });
+
 const updateCountryCode = (value) => {
     emit('update:countryCode', value);
 };

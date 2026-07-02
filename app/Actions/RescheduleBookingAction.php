@@ -9,6 +9,8 @@ use App\Models\Service;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RescheduleBookingAction
@@ -35,16 +37,49 @@ class RescheduleBookingAction
 
             $startsAt = Carbon::parse($data['starts_at']);
             $endsAt = $this->resolveEndsAt($startsAt, $services, $data);
+            $recurrence = $data['recurrence'] ?? $lockedBooking->recurrence;
 
-            $lockedBooking->update([
+            $supportsRecurrenceColumns = Schema::hasColumn('bookings', 'series_uuid')
+                && Schema::hasColumn('bookings', 'recurrence')
+                && Schema::hasColumn('bookings', 'recurrence_excluded_dates');
+
+            $shouldResetRecurrenceExcludedDates = (bool) ($data['reset_recurrence_excluded_dates'] ?? false);
+
+            $seriesUuid = $supportsRecurrenceColumns && $recurrence
+                ? ($lockedBooking->series_uuid ?: (string) Str::uuid())
+                : null;
+
+            $updatePayload = [
                 'service_id' => $primaryService->id,
                 'capacity_window_id' => null,
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
+                'patient_name' => $data['patient_name'] ?? $lockedBooking->patient_name,
+                'patient_email' => array_key_exists('patient_email', $data)
+                    ? $data['patient_email']
+                    : $lockedBooking->patient_email,
+                'patient_phone' => array_key_exists('patient_phone', $data)
+                    ? $data['patient_phone']
+                    : $lockedBooking->patient_phone,
                 'status' => 'confirmed',
                 'admin_note' => $data['admin_note'] ?? $lockedBooking->admin_note,
-                'recurrence' => $data['recurrence'] ?? $lockedBooking->recurrence,
-            ]);
+            ];
+
+            if (Schema::hasColumn('bookings', 'series_uuid')) {
+                $updatePayload['series_uuid'] = $seriesUuid;
+            }
+
+            if (Schema::hasColumn('bookings', 'recurrence')) {
+                $updatePayload['recurrence'] = $supportsRecurrenceColumns ? $recurrence : null;
+            }
+
+            if (Schema::hasColumn('bookings', 'recurrence_excluded_dates')) {
+                $updatePayload['recurrence_excluded_dates'] = $recurrence
+                    ? ($shouldResetRecurrenceExcludedDates ? [] : ($lockedBooking->recurrence_excluded_dates ?? []))
+                    : [];
+            }
+
+            $lockedBooking->update($updatePayload);
 
             $this->syncBookingServices($lockedBooking, $services);
 

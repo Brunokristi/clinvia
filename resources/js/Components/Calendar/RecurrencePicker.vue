@@ -1,10 +1,11 @@
 <script setup>
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
+import DatePicker from 'primevue/datepicker';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import { computed, reactive, ref, watch } from 'vue';
 
+import FormDialog from '@/Components/Dialogs/FormDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 
@@ -28,31 +29,47 @@ const emit = defineEmits([
 ]);
 
 const presetOptions = [
-    { label: 'Neopakovať sa', value: 'never' },
+    { label: 'Neopakovať', value: 'never' },
     { label: 'Každý deň', value: 'daily' },
     { label: 'Každý týždeň', value: 'weekly' },
     { label: 'Každé 2 týždne', value: 'biweekly' },
     { label: 'Každý mesiac', value: 'monthly' },
     { label: 'Každý rok', value: 'yearly' },
-    { label: 'Vlastné opakovanie...', value: 'custom' },
+    { label: 'Vlastné opakovanie', value: 'custom' },
 ];
 
 const unitOptions = [
-    { label: 'Dni', value: 'daily' },
-    { label: 'Týždne', value: 'weekly' },
-    { label: 'Mesiace', value: 'monthly' },
-    { label: 'Roky', value: 'yearly' },
+    { label: 'deň', pluralLabel: 'dni', value: 'daily' },
+    { label: 'týždeň', pluralLabel: 'týždne', value: 'weekly' },
+    { label: 'mesiac', pluralLabel: 'mesiace', value: 'monthly' },
+    { label: 'rok', pluralLabel: 'roky', value: 'yearly' },
 ];
 
 const weekdayOptions = [
-    { label: 'M', value: 'MO' },
-    { label: 'T', value: 'TU' },
-    { label: 'W', value: 'WE' },
-    { label: 'T', value: 'TH' },
-    { label: 'F', value: 'FR' },
-    { label: 'S', value: 'SA' },
-    { label: 'S', value: 'SU' },
+    { label: 'Po', value: 'MO' },
+    { label: 'Ut', value: 'TU' },
+    { label: 'St', value: 'WE' },
+    { label: 'Št', value: 'TH' },
+    { label: 'Pi', value: 'FR' },
+    { label: 'So', value: 'SA' },
+    { label: 'Ne', value: 'SU' },
 ];
+
+const endsTypeOptions = [
+    { label: 'Nikdy', value: 'never' },
+    { label: 'V konkrétny deň', value: 'on' },
+    { label: 'Po určitom počte výskytov', value: 'after' },
+];
+
+const weekdayLabels = {
+    MO: 'pondelok',
+    TU: 'utorok',
+    WE: 'streda',
+    TH: 'štvrtok',
+    FR: 'piatok',
+    SA: 'sobota',
+    SU: 'nedeľa',
+};
 
 const recurrenceMode = ref('never');
 const customVisible = ref(false);
@@ -71,9 +88,11 @@ const normalizedDate = computed(() => {
         return null;
     }
 
-    return props.date instanceof Date
+    const parsed = props.date instanceof Date
         ? props.date
         : new Date(props.date);
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
 });
 
 const weekdayFromDate = computed(() => {
@@ -83,12 +102,71 @@ const weekdayFromDate = computed(() => {
         return 'MO';
     }
 
-    return weekdayOptions[date.getDay()]?.value ?? 'MO';
+    const weekdayMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+    return weekdayMap[date.getDay()] ?? 'MO';
 });
 
-const presetLabel = computed(() => {
-    return presetOptions.find((option) => option.value === recurrenceMode.value)?.label ?? 'Neopakovať sa';
+const selectedWeekdayLabel = computed(() => {
+    return weekdayLabels[weekdayFromDate.value] ?? 'vybraný deň';
 });
+
+const selectedWeekdaysLabel = computed(() => {
+    if (!customDraft.weekdays.length) {
+        return null;
+    }
+
+    return customDraft.weekdays
+        .map((weekday) => weekdayLabels[weekday] ?? weekday)
+        .join(', ');
+});
+
+const customUnitLabel = computed(() => {
+    const interval = Math.max(1, Number(customDraft.interval || 1));
+    const option = unitOptions.find((unit) => unit.value === customDraft.frequency);
+
+    if (!option) {
+        return '';
+    }
+
+    return interval === 1 ? option.label : option.pluralLabel;
+});
+
+const recurrenceHint = computed(() => {
+    if (recurrenceMode.value === 'never') {
+        return 'Termín sa vytvorí iba raz a nebude sa opakovať.';
+    }
+
+    if (recurrenceMode.value === 'daily') {
+        return 'Termín sa bude opakovať každý deň.';
+    }
+
+    if (recurrenceMode.value === 'weekly') {
+        return `Termín sa bude opakovať každý týždeň v rovnaký deň, teda v ${selectedWeekdayLabel.value}.`;
+    }
+
+    if (recurrenceMode.value === 'biweekly') {
+        return `Termín sa bude opakovať každé 2 týždne v rovnaký deň, teda v ${selectedWeekdayLabel.value}.`;
+    }
+
+    if (recurrenceMode.value === 'monthly') {
+        return 'Termín sa bude opakovať každý mesiac v rovnaký deň v mesiaci.';
+    }
+
+    if (recurrenceMode.value === 'yearly') {
+        return 'Termín sa bude opakovať každý rok v rovnaký deň.';
+    }
+
+    if (recurrenceMode.value === 'custom') {
+        return 'Nastavujete vlastné opakovanie. Môžete určiť interval, dni v týždni aj ukončenie opakovania.';
+    }
+
+    return null;
+});
+
+const isSameWeekdaySelection = (weekdays = [], weekday) => {
+    return weekdays.length === 1 && weekdays[0] === weekday;
+};
 
 const recurrenceValue = computed(() => {
     if (recurrenceMode.value === 'never') {
@@ -172,7 +250,9 @@ const recurrenceValue = computed(() => {
         weekdays: [...customDraft.weekdays],
         ends: {
             type: customDraft.endsType,
-            count: customDraft.endsType === 'after' ? Math.max(1, Number(customDraft.endsCount || 1)) : null,
+            count: customDraft.endsType === 'after'
+                ? Math.max(1, Number(customDraft.endsCount || 1))
+                : null,
             until: customDraft.endsType === 'on' && customDraft.endsUntil
                 ? formatDateForBackend(customDraft.endsUntil)
                 : null,
@@ -186,53 +266,46 @@ const recurrenceDescription = computed(() => {
     }
 
     if (recurrenceMode.value === 'daily') {
-        return 'Denne';
+        return 'Opakuje sa každý deň';
     }
 
     if (recurrenceMode.value === 'weekly') {
-        return `Každý týždeň (${weekdayFromDate.value})`;
+        return `Opakuje sa každý týždeň v ${selectedWeekdayLabel.value}`;
     }
 
     if (recurrenceMode.value === 'biweekly') {
-        return `Každé 2 týždne (${weekdayFromDate.value})`;
+        return `Opakuje sa každé 2 týždne v ${selectedWeekdayLabel.value}`;
     }
 
     if (recurrenceMode.value === 'monthly') {
-        return 'Každý mesiac';
+        return 'Opakuje sa každý mesiac';
     }
 
     if (recurrenceMode.value === 'yearly') {
-        return 'Každý rok';
+        return 'Opakuje sa každý rok';
     }
 
     if (recurrenceMode.value === 'custom') {
         const interval = Math.max(1, Number(customDraft.interval || 1));
-        const unitLabel = {
-            daily: interval === 1 ? 'deň' : 'dni',
-            weekly: interval === 1 ? 'týždeň' : 'týždne',
-            monthly: interval === 1 ? 'mesiac' : 'mesiace',
-            yearly: interval === 1 ? 'rok' : 'roky',
-        }[customDraft.frequency] ?? 'interval';
+        let description = `Opakuje sa každé ${interval} ${customUnitLabel.value}`;
 
-        let description = `Každý ${interval}. ${unitLabel}`;
-
-        if (customDraft.frequency === 'weekly' && customDraft.weekdays.length) {
-            description += ` (${customDraft.weekdays.join(', ')})`;
+        if (customDraft.frequency === 'weekly' && selectedWeekdaysLabel.value) {
+            description += ` v dňoch: ${selectedWeekdaysLabel.value}`;
         }
 
         if (customDraft.endsType === 'on' && customDraft.endsUntil) {
-            description += `, do ${formatDateForBackend(customDraft.endsUntil)}`;
+            description += `, do ${formatDateForDisplay(customDraft.endsUntil)}`;
         }
 
         if (customDraft.endsType === 'after') {
             const count = Math.max(1, Number(customDraft.endsCount || 1));
-            description += `, ${count} výskytov`;
+            description += `, ukončí sa po ${count} výskytoch`;
         }
 
         return description;
     }
 
-    return presetLabel.value;
+    return 'Neopakuje sa';
 });
 
 function formatDateForBackend(value) {
@@ -253,28 +326,86 @@ function formatDateForBackend(value) {
     return `${year}-${month}-${day}`;
 }
 
+function formatDateForDisplay(value) {
+    if (!value) {
+        return '—';
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    return date.toLocaleDateString('sk-SK', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+}
+
+const resetCustomDraft = () => {
+    customDraft.frequency = 'weekly';
+    customDraft.interval = 1;
+    customDraft.weekdays = [];
+    customDraft.endsType = 'never';
+    customDraft.endsCount = 1;
+    customDraft.endsUntil = null;
+};
+
 const syncFromValue = (value) => {
     if (!value) {
         recurrenceMode.value = 'never';
+        resetCustomDraft();
+
         return;
     }
 
-    const mode = value.mode ?? 'custom';
+    customDraft.frequency = value.frequency ?? 'weekly';
+    customDraft.interval = value.interval ?? 1;
+    customDraft.weekdays = [...(value.weekdays ?? [])];
+    customDraft.endsType = value.ends?.type ?? 'never';
+    customDraft.endsCount = value.ends?.count ?? 1;
+    customDraft.endsUntil = value.ends?.until
+        ? new Date(`${value.ends.until}T00:00:00`)
+        : null;
 
-    recurrenceMode.value = ['never', 'weekly', 'biweekly', 'monthly', 'custom'].includes(mode)
-        || mode === 'daily'
-        || mode === 'yearly'
-        ? mode
-        : 'custom';
+    const hasCustomEnds = customDraft.endsType !== 'never';
+    const interval = Math.max(1, Number(value.interval ?? 1));
+    const frequency = value.frequency ?? value.mode ?? 'weekly';
+    const weekdays = value.weekdays ?? [];
 
-    if (recurrenceMode.value === 'custom') {
-        customDraft.frequency = value.frequency ?? 'weekly';
-        customDraft.interval = value.interval ?? 1;
-        customDraft.weekdays = [...(value.weekdays ?? [])];
-        customDraft.endsType = value.ends?.type ?? 'never';
-        customDraft.endsCount = value.ends?.count ?? 1;
-        customDraft.endsUntil = value.ends?.until ?? null;
+    if (!hasCustomEnds && frequency === 'daily' && interval === 1) {
+        recurrenceMode.value = 'daily';
+
+        return;
     }
+
+    if (!hasCustomEnds && frequency === 'weekly' && interval === 1 && isSameWeekdaySelection(weekdays, weekdayFromDate.value)) {
+        recurrenceMode.value = 'weekly';
+
+        return;
+    }
+
+    if (!hasCustomEnds && frequency === 'weekly' && interval === 2 && isSameWeekdaySelection(weekdays, weekdayFromDate.value)) {
+        recurrenceMode.value = 'biweekly';
+
+        return;
+    }
+
+    if (!hasCustomEnds && frequency === 'monthly' && interval === 1) {
+        recurrenceMode.value = 'monthly';
+
+        return;
+    }
+
+    if (!hasCustomEnds && frequency === 'yearly' && interval === 1) {
+        recurrenceMode.value = 'yearly';
+
+        return;
+    }
+
+    recurrenceMode.value = 'custom';
 };
 
 watch(() => props.modelValue, (value) => {
@@ -292,6 +423,7 @@ watch(recurrenceMode, (mode) => {
 
 const openCustomDialog = () => {
     syncFromValue(props.modelValue);
+    recurrenceMode.value = 'custom';
     customVisible.value = true;
 };
 
@@ -307,168 +439,219 @@ const toggleWeekday = (weekday) => {
 };
 
 const saveCustom = () => {
+    if (customDraft.frequency === 'weekly' && !customDraft.weekdays.length) {
+        customDraft.weekdays = [weekdayFromDate.value];
+    }
+
     recurrenceMode.value = 'custom';
     emit('update:modelValue', recurrenceValue.value);
     customVisible.value = false;
 };
 
 const cancelCustom = () => {
+    syncFromValue(props.modelValue);
     customVisible.value = false;
 };
 </script>
 
 <template>
-    <FormSection
-        :title="label"
-        columns="md:grid-cols-2"
+    <FormField
+        :label="label"
+        for="recurrence_mode"
+        span="md:col-span-2"
+        class="space-y-1"
     >
-        <FormField
-            label="Opakovanie"
-            for="recurrence_mode"
-            span="md:col-span-2"
+        <Select
+            id="recurrence_mode"
+            v-model="recurrenceMode"
+            :options="presetOptions"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+        />
+
+        <div
+            v-if="recurrenceHint"
+            class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 text-xs text-accent"
         >
-            <Select
-                id="recurrence_mode"
-                v-model="recurrenceMode"
-                :options="presetOptions"
-                option-label="label"
-                option-value="value"
-                class="w-full"
-            />
-        </FormField>
+            <div class="flex h-full min-h-8 items-center justify-center rounded-md bg-soft text-dark">
+                <i class="pi pi-info-circle text-base" />
+            </div>
 
-        <div class="md:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-soft bg-white px-4 py-3">
-            <span class="text-sm text-accent">
-                {{ recurrenceDescription }}
-            </span>
-
-            <Button
-                type="button"
-                label="Vlastné..."
-                severity="secondary"
-                outlined
-                @click="openCustomDialog"
-            />
+            <p class="flex min-w-0 items-center font-medium leading-relaxed">
+                {{ recurrenceHint }}
+            </p>
         </div>
-    </FormSection>
 
-    <Dialog
-        v-model:visible="customVisible"
-        modal
-        header="Vlastné opakovanie"
-        :style="{ width: '32rem' }"
-        :closable="true"
-    >
-        <div class="flex flex-col gap-6">
-            <div>
-                <p class="mb-3 text-sm font-medium text-dark">
-                    Repeat every
+        <div
+            v-if="recurrenceMode === 'custom' && modelValue"
+            class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 rounded-md bg-soft p-3 text-sm text-accent"
+        >
+            <div class="flex h-full min-h-10 items-center justify-center rounded-md bg-white text-accent">
+                <i class="pi pi-refresh text-base" />
+            </div>
+
+            <div class="flex min-w-0 items-center justify-between gap-3">
+                <p class="min-w-0 font-medium text-dark">
+                    {{ recurrenceDescription }}
                 </p>
 
-                <div class="flex items-center gap-3">
+                <Button
+                    type="button"
+                    label="Upraviť"
+                    text
+                    size="small"
+                    @click="openCustomDialog"
+                />
+            </div>
+        </div>
+    </FormField>
+
+    <FormDialog
+        v-model:visible="customVisible"
+        title="Vlastné opakovanie"
+        description="Nastavte, ako často sa má termín opakovať a kedy sa má opakovanie skončiť."
+        width="max-w-2xl"
+        :show-footer="true"
+        close-label="Zrušiť"
+        @close="cancelCustom"
+    >
+        <div class="space-y-6">
+            <FormSection
+                title="Interval opakovania"
+                description="Nastavte, ako často sa má termín opakovať."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Opakovať každých"
+                    for="custom_interval"
+                    required
+                >
                     <InputNumber
+                        id="custom_interval"
                         v-model="customDraft.interval"
                         :min="1"
-                        class="w-24"
+                        class="w-full"
                         input-class="w-full"
                     />
+                </FormField>
 
+                <FormField
+                    label="Jednotka"
+                    for="custom_frequency"
+                    required
+                >
                     <Select
+                        id="custom_frequency"
                         v-model="customDraft.frequency"
                         :options="unitOptions"
+                        option-label="pluralLabel"
+                        option-value="value"
+                        class="w-full"
+                    />
+                </FormField>
+            </FormSection>
+
+            <FormSection
+                v-if="customDraft.frequency === 'weekly'"
+                title="Dni v týždni"
+                description="Vyberte dni, v ktorých sa má termín opakovať."
+                columns="md:grid-cols-1"
+            >
+                <FormField
+                    label="Opakovať v dňoch"
+                    for="custom_weekdays"
+                    span="md:col-span-1"
+                >
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="day in weekdayOptions"
+                            :key="day.value"
+                            type="button"
+                            class="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-sm font-semibold transition"
+                            :class="customDraft.weekdays.includes(day.value)
+                                ? 'bg-dark text-white'
+                                : 'bg-soft text-accent hover:bg-soft/80'"
+                            @click="toggleWeekday(day.value)"
+                        >
+                            {{ day.label }}
+                        </button>
+                    </div>
+                </FormField>
+            </FormSection>
+
+            <FormSection
+                title="Ukončenie opakovania"
+                description="Vyberte, kedy sa má opakovanie skončiť."
+                columns="md:grid-cols-2"
+            >
+                <FormField
+                    label="Koniec opakovania"
+                    for="custom_ends_type"
+                    required
+                    span="md:col-span-2"
+                >
+                    <Select
+                        id="custom_ends_type"
+                        v-model="customDraft.endsType"
+                        :options="endsTypeOptions"
                         option-label="label"
                         option-value="value"
-                        class="w-44"
+                        class="w-full"
                     />
-                </div>
-            </div>
+                </FormField>
 
-            <div v-if="customDraft.frequency === 'weekly'">
-                <p class="mb-3 text-sm font-medium text-dark">
-                    Repeat on
+                <FormField
+                    v-if="customDraft.endsType === 'on'"
+                    label="Dátum ukončenia"
+                    for="custom_ends_until"
+                    required
+                    span="md:col-span-2"
+                >
+                    <DatePicker
+                        id="custom_ends_until"
+                        v-model="customDraft.endsUntil"
+                        date-format="dd.mm.yy"
+                        show-icon
+                        class="w-full"
+                    />
+                </FormField>
+
+                <FormField
+                    v-if="customDraft.endsType === 'after'"
+                    label="Počet výskytov"
+                    for="custom_ends_count"
+                    required
+                    span="md:col-span-2"
+                >
+                    <InputNumber
+                        id="custom_ends_count"
+                        v-model="customDraft.endsCount"
+                        :min="1"
+                        class="w-full"
+                        input-class="w-full"
+                        suffix=" výskytov"
+                    />
+                </FormField>
+            </FormSection>
+
+            <div class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 rounded-md bg-soft p-3 text-sm text-accent">
+                <div class="flex h-full min-h-10 items-center justify-center rounded-md bg-white text-accent">
+                    <i class="pi pi-refresh text-base" />
+                </div>
+
+                <p class="flex min-w-0 items-center font-medium leading-relaxed text-dark">
+                    {{ recurrenceDescription }}
                 </p>
-
-                <div class="flex flex-wrap gap-2">
-                    <button
-                        v-for="day in weekdayOptions"
-                        :key="day.value"
-                        type="button"
-                        class="flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium transition"
-                        :class="customDraft.weekdays.includes(day.value)
-                            ? 'bg-primary/20 text-primary'
-                            : 'bg-soft text-accent hover:bg-soft/80'"
-                        @click="toggleWeekday(day.value)"
-                    >
-                        {{ day.label }}
-                    </button>
-                </div>
-            </div>
-
-            <div>
-                <p class="mb-3 text-sm font-medium text-dark">
-                    Ends
-                </p>
-
-                <div class="flex flex-col gap-3">
-                    <label class="flex items-center gap-3">
-                        <input
-                            v-model="customDraft.endsType"
-                            type="radio"
-                            value="never"
-                        >
-                        <span>Never</span>
-                    </label>
-
-                    <label class="flex items-center gap-3">
-                        <input
-                            v-model="customDraft.endsType"
-                            type="radio"
-                            value="on"
-                        >
-                        <span>On</span>
-
-                        <input
-                            v-if="customDraft.endsType === 'on'"
-                            v-model="customDraft.endsUntil"
-                            type="date"
-                            class="ml-auto w-44 rounded-lg border border-soft bg-white px-3 py-2 text-sm"
-                        >
-                    </label>
-
-                    <label class="flex items-center gap-3">
-                        <input
-                            v-model="customDraft.endsType"
-                            type="radio"
-                            value="after"
-                        >
-                        <span>After</span>
-
-                        <InputNumber
-                            v-if="customDraft.endsType === 'after'"
-                            v-model="customDraft.endsCount"
-                            :min="1"
-                            class="ml-auto w-44"
-                            input-class="w-full"
-                        />
-                    </label>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-3 border-t border-soft pt-4">
-                <Button
-                    type="button"
-                    label="Cancel"
-                    severity="secondary"
-                    text
-                    @click="cancelCustom"
-                />
-
-                <Button
-                    type="button"
-                    label="Done"
-                    @click="saveCustom"
-                />
             </div>
         </div>
-    </Dialog>
+
+        <template #footer>
+            <Button
+                type="button"
+                label="Uložiť opakovanie"
+                @click="saveCustom"
+            />
+        </template>
+    </FormDialog>
 </template>

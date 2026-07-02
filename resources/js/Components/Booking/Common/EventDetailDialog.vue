@@ -46,6 +46,18 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    deleteCountOccurrence: {
+        type: Number,
+        default: 1,
+    },
+    deleteCountFromDate: {
+        type: Number,
+        default: null,
+    },
+    deleteCountSeries: {
+        type: Number,
+        default: null,
+    },
     showDuplicate: {
         type: Boolean,
         default: false,
@@ -93,6 +105,9 @@ const emit = defineEmits([
         :delete-disabled="deleteDisabled"
         :is-repeatable="isRepeatable"
         :occurrence-date="occurrenceDate"
+        :delete-count-occurrence="deleteCountOccurrence"
+        :delete-count-from-date="deleteCountFromDate"
+        :delete-count-series="deleteCountSeries"
         :show-duplicate="showDuplicate"
         :duplicate-label="duplicateLabel"
         :scope-mode="scopeMode"

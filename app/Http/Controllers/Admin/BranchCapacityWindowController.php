@@ -21,7 +21,7 @@ use Illuminate\Validation\ValidationException;
 
 class BranchCapacityWindowController extends Controller
 {
-    public function store(Request $request, Branch $branch): RedirectResponse
+    public function store(Request $request, Branch $branch, CreateBookingAction $createBookingAction): RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -49,7 +49,40 @@ class BranchCapacityWindowController extends Controller
             'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
             'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
             'recurrence.ends.until' => ['nullable', 'date'],
+
+            'patients' => ['nullable', 'array'],
+            'patients.*.patient_name' => ['required_with:patients', 'string', 'max:255'],
+            'patients.*.patient_email' => ['nullable', 'email', 'max:255'],
+            'patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
+
+            // Compatibility alias used by older/newer frontend flows.
+            'group_patients' => ['nullable', 'array'],
+            'group_patients.*.patient_name' => ['required_with:group_patients', 'string', 'max:255'],
+            'group_patients.*.patient_email' => ['nullable', 'email', 'max:255'],
+            'group_patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $rawPatients = collect($validated['patients'] ?? []);
+
+        if ($rawPatients->isEmpty()) {
+            $rawPatients = collect($validated['group_patients'] ?? []);
+        }
+
+        $patients = $rawPatients
+            ->filter(fn (array $patient): bool => filled($patient['patient_name'] ?? null))
+            ->values();
+
+        if ($patients->count() > (int) $validated['capacity']) {
+            throw ValidationException::withMessages([
+                'patients' => 'Počet pacientov nemôže byť vyšší ako kapacita skupinového termínu.',
+            ]);
+        }
+
+        if (($validated['repeats'] ?? false) && $patients->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'patients' => 'Pacientov pri vytvorení môžete pridať len pre jednorazový skupinový termín.',
+            ]);
+        }
 
         if (filled($validated['recurrence'] ?? null)) {
             $validated['recurrence'] = $recurrenceService->normalize($validated['recurrence']);
@@ -68,7 +101,7 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService): int {
+        $createdCount = DB::transaction(function () use ($branch, $service, $validated, $disabledDayService, $patients, $createBookingAction): int {
             $startsAt = Carbon::parse($validated['starts_at']);
             $endsAt = Carbon::parse($validated['ends_at']);
 
@@ -79,7 +112,21 @@ class BranchCapacityWindowController extends Controller
             }
 
             if (! ($validated['repeats'] ?? false)) {
-                $this->createWindow($branch, $service, $startsAt, $endsAt, $validated, null);
+                $capacityWindow = $this->createWindow($branch, $service, $startsAt, $endsAt, $validated, null);
+
+                foreach ($patients as $patient) {
+                    $createBookingAction->execute($branch, [
+                        'capacity_window_id' => $capacityWindow->id,
+                        'service_id' => $service->id,
+                        'starts_at' => $startsAt,
+                        'ends_at' => $endsAt,
+                        'patient_name' => $patient['patient_name'],
+                        'patient_email' => $patient['patient_email'] ?? null,
+                        'patient_phone' => $patient['patient_phone'] ?? null,
+                        'status' => 'confirmed',
+                        'notify_patient' => true,
+                    ]);
+                }
 
                 return 1;
             }
@@ -148,12 +195,15 @@ class BranchCapacityWindowController extends Controller
     public function update(Request $request, Branch $branch, CapacityWindow $capacityWindow): RedirectResponse
     {
         $this->authorizeCapacityWindow($request, $branch, $capacityWindow);
+        $recurrenceService = app(RecurrenceService::class);
 
         $validated = $request->validate([
             'service_id' => ['required', 'integer', 'exists:services,id'],
             'capacity' => ['required', 'integer', 'min:1'],
             'admin_note' => ['nullable', 'string'],
             'public_booking_type' => ['nullable', 'in:appointment_request,immediate_booking'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
 
             /**
              * occurrence = only this one capacity window
@@ -181,7 +231,7 @@ class BranchCapacityWindowController extends Controller
         ]);
 
         if (filled($validated['recurrence'] ?? null)) {
-            $validated['recurrence'] = app(RecurrenceService::class)->normalize($validated['recurrence']);
+            $validated['recurrence'] = $recurrenceService->normalize($validated['recurrence']);
             $validated['update_scope'] = $validated['update_scope'] ?? 'series';
         }
 
@@ -200,12 +250,31 @@ class BranchCapacityWindowController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($capacityWindow, $service, $validated): void {
+        DB::transaction(function () use ($branch, $capacityWindow, $service, $validated, $disabledDayService): void {
             $scope = $this->resolveSeriesScope(
                 requestedScope: $validated['update_scope'] ?? null,
                 applyToSeries: $validated['apply_to_series'] ?? null,
                 capacityWindow: $capacityWindow,
             );
+
+            if (filled($validated['recurrence'] ?? null)) {
+                if ($scope === 'occurrence') {
+                    throw ValidationException::withMessages([
+                        'update_scope' => 'Pri zmene opakovania upravte aspoň tento a nasledujúce termíny.',
+                    ]);
+                }
+
+                $this->rebuildRecurringSeriesForScope(
+                    branch: $branch,
+                    service: $service,
+                    capacityWindow: $capacityWindow,
+                    validated: $validated,
+                    scope: $scope,
+                    disabledDayService: $disabledDayService,
+                );
+
+                return;
+            }
 
             $windows = $this->getCapacityWindowsForScope(
                 capacityWindow: $capacityWindow,
@@ -257,6 +326,123 @@ class BranchCapacityWindowController extends Controller
                 default => 'Skupinový termín bol upravený.',
             },
         );
+    }
+
+    private function rebuildRecurringSeriesForScope(
+        Branch $branch,
+        Service $service,
+        CapacityWindow $capacityWindow,
+        array $validated,
+        string $scope,
+        DisabledDayService $disabledDayService,
+    ): void {
+        $newStartsAt = Carbon::parse($validated['starts_at'] ?? $capacityWindow->starts_at);
+        $newEndsAt = Carbon::parse($validated['ends_at'] ?? $capacityWindow->ends_at);
+
+        if ($scope === 'from_date') {
+            $fromDate = Carbon::parse($validated['from_date'] ?? $capacityWindow->starts_at)->startOfDay();
+
+            if ($newStartsAt->copy()->startOfDay()->lt($fromDate)) {
+                throw ValidationException::withMessages([
+                    'starts_at' => 'Začiatok nového opakovania musí byť od vybraného dátumu.',
+                ]);
+            }
+        }
+
+        $windowsToReplace = $this->getCapacityWindowsForScope(
+            capacityWindow: $capacityWindow,
+            scope: $scope,
+            fromDate: $validated['from_date'] ?? null,
+            activeOnly: true,
+        );
+
+        foreach ($windowsToReplace as $window) {
+            $activeBookingsCount = $window->bookings()
+                ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
+                ->count();
+
+            if ($activeBookingsCount > 0) {
+                throw ValidationException::withMessages([
+                    'recurrence' => 'Opakovanie nie je možné zmeniť, pretože v dotknutých termínoch už sú rezervácie.',
+                ]);
+            }
+        }
+
+        foreach ($windowsToReplace as $window) {
+            $window->update([
+                'status' => 'cancelled',
+            ]);
+        }
+
+        $seriesUuid = $capacityWindow->series_uuid ?: (string) Str::uuid();
+        $repeatEvery = $this->resolveRepeatEvery($validated);
+        $repeatUnit = $this->resolveRepeatUnit($validated);
+        $repeatEndsOn = $this->resolveRecurrenceSeriesEndDate($newStartsAt, $validated, $repeatEvery, $repeatUnit);
+
+        if ($repeatEndsOn->lt($newStartsAt->copy()->startOfDay())) {
+            throw ValidationException::withMessages([
+                'recurrence' => 'Dátum ukončenia opakovania nemôže byť pred prvým termínom.',
+            ]);
+        }
+
+        $cursorStart = $newStartsAt->copy();
+        $cursorEnd = $newEndsAt->copy();
+        $createdCount = 0;
+
+        while ($cursorStart->lte($repeatEndsOn)) {
+            if ($disabledDayService->isDisabled($branch, $cursorStart)) {
+                throw ValidationException::withMessages([
+                    'recurrence' => 'Opakovanie obsahuje zakázaný deň.',
+                ]);
+            }
+
+            $this->createWindow($branch, $service, $cursorStart, $cursorEnd, $validated, $seriesUuid);
+
+            $createdCount++;
+
+            if ($createdCount > 370) {
+                throw ValidationException::withMessages([
+                    'recurrence' => 'Opakovanie je príliš dlhé. Skráťte rozsah opakovania.',
+                ]);
+            }
+
+            match ($repeatUnit) {
+                'days' => $this->addDays($cursorStart, $cursorEnd, $repeatEvery),
+                'months' => $this->addMonths($cursorStart, $cursorEnd, $repeatEvery),
+                default => $this->addWeeks($cursorStart, $cursorEnd, $repeatEvery),
+            };
+        }
+    }
+
+    private function resolveRecurrenceSeriesEndDate(
+        Carbon $startsAt,
+        array $validated,
+        int $repeatEvery,
+        string $repeatUnit,
+    ): Carbon {
+        $normalizedRecurrence = $validated['recurrence'] ?? null;
+        $endsType = $normalizedRecurrence['ends']['type'] ?? 'never';
+
+        if ($endsType === 'on' && filled($normalizedRecurrence['ends']['until'] ?? null)) {
+            return Carbon::parse($normalizedRecurrence['ends']['until'])->endOfDay();
+        }
+
+        if ($endsType === 'after' && filled($normalizedRecurrence['ends']['count'] ?? null)) {
+            $count = max(1, (int) $normalizedRecurrence['ends']['count']);
+            $cursor = $startsAt->copy();
+
+            for ($index = 1; $index < $count; $index++) {
+                match ($repeatUnit) {
+                    'days' => $cursor->addDays($repeatEvery),
+                    'months' => $cursor->addMonths($repeatEvery),
+                    default => $cursor->addWeeks($repeatEvery),
+                };
+            }
+
+            return $cursor->endOfDay();
+        }
+
+        return $startsAt->copy()->addYears(2)->endOfDay();
     }
 
     public function reschedule(
@@ -673,8 +859,8 @@ class BranchCapacityWindowController extends Controller
         Carbon $endsAt,
         array $validated,
         ?string $seriesUuid,
-    ): void {
-        CapacityWindow::query()->create([
+    ): CapacityWindow {
+        return CapacityWindow::query()->create([
             'branch_id' => $branch->id,
             'service_id' => $service->id,
             'series_uuid' => $seriesUuid,

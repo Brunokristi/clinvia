@@ -1,7 +1,8 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import interactionPlugin from '@fullcalendar/interaction';
 import timeGridPlugin from '@fullcalendar/timegrid';
+import { router } from '@inertiajs/vue3';
 
 import { useBookingActions } from './useBookingActions';
 import { useBookingCalendarDialogs } from './useBookingCalendarDialogs';
@@ -16,6 +17,44 @@ export function useBookingCalendar(props, options = {}) {
     const isDateClosedByOpeningHours = options.isDateClosedByOpeningHours ?? (() => false);
     const toggleDisabledDayByDate = options.toggleDisabledDayByDate ?? (() => { });
     const optimisticDisabledDays = ref({});
+    const hiddenEventIds = ref(new Set());
+
+    const hideCalendarEventId = (eventId) => {
+        if (!eventId) {
+            return;
+        }
+
+        const next = new Set(hiddenEventIds.value);
+        next.add(eventId);
+        hiddenEventIds.value = next;
+    };
+
+    const restoreCalendarEventId = (eventId) => {
+        if (!eventId || !hiddenEventIds.value.has(eventId)) {
+            return;
+        }
+
+        const next = new Set(hiddenEventIds.value);
+        next.delete(eventId);
+        hiddenEventIds.value = next;
+    };
+
+    watch(
+        () => [
+            props.calendarBookings,
+            props.availabilityRules,
+            props.calendarCapacityWindows,
+            props.disabledDays,
+        ],
+        () => {
+            if (hiddenEventIds.value.size === 0) {
+                return;
+            }
+
+            // Server payload is now the source of truth; drop stale optimistic hide state.
+            hiddenEventIds.value = new Set();
+        },
+    );
 
     let eventLayoutFrame = null;
     let liveEventLayoutTimer = null;
@@ -88,6 +127,66 @@ export function useBookingCalendar(props, options = {}) {
         end: new Date(Date.now() + (6 * 30 * 24 * 60 * 60 * 1000)),
     });
 
+    const getBufferedReloadRange = (range = null) => {
+        const sourceRange = range ?? currentCalendarRange.value;
+
+        const visibleStart = sourceRange?.start
+            ? new Date(sourceRange.start)
+            : new Date();
+        const visibleEnd = sourceRange?.end
+            ? new Date(sourceRange.end)
+            : new Date();
+
+        visibleStart.setMonth(visibleStart.getMonth() - 2);
+        visibleEnd.setFullYear(visibleEnd.getFullYear() + 2);
+
+        return {
+            start: Number.isNaN(visibleStart.getTime()) ? null : visibleStart,
+            end: Number.isNaN(visibleEnd.getTime()) ? null : visibleEnd,
+        };
+    };
+
+    const loadedCalendarRange = ref(getBufferedReloadRange(currentCalendarRange.value));
+
+    const isRangeLoaded = (start, end) => {
+        if (!(start instanceof Date) || !(end instanceof Date)) {
+            return false;
+        }
+
+        const loadedStart = loadedCalendarRange.value?.start;
+        const loadedEnd = loadedCalendarRange.value?.end;
+
+        if (!(loadedStart instanceof Date) || !(loadedEnd instanceof Date)) {
+            return false;
+        }
+
+        return start >= loadedStart && end <= loadedEnd;
+    };
+
+    const reloadCalendarData = (range = null) => {
+        const bufferedRange = getBufferedReloadRange(range);
+
+        loadedCalendarRange.value = bufferedRange;
+
+        router.reload({
+            data: {
+                start: bufferedRange.start?.toISOString?.(),
+                end: bufferedRange.end?.toISOString?.(),
+            },
+            only: [
+                'availabilityRules',
+                'calendarBookings',
+                'calendarCapacityWindows',
+                'disabledDays',
+                'pendingAppointmentRequests',
+                'todayBookingsCount',
+                'unreadMessagesCount',
+            ],
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
     const dateTime = useBookingDateTime();
 
     const openingHours = useBookingOpeningHours({
@@ -105,25 +204,69 @@ export function useBookingCalendar(props, options = {}) {
         dateTime,
         dialogs,
         isDateRangeInsideOpeningHours: openingHours.isDateRangeInsideOpeningHours,
+        hideCalendarEventId,
+        restoreCalendarEventId,
+        reloadCalendarData,
     });
 
     const bookingActions = useBookingActions({
         props,
         dateTime,
         dialogs,
+        hideCalendarEventId,
+        restoreCalendarEventId,
+        reloadCalendarData,
     });
 
     const capacityWindowActions = useCapacityWindowActions({
         props,
         dateTime,
         dialogs,
+        hideCalendarEventId,
+        restoreCalendarEventId,
+        reloadCalendarData,
     });
+
+    const getCapacityWindowId = (capacityWindow) => {
+        return capacityWindow?.capacity_window_id
+            ?? capacityWindow?.window_id
+            ?? capacityWindow?.id
+            ?? null;
+    };
+
+    watch(
+        () => props.calendarCapacityWindows,
+        (capacityWindows) => {
+            const selectedCapacityWindow = dialogs.selectedCapacityWindow.value;
+
+            if (!selectedCapacityWindow) {
+                return;
+            }
+
+            const selectedId = Number(getCapacityWindowId(selectedCapacityWindow));
+
+            if (!selectedId) {
+                return;
+            }
+
+            const updatedCapacityWindow = (capacityWindows ?? []).find((window) => {
+                return Number(getCapacityWindowId(window)) === selectedId;
+            });
+
+            if (!updatedCapacityWindow) {
+                return;
+            }
+
+            dialogs.selectedCapacityWindow.value = updatedCapacityWindow;
+        },
+    );
 
     const events = useBookingCalendarEvents({
         props,
         showAvailabilityRules,
         showReservations,
         showGroupEvents,
+        hiddenEventIds,
         freeTimeRules: rules.freeTimeRules,
         getDateTime: dateTime.getDateTime,
         getRuleOccurrences: rules.getRuleOccurrences,
@@ -150,7 +293,131 @@ export function useBookingCalendar(props, options = {}) {
         repeat_ends_on: null,
         apply_to_series: false,
         is_enabled: true,
+        group_patients: Array.isArray(data.group_patients)
+            ? data.group_patients.map((patient) => ({
+                patient_name: patient?.patient_name ?? '',
+                patient_email: patient?.patient_email ?? null,
+                patient_phone: patient?.patient_phone ?? null,
+            }))
+            : [],
     });
+
+    const recurrenceFrequencyToRepeatSettings = (recurrence = null) => {
+        const frequency = recurrence?.frequency ?? 'weekly';
+        const baseInterval = Math.max(1, Number(recurrence?.interval ?? 1));
+
+        if (frequency === 'daily') {
+            return {
+                repeat_every: baseInterval,
+                repeat_unit: 'days',
+            };
+        }
+
+        if (frequency === 'monthly') {
+            return {
+                repeat_every: baseInterval,
+                repeat_unit: 'months',
+            };
+        }
+
+        if (frequency === 'yearly') {
+            return {
+                repeat_every: baseInterval * 12,
+                repeat_unit: 'months',
+            };
+        }
+
+        return {
+            repeat_every: baseInterval,
+            repeat_unit: 'weeks',
+        };
+    };
+
+    const addRepeatIntervalToDate = (dateValue, repeatUnit, repeatEvery) => {
+        const next = new Date(dateValue);
+
+        if (repeatUnit === 'days') {
+            next.setDate(next.getDate() + repeatEvery);
+
+            return next;
+        }
+
+        if (repeatUnit === 'months') {
+            next.setMonth(next.getMonth() + repeatEvery);
+
+            return next;
+        }
+
+        next.setDate(next.getDate() + (7 * repeatEvery));
+
+        return next;
+    };
+
+    const resolveRepeatEndsOn = (date, recurrence = null) => {
+        if (!recurrence || !date) {
+            return null;
+        }
+
+        if (recurrence?.ends?.type === 'on' && recurrence?.ends?.until) {
+            return recurrence.ends.until;
+        }
+
+        const startDate = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+
+        if (Number.isNaN(startDate.getTime())) {
+            return null;
+        }
+
+        const { repeat_every, repeat_unit } = recurrenceFrequencyToRepeatSettings(recurrence);
+
+        if (recurrence?.ends?.type === 'after') {
+            const count = Math.max(1, Number(recurrence?.ends?.count ?? 1));
+            let cursor = new Date(startDate);
+
+            for (let index = 1; index < count; index += 1) {
+                cursor = addRepeatIntervalToDate(cursor, repeat_unit, repeat_every);
+            }
+
+            return formatDateOnly(cursor);
+        }
+
+        const fallback = new Date(startDate);
+        fallback.setFullYear(fallback.getFullYear() + 2);
+
+        return formatDateOnly(fallback);
+    };
+
+    const normalizeRuleRepeatForCompare = (rule) => {
+        return {
+            repeats: Boolean(rule?.repeats),
+            repeat_every: Number(rule?.repeat_every ?? 1),
+            repeat_unit: rule?.repeat_unit ?? 'weeks',
+            repeat_weekdays: [...(rule?.repeat_weekdays ?? [])].sort(),
+            repeat_ends_on: rule?.repeat_ends_on ?? null,
+        };
+    };
+
+    const normalizeRecurrenceForCompare = (recurrence = null) => {
+        if (!recurrence) {
+            return null;
+        }
+
+        return {
+            frequency: recurrence.frequency ?? null,
+            interval: Math.max(1, Number(recurrence.interval ?? 1)),
+            weekdays: [...(recurrence.weekdays ?? [])].sort(),
+            ends: {
+                type: recurrence.ends?.type ?? 'never',
+                count: recurrence.ends?.count ?? null,
+                until: recurrence.ends?.until ?? null,
+            },
+        };
+    };
+
+    const hasRecurringRuleChanged = (previousRecurrence = null, nextRecurrence = null) => {
+        return JSON.stringify(normalizeRecurrenceForCompare(previousRecurrence))
+            !== JSON.stringify(normalizeRecurrenceForCompare(nextRecurrence));
+    };
 
     const continueFromCreateChoice = (data) => {
         const selectionInfo = dialogs.getSelectionFromCreateChoiceData(data);
@@ -175,18 +442,45 @@ export function useBookingCalendar(props, options = {}) {
 
             if (data.target_type === 'booking' && data.target_id) {
                 const booking = (props.calendarBookings ?? []).find((item) => {
+                    if (data.target_calendar_event_id) {
+                        return item.calendar_event_id === data.target_calendar_event_id;
+                    }
+
+                    if (data.target_occurrence_date) {
+                        return Number(item.id) === Number(data.target_id)
+                            && item.occurrence_date === data.target_occurrence_date;
+                    }
+
                     return Number(item.id) === Number(data.target_id);
                 }) ?? {
                     id: data.target_id,
+                    booking_id: data.target_id,
                     service_id: data.service_id,
                     service_ids: data.service_ids ?? [],
+                    occurrence_date: data.target_occurrence_date ?? data.date ?? null,
+                    recurrence: data.target_is_recurring ? (data.recurrence ?? null) : null,
                 };
+
+                const recurrenceChanged = hasRecurringRuleChanged(
+                    data.target_original_recurrence ?? booking.recurrence ?? null,
+                    data.recurrence ?? null,
+                );
+                const requestedScope = data.save_scope ?? (data.target_is_recurring ? 'series' : null);
+                const resolvedScope = data.target_is_recurring && recurrenceChanged && requestedScope === 'occurrence'
+                    ? 'series'
+                    : requestedScope;
 
                 bookingActions.rescheduleBooking(booking, {
                     service_id: data.service_id,
                     service_ids: data.service_ids ?? [],
                     starts_at: data.starts_at,
                     ends_at: data.ends_at,
+                    patient_name: data.patient_name,
+                    patient_email: data.patient_email,
+                    patient_phone: data.patient_phone,
+                    recurrence: data.recurrence ?? null,
+                    reschedule_scope: resolvedScope,
+                    date: data.target_occurrence_date ?? data.date ?? null,
                     notify_patient: true,
                 });
 
@@ -203,6 +497,7 @@ export function useBookingCalendar(props, options = {}) {
                 }
 
                 const targetRule = rules.ruleForm.rules[targetRuleIndex];
+                const previousRepeatSignature = normalizeRuleRepeatForCompare(targetRule);
 
                 targetRule.date = selectionInfo.date;
                 targetRule.starts_at = selectionInfo.starts_at;
@@ -210,12 +505,22 @@ export function useBookingCalendar(props, options = {}) {
                 targetRule.service_ids = data.service_ids ?? [];
                 targetRule.public_booking_type = data.public_booking_type ?? targetRule.public_booking_type;
                 targetRule.repeats = Boolean(data.repeats);
-                targetRule.repeat_every = Number(data.repeat_every ?? 1);
-                targetRule.repeat_unit = data.repeat_unit ?? 'weeks';
-                targetRule.repeat_ends_on = data.recurrence?.ends?.type === 'on'
-                    ? data.recurrence?.ends?.until
+                const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
+                targetRule.repeat_every = Number(repeatSettings.repeat_every ?? data.repeat_every ?? 1);
+                targetRule.repeat_unit = repeatSettings.repeat_unit ?? data.repeat_unit ?? 'weeks';
+                targetRule.repeat_weekdays = targetRule.repeat_unit === 'weeks'
+                    ? [...(data.recurrence?.weekdays ?? [])]
+                    : [];
+                targetRule.repeat_ends_on = data.repeats
+                    ? resolveRepeatEndsOn(selectionInfo.date, data.recurrence ?? null)
                     : null;
                 targetRule.is_enabled = Boolean(data.is_enabled ?? true);
+
+                const nextRepeatSignature = normalizeRuleRepeatForCompare(targetRule);
+
+                if (JSON.stringify(previousRepeatSignature) !== JSON.stringify(nextRepeatSignature)) {
+                    targetRule.excluded_dates = [];
+                }
 
                 dialogs.selectedRuleIndex.value = targetRuleIndex;
                 rules.saveRules();
@@ -224,6 +529,8 @@ export function useBookingCalendar(props, options = {}) {
             }
 
             if (data.target_type === 'group_event' && data.target_id) {
+                const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
+
                 capacityWindowActions.saveCapacityWindow({
                     id: Number(data.target_id),
                     capacity_window_id: Number(data.target_id),
@@ -231,12 +538,18 @@ export function useBookingCalendar(props, options = {}) {
                     capacity: Number(data.capacity ?? 5),
                     bookable_places: Number(data.capacity ?? 5),
                     public_booking_type: data.public_booking_type ?? 'immediate_booking',
+                    repeats: Boolean(data.recurrence),
+                    repeat_every: Number(repeatSettings.repeat_every ?? 1),
+                    repeat_unit: repeatSettings.repeat_unit ?? 'weeks',
+                    repeat_ends_on: data.recurrence
+                        ? resolveRepeatEndsOn(selectionInfo.date, data.recurrence ?? null)
+                        : null,
                     date: selectionInfo.date,
                     starts_at: selectionInfo.starts_at,
                     ends_at: selectionInfo.ends_at,
                     original_starts_at: data.original_starts_at ?? data.starts_at,
                     original_ends_at: data.original_ends_at ?? data.ends_at,
-                    update_scope: 'occurrence',
+                    update_scope: data.save_scope ?? 'series',
                 });
             }
 
@@ -260,9 +573,13 @@ export function useBookingCalendar(props, options = {}) {
                 service_ids: data.service_ids ?? [],
                 public_booking_type: data.public_booking_type ?? 'immediate_booking',
                 repeats: Boolean(data.repeats),
-                repeat_every: data.repeat_every ?? 1,
-                repeat_unit: data.repeat_unit ?? 'weeks',
-                repeat_ends_on: null,
+                ...recurrenceFrequencyToRepeatSettings(data.recurrence ?? null),
+                repeat_weekdays: data.recurrence?.frequency === 'weekly'
+                    ? [...(data.recurrence?.weekdays ?? [])]
+                    : [],
+                repeat_ends_on: data.repeats
+                    ? resolveRepeatEndsOn(selectionInfo.date, data.recurrence ?? null)
+                    : null,
                 is_enabled: Boolean(data.is_enabled ?? true),
             });
 
@@ -307,6 +624,10 @@ export function useBookingCalendar(props, options = {}) {
         return booking.service_id ? [booking.service_id] : [];
     };
 
+    const getBookingRecordId = (booking) => {
+        return booking?.booking_id ?? booking?.record_id ?? booking?.id ?? null;
+    };
+
     const openBookingInUnifiedEditor = (booking) => {
         if (!booking) {
             return;
@@ -320,7 +641,11 @@ export function useBookingCalendar(props, options = {}) {
             create_type: 'booking',
             edit_mode: true,
             target_type: 'booking',
-            target_id: booking.id,
+            target_id: getBookingRecordId(booking),
+            target_calendar_event_id: booking.calendar_event_id ?? null,
+            target_occurrence_date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
+            target_is_recurring: Boolean(booking.recurrence),
+            target_original_recurrence: booking.recurrence ?? null,
             date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
             starts_at: booking.starts_at,
             ends_at: booking.ends_at,
@@ -341,6 +666,9 @@ export function useBookingCalendar(props, options = {}) {
         }
 
         const occurrenceDate = payload?.selectedRuleOccurrence?.occurrenceDate ?? rule.date;
+        const recurrenceFrequency = rule.repeat_unit === 'days'
+            ? 'daily'
+            : (rule.repeat_unit === 'months' ? 'monthly' : 'weekly');
 
         dialogs.availabilityRuleDialogVisible.value = false;
 
@@ -357,9 +685,11 @@ export function useBookingCalendar(props, options = {}) {
             public_booking_type: rule.public_booking_type ?? 'immediate_booking',
             recurrence: rule.repeats
                 ? {
-                    frequency: rule.repeat_unit === 'months' ? 'monthly' : 'weekly',
+                    frequency: recurrenceFrequency,
                     interval: Number(rule.repeat_every ?? 1),
-                    weekdays: [],
+                    weekdays: recurrenceFrequency === 'weekly'
+                        ? [...(rule.repeat_weekdays ?? [])]
+                        : [],
                     ends: {
                         type: rule.repeat_ends_on ? 'on' : 'never',
                         count: null,
@@ -634,6 +964,13 @@ export function useBookingCalendar(props, options = {}) {
             start: dateInfo.start,
             end: dateInfo.end,
         };
+
+        if (!isRangeLoaded(dateInfo.start, dateInfo.end)) {
+            reloadCalendarData({
+                start: dateInfo.start,
+                end: dateInfo.end,
+            });
+        }
     };
 
     const calendarOptions = computed(() => {
@@ -909,6 +1246,7 @@ export function useBookingCalendar(props, options = {}) {
 
         availabilityRuleDialogVisible: dialogs.availabilityRuleDialogVisible,
         ruleRescheduleScopeDialogVisible: dialogs.ruleRescheduleScopeDialogVisible,
+        bookingRescheduleScopeDialogVisible: dialogs.bookingRescheduleScopeDialogVisible,
         capacityWindowRescheduleScopeDialogVisible: dialogs.capacityWindowRescheduleScopeDialogVisible,
         groupEventDialogVisible: dialogs.groupEventDialogVisible,
         groupEventOccurrenceDialogVisible: dialogs.groupEventOccurrenceDialogVisible,
@@ -952,6 +1290,8 @@ export function useBookingCalendar(props, options = {}) {
         updateBooking: bookingActions.updateBooking,
         cancelBooking: bookingActions.cancelBooking,
         rescheduleBooking: bookingActions.rescheduleBooking,
+        submitPendingBookingRescheduleScope: bookingActions.submitPendingBookingRescheduleScope,
+        cancelPendingBookingReschedule: bookingActions.cancelPendingBookingReschedule,
 
         cancelCapacityWindow: capacityWindowActions.cancelCapacityWindow,
         rescheduleCapacityWindow: capacityWindowActions.rescheduleCapacityWindow,

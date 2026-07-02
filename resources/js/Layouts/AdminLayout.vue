@@ -174,8 +174,6 @@ watch(
             >
                 <ApplicationLogo
                     class="h-10 w-auto"
-                    type="symbolic"
-                    color="accent"
                 />
             </Link>
 

@@ -13,6 +13,7 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
     const groupEventOccurrenceDialogVisible = ref(false);
     const deleteRuleDialogVisible = ref(false);
     const ruleRescheduleScopeDialogVisible = ref(false);
+    const bookingRescheduleScopeDialogVisible = ref(false);
     const capacityWindowRescheduleScopeDialogVisible = ref(false);
 
     const selectedRuleIndex = ref(null);
@@ -245,6 +246,7 @@ export function useBookingCalendarDialogs({ dateTime, isSelectionInsideOpeningHo
         groupEventOccurrenceDialogVisible,
         deleteRuleDialogVisible,
         ruleRescheduleScopeDialogVisible,
+        bookingRescheduleScopeDialogVisible,
         capacityWindowRescheduleScopeDialogVisible,
 
         selectedRuleIndex,

@@ -41,8 +41,7 @@ class AdminBookingCalendarService
 
         if ($supportsRecurringBookings) {
             $oneOffBookingsQuery->where(function ($query) {
-                $query->whereNull('series_uuid')
-                    ->orWhereNull('recurrence');
+                $query->whereNull('recurrence');
             });
         }
 
@@ -64,7 +63,6 @@ class AdminBookingCalendarService
             ->where('branch_id', $branch->id)
             ->whereNull('capacity_window_id')
             ->whereNotIn('status', ['cancelled', 'rejected'])
-            ->whereNotNull('series_uuid')
             ->whereNotNull('recurrence')
             ->where('starts_at', '<=', $rangeEnd)
             ->orderBy('starts_at')
@@ -139,6 +137,7 @@ class AdminBookingCalendarService
 
         return [
             'id' => $booking->id,
+            'calendar_event_id' => sprintf('booking-%s', $booking->id),
 
             // Keep this temporarily for old dialogs/components.
             // New logic should not depend on booking_slot_id.
@@ -207,7 +206,7 @@ class AdminBookingCalendarService
 
             return [
                 ...$this->mapBooking($booking),
-                'id' => sprintf('booking-%s-%s', $booking->id, $occurrenceDate->toDateString()),
+                'calendar_event_id' => sprintf('booking-%s-%s', $booking->id, $occurrenceDate->toDateString()),
                 'starts_at' => $this->formatCalendarDateTime($startsAt),
                 'ends_at' => $this->formatCalendarDateTime($endsAt),
                 'starts_datetime' => $this->formatCalendarDateTime($startsAt),

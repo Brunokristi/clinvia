@@ -133,7 +133,7 @@ class BranchBookingController extends Controller
 
         $scope = $validated['delete_scope'] ?? null;
 
-        if ($booking->recurrence && filled($booking->series_uuid) && $scope) {
+        if ($booking->recurrence && $scope) {
             DB::transaction(function () use ($branch, $booking, $createBookingAction, $validated, $scope): void {
                 if ($scope === 'occurrence') {
                     $this->excludeBookingOccurrence(
@@ -199,6 +199,7 @@ class BranchBookingController extends Controller
         Branch $branch,
         Booking $booking,
         RescheduleBookingAction $rescheduleBookingAction,
+        RecurrenceService $recurrenceService,
         AdminBookingNotificationService $notificationService,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
@@ -210,20 +211,44 @@ class BranchBookingController extends Controller
             'service_ids.*' => ['integer', 'exists:services,id'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'patient_name' => ['nullable', 'string', 'max:255'],
+            'patient_email' => ['nullable', 'email', 'max:255'],
+            'patient_phone' => ['nullable', 'string', 'max:255'],
             'admin_note' => ['nullable', 'string'],
             'notify_patient' => ['nullable', 'boolean'],
             'notification_reason' => ['nullable', 'string', 'max:1000'],
             'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series'],
             'date' => ['nullable', 'date'],
+            'recurrence' => ['nullable', 'array'],
+            'recurrence.frequency' => ['required_with:recurrence', 'in:daily,weekly,monthly,yearly'],
+            'recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'recurrence.weekdays' => ['nullable', 'array'],
+            'recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'recurrence.ends' => ['nullable', 'array'],
+            'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
+            'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'recurrence.ends.until' => ['nullable', 'date'],
         ]);
+
+        if (filled($validated['recurrence'] ?? null)) {
+            $validated['recurrence'] = $recurrenceService->normalize($validated['recurrence']);
+        }
+
+        $recurrenceChanged = filled($validated['recurrence'] ?? null)
+            && $recurrenceService->normalize($validated['recurrence']) !== $recurrenceService->normalize($booking->recurrence ?? []);
 
         $booking->loadMissing(['services', 'capacityWindow']);
 
         $oldStartsAt = $booking->starts_at?->copy();
         $oldEndsAt = $booking->ends_at?->copy();
 
-        if ($booking->recurrence && filled($booking->series_uuid) && filled($validated['reschedule_scope'] ?? null)) {
+        if ($booking->recurrence && filled($validated['reschedule_scope'] ?? null)) {
             $scope = $validated['reschedule_scope'];
+
+            if ($recurrenceChanged && $scope === 'occurrence') {
+                $scope = 'series';
+                $validated['reschedule_scope'] = 'series';
+            }
 
             if ($scope === 'occurrence') {
                 $this->rescheduleRecurringOccurrence(
@@ -257,6 +282,10 @@ class BranchBookingController extends Controller
                 );
 
                 return back()->with('success', 'Rezervácia bola presunutá.');
+            }
+
+            if ($scope === 'series') {
+                $validated['reset_recurrence_excluded_dates'] = true;
             }
         }
 
@@ -333,7 +362,7 @@ class BranchBookingController extends Controller
         ]);
     }
 
-    private function endBookingSeriesFromDate(Booking $booking, Carbon $occurrenceDate, string $adminNote): void
+    private function endBookingSeriesFromDate(Booking $booking, Carbon $occurrenceDate, ?string $adminNote): void
     {
         $recurrence = $booking->recurrence ?? [];
         $recurrence['ends'] = [
@@ -344,7 +373,7 @@ class BranchBookingController extends Controller
 
         $booking->update([
             'recurrence' => $recurrence,
-            'admin_note' => $adminNote,
+            'admin_note' => $adminNote ?? $booking->admin_note,
         ]);
     }
 

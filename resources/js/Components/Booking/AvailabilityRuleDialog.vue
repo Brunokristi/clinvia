@@ -145,6 +145,84 @@ const occurrenceLabel = computed(() => {
     return formatSlovakDate(occurrenceDate);
 });
 
+const parseDateOnly = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const addRuleInterval = (date, unit, every) => {
+    const next = new Date(date);
+
+    if (unit === 'days') {
+        next.setDate(next.getDate() + every);
+
+        return next;
+    }
+
+    if (unit === 'months') {
+        next.setMonth(next.getMonth() + every);
+
+        return next;
+    }
+
+    next.setDate(next.getDate() + (7 * every));
+
+    return next;
+};
+
+const countRuleOccurrencesBetween = (startDate, endDate, rule) => {
+    if (!startDate || !endDate || endDate < startDate) {
+        return null;
+    }
+
+    const unit = ['days', 'weeks', 'months'].includes(rule?.repeat_unit)
+        ? rule.repeat_unit
+        : 'weeks';
+    const every = Math.max(1, Number(rule?.repeat_every ?? 1));
+
+    let count = 0;
+    let cursor = new Date(startDate);
+
+    while (cursor <= endDate && count < 1000) {
+        count += 1;
+        cursor = addRuleInterval(cursor, unit, every);
+    }
+
+    return count;
+};
+
+const deleteCountOccurrence = computed(() => 1);
+
+const deleteCountSeries = computed(() => {
+    if (!props.rule?.repeats) {
+        return 1;
+    }
+
+    const start = parseDateOnly(props.rule?.date);
+    const end = parseDateOnly(props.rule?.repeat_ends_on);
+
+    return countRuleOccurrencesBetween(start, end, props.rule);
+});
+
+const deleteCountFromDate = computed(() => {
+    if (!props.rule?.repeats) {
+        return 1;
+    }
+
+    const fromDate = parseDateOnly(
+        props.selectedRuleOccurrence?.occurrenceDate
+        ?? props.rule?.date,
+    );
+    const end = parseDateOnly(props.rule?.repeat_ends_on);
+
+    return countRuleOccurrencesBetween(fromDate, end, props.rule);
+});
+
 const ruleInfoItems = computed(() => {
     if (!props.rule) {
         return [];
@@ -227,6 +305,9 @@ const duplicateRule = () => {
         :delete-disabled="!rule"
         :is-repeatable="Boolean(rule?.repeats)"
         :occurrence-date="selectedRuleOccurrence?.occurrenceDate ?? rule?.date"
+        :delete-count-occurrence="deleteCountOccurrence"
+        :delete-count-from-date="deleteCountFromDate"
+        :delete-count-series="deleteCountSeries"
         :show-duplicate="false"
         :show-date-time-fields="false"
         scope-mode="update"

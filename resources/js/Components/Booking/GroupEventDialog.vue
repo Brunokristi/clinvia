@@ -10,7 +10,7 @@ import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceA
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
-import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -32,6 +32,10 @@ const props = defineProps({
     capacityWindow: {
         type: Object,
         default: null,
+    },
+    capacityWindows: {
+        type: Array,
+        default: () => [],
     },
     services: {
         type: Array,
@@ -287,8 +291,17 @@ const closeCreateEditDialog = () => {
 };
 
 const buildSavePayload = (scope = 'occurrence') => {
+    const groupPatients = Array.isArray(props.groupEvent?.group_patients)
+        ? props.groupEvent.group_patients.map((patient) => ({
+            patient_name: patient?.patient_name ?? '',
+            patient_email: patient?.patient_email ?? null,
+            patient_phone: patient?.patient_phone ?? null,
+        }))
+        : [];
+
     return {
         ...props.groupEvent,
+        group_patients: groupPatients,
         update_scope: scope,
         repeat_ends_on: props.groupEvent.repeats ? String(props.groupEvent.repeat_ends_on).slice(0, 10) : null,
         admin_note: null,
@@ -366,6 +379,58 @@ const isCapacityWindowRepeatable = computed(() => {
             || props.capacityWindow?.repeats
             || props.capacityWindow?.is_recurring,
     );
+});
+
+const currentSeriesWindows = computed(() => {
+    const currentWindow = props.capacityWindow;
+    const seriesUuid = currentWindow?.series_uuid ?? null;
+
+    if (!currentWindow) {
+        return [];
+    }
+
+    if (!seriesUuid) {
+        return [currentWindow];
+    }
+
+    return (props.capacityWindows ?? [])
+        .filter((window) => window?.series_uuid === seriesUuid)
+        .sort((first, second) => {
+            const firstStart = new Date(first?.starts_at ?? first?.starts_datetime ?? 0).getTime();
+            const secondStart = new Date(second?.starts_at ?? second?.starts_datetime ?? 0).getTime();
+
+            return firstStart - secondStart;
+        });
+});
+
+const deleteCountOccurrence = computed(() => 1);
+
+const deleteCountSeries = computed(() => {
+    if (!isCapacityWindowRepeatable.value) {
+        return 1;
+    }
+
+    return currentSeriesWindows.value.length || null;
+});
+
+const deleteCountFromDate = computed(() => {
+    if (!isCapacityWindowRepeatable.value) {
+        return 1;
+    }
+
+    const selectedDate = selectedDateForBackend.value;
+
+    if (!selectedDate) {
+        return deleteCountSeries.value;
+    }
+
+    const filtered = currentSeriesWindows.value.filter((window) => {
+        const dateOnly = String(window?.date ?? window?.starts_at ?? window?.starts_datetime ?? '').slice(0, 10);
+
+        return dateOnly >= selectedDate;
+    });
+
+    return filtered.length || null;
 });
 
 const formatDateOnlyForBackend = (value) => {
@@ -655,10 +720,6 @@ const enableEditMode = () => {
     editCapacityWindow();
 };
 
-const openPatientManagementMode = () => {
-    isDetailMode.value = false;
-};
-
 const duplicateCapacityWindow = () => {
     emit('duplicate-capacity-window', props.capacityWindow);
 };
@@ -905,6 +966,9 @@ const addPatientToCapacityWindow = () => {
         :delete-dialog-title="deleteDialogTitle"
         :delete-dialog-description="deleteDialogDescription"
         :delete-dialog-impact-message="deleteDialogImpactMessage"
+        :delete-count-occurrence="deleteCountOccurrence"
+        :delete-count-from-date="deleteCountFromDate"
+        :delete-count-series="deleteCountSeries"
         @close="closeOccurrenceDialog"
         @save="rescheduleCapacityWindow"
         @delete-occurrence="deleteCapacityWindowOccurrence"
@@ -915,8 +979,6 @@ const addPatientToCapacityWindow = () => {
             <EventOccurrenceActions
                 v-if="capacityWindow"
                 v-show="isDetailMode"
-                :show-patients="true"
-                @patients="openPatientManagementMode"
                 @duplicate="duplicateCapacityWindow"
                 @edit="enableEditMode"
             />
@@ -934,7 +996,7 @@ const addPatientToCapacityWindow = () => {
                     </div>
 
                     <div class="flex min-w-0 items-center">
-                        <p class="break-words text-sm font-medium text-dark truncate"">
+                        <p class="break-words text-sm font-medium text-dark truncate">
                             {{ item.value }}
                         </p>
                     </div>

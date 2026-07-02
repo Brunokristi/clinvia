@@ -412,6 +412,11 @@ class BranchBookingCalendarController extends Controller
             'repeats' => (bool) $rule->repeats,
             'repeat_every' => (int) ($rule->repeat_every ?: 1),
             'repeat_unit' => $rule->repeat_unit ?: 'weeks',
+            'repeat_weekdays' => collect($rule->repeat_weekdays ?? [])
+                ->map(fn ($weekday): string => strtoupper((string) $weekday))
+                ->filter(fn (string $weekday): bool => in_array($weekday, ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'], true))
+                ->values()
+                ->all(),
 
             'repeat_ends_on' => $rule->repeat_ends_on
                 ? Carbon::parse($rule->repeat_ends_on)->toDateString()

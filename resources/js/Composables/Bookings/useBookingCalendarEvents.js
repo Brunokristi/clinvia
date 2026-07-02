@@ -5,11 +5,16 @@ export function useBookingCalendarEvents({
     showAvailabilityRules,
     showReservations,
     showGroupEvents,
+    hiddenEventIds,
     freeTimeRules,
     getDateTime,
     getRuleOccurrences,
     getRuleTitle,
 }) {
+    const isHiddenEventId = (eventId) => {
+        return Boolean(eventId) && hiddenEventIds?.value?.has(eventId);
+    };
+
     const normalizeDateOnly = (value) => {
         if (!value) {
             return null;
@@ -62,9 +67,14 @@ export function useBookingCalendarEvents({
         return (freeTimeRules.value ?? []).flatMap((rule) => {
             return getRuleOccurrences(rule).map((occurrenceDate) => {
                 const isRepeatedOccurrence = Boolean(rule.repeats);
+                const eventId = `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${occurrenceDate}`;
+
+                if (isHiddenEventId(eventId)) {
+                    return null;
+                }
 
                 return {
-                    id: `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${occurrenceDate}`,
+                    id: eventId,
                     title: 'Pravidlo rezervácií',
                     start: getDateTimeValue(occurrenceDate, rule.starts_at),
                     end: getDateTimeValue(occurrenceDate, rule.ends_at),
@@ -82,7 +92,7 @@ export function useBookingCalendarEvents({
                         isRepeatedOccurrence,
                     },
                 };
-            });
+            }).filter(Boolean);
         });
     });
 
@@ -92,8 +102,14 @@ export function useBookingCalendarEvents({
         }
 
         return (props.calendarBookings ?? []).map((booking) => {
+            const eventId = booking.calendar_event_id ?? `booking-${booking.id}`;
+
+            if (isHiddenEventId(eventId)) {
+                return null;
+            }
+
             return {
-                id: `booking-${booking.id}`,
+                id: eventId,
                 title: getBookingTitle(booking),
                 start: normalizeCalendarDateTime(booking.starts_datetime ?? booking.starts_at),
                 end: normalizeCalendarDateTime(booking.ends_datetime ?? booking.ends_at),
@@ -108,7 +124,7 @@ export function useBookingCalendarEvents({
                     booking,
                 },
             };
-        });
+        }).filter(Boolean);
     });
 
     const capacityWindowEvents = computed(() => {
@@ -120,9 +136,14 @@ export function useBookingCalendarEvents({
             const bookingsCount = Number(capacityWindow.bookings_count ?? capacityWindow.bookings?.length ?? 0);
             const capacity = Number(capacityWindow.capacity ?? capacityWindow.bookable_places ?? 0);
             const isFull = capacity > 0 && bookingsCount >= capacity;
+            const eventId = `capacity-window-${capacityWindow.id}`;
+
+            if (isHiddenEventId(eventId)) {
+                return null;
+            }
 
             return {
-                id: `capacity-window-${capacityWindow.id}`,
+                id: eventId,
                 title: 'Skupinový termín',
                 start: normalizeCalendarDateTime(capacityWindow.starts_datetime ?? capacityWindow.starts_at),
                 end: normalizeCalendarDateTime(capacityWindow.ends_datetime ?? capacityWindow.ends_at),
@@ -138,7 +159,7 @@ export function useBookingCalendarEvents({
                     capacityWindow,
                 },
             };
-        });
+        }).filter(Boolean);
     });
 
     const disabledDayEvents = computed(() => {

@@ -2,7 +2,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { computed, watch } from 'vue';
 
-export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours }) {
+export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
 
     const showSuccess = (message) => {
@@ -26,6 +26,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const reloadRuleState = () => {
+        if (typeof reloadCalendarData === 'function') {
+            reloadCalendarData();
+
+            return;
+        }
+
         router.reload({
             only: [
                 'availabilityRules',
@@ -92,6 +98,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         repeats: false,
         repeat_every: 1,
         repeat_unit: 'weeks',
+        repeat_weekdays: [],
         repeat_ends_on: null,
         excluded_dates: [],
 
@@ -130,6 +137,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         repeats: Boolean(rule.repeats),
         repeat_every: Number(rule.repeat_every ?? rule.repeat_interval ?? 1),
         repeat_unit: rule.repeat_unit ?? 'weeks',
+        repeat_weekdays: Array.isArray(rule.repeat_weekdays) ? [...rule.repeat_weekdays] : [],
         repeat_ends_on: formatDate(rule.repeat_ends_on),
         excluded_dates: rule.excluded_dates ?? [],
 
@@ -191,7 +199,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         const date = selectedRuleOccurrence.value?.occurrenceDate ?? rule.date;
         const repeatUnit = rule.repeat_unit ?? 'weeks';
-        const recurrenceFrequency = repeatUnit === 'months' ? 'monthly' : 'weekly';
+        const recurrenceFrequency = repeatUnit === 'days'
+            ? 'daily'
+            : (repeatUnit === 'months' ? 'monthly' : 'weekly');
+        const repeatWeekdays = Array.isArray(rule.repeat_weekdays)
+            ? [...rule.repeat_weekdays]
+            : [];
 
         openCreateBookingWithPrefill({
             create_type: 'rule',
@@ -205,7 +218,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 ? {
                     frequency: recurrenceFrequency,
                     interval: Number(rule.repeat_every ?? 1),
-                    weekdays: [],
+                    weekdays: recurrenceFrequency === 'weekly' ? repeatWeekdays : [],
                     ends: {
                         type: rule.repeat_ends_on ? 'on' : 'never',
                         count: null,
@@ -225,6 +238,17 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         return selectedRuleOccurrence.value?.occurrenceDate
             ?? rule?.date
             ?? null;
+    };
+
+    const getSelectedRuleEventId = () => {
+        const rule = getSelectedRule();
+        const occurrenceDate = getSelectedOccurrenceDate();
+
+        if (!rule || !occurrenceDate) {
+            return null;
+        }
+
+        return `rule-${rule.id ?? 'new'}-${selectedRuleIndex.value}-${occurrenceDate}`;
     };
 
     const getServiceNames = (serviceIds) => {
@@ -269,6 +293,74 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         return nextDate;
     };
 
+    const toIsoWeekday = (date) => {
+        const weekday = date.getDay();
+
+        return weekday === 0 ? 7 : weekday;
+    };
+
+    const getWeekStartMonday = (date) => {
+        const monday = new Date(date);
+        const isoWeekday = toIsoWeekday(monday);
+
+        monday.setDate(monday.getDate() - (isoWeekday - 1));
+        monday.setHours(0, 0, 0, 0);
+
+        return monday;
+    };
+
+    const weekdayCodeFromDate = (date) => {
+        return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
+    };
+
+    const getRuleWeekdayCodes = (rule) => {
+        if (!Array.isArray(rule?.repeat_weekdays)) {
+            return [];
+        }
+
+        return [...new Set(rule.repeat_weekdays
+            .map((weekday) => String(weekday).toUpperCase())
+            .filter((weekday) => ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].includes(weekday)))];
+    };
+
+    const getWeeklyRuleOccurrences = ({
+        startDate,
+        maxEndDate,
+        calendarStart,
+        excludedDates,
+        rule,
+    }) => {
+        const occurrences = [];
+        const intervalWeeks = Math.max(1, Number(rule.repeat_every || 1));
+        const weekdayCodes = getRuleWeekdayCodes(rule);
+        const seriesWeekStart = getWeekStartMonday(startDate);
+        const firstCandidate = new Date(Math.max(startDate.getTime(), calendarStart.getTime()));
+
+        firstCandidate.setHours(0, 0, 0, 0);
+
+        let candidate = firstCandidate;
+
+        while (candidate <= maxEndDate) {
+            const candidateDateString = getDateFromDate(candidate);
+            const candidateWeekdayCode = weekdayCodeFromDate(candidate);
+            const candidateWeekStart = getWeekStartMonday(candidate);
+            const weekDiff = Math.floor((candidateWeekStart.getTime() - seriesWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            const weekdayMatches = weekdayCodes.length
+                ? weekdayCodes.includes(candidateWeekdayCode)
+                : candidateWeekdayCode === weekdayCodeFromDate(startDate);
+            const intervalMatches = weekDiff >= 0 && weekDiff % intervalWeeks === 0;
+
+            if (weekdayMatches && intervalMatches && !excludedDates.includes(candidateDateString)) {
+                occurrences.push(candidateDateString);
+            }
+
+            candidate = new Date(candidate);
+            candidate.setDate(candidate.getDate() + 1);
+        }
+
+        return occurrences;
+    };
+
     const getRuleOccurrences = (rule) => {
         const occurrences = [];
 
@@ -305,6 +397,16 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             }
 
             return occurrences;
+        }
+
+        if (rule.repeat_unit === 'weeks') {
+            return getWeeklyRuleOccurrences({
+                startDate,
+                maxEndDate,
+                calendarStart,
+                excludedDates,
+                rule,
+            });
         }
 
         let occurrenceDate = startDate;
@@ -353,6 +455,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             repeats: Boolean(rule.repeats),
             repeat_every: rule.repeats ? Number(rule.repeat_every || 1) : 1,
             repeat_unit: rule.repeats ? (rule.repeat_unit || 'weeks') : 'weeks',
+            repeat_weekdays: rule.repeats ? (rule.repeat_weekdays ?? []) : [],
             repeat_ends_on: rule.repeats ? rule.repeat_ends_on : null,
             excluded_dates: rule.excluded_dates ?? [],
 
@@ -530,6 +633,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const deleteCurrentRuleOccurrence = () => {
         const rule = getSelectedRule();
         const occurrenceDate = getSelectedOccurrenceDate();
+        const eventId = getSelectedRuleEventId();
 
         if (!rule || !occurrenceDate) {
             return;
@@ -540,6 +644,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
             return;
         }
+
+        hideCalendarEventId?.(eventId);
 
         router.post(route('branches.booking.rules.exclude-date', [props.branch.id, rule.id]), {
             date: occurrenceDate,
@@ -552,6 +658,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
+                restoreCalendarEventId?.(eventId);
                 showError('Výskyt voľného času sa nepodarilo vymazať.', errors);
             },
         });
@@ -560,6 +667,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const deleteCurrentRuleFromNowOn = () => {
         const rule = getSelectedRule();
         const occurrenceDate = getSelectedOccurrenceDate();
+        const eventId = getSelectedRuleEventId();
 
         if (!rule || !occurrenceDate) {
             return;
@@ -570,6 +678,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
             return;
         }
+
+        hideCalendarEventId?.(eventId);
 
         router.post(route('branches.booking.rules.end-before-date', [props.branch.id, rule.id]), {
             date: occurrenceDate,
@@ -582,6 +692,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
+                restoreCalendarEventId?.(eventId);
                 showError('Výskyty voľného času sa nepodarilo vymazať.', errors);
             },
         });
@@ -589,6 +700,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
     const deleteCurrentRuleEverywhere = () => {
         const rule = getSelectedRule();
+        const eventId = getSelectedRuleEventId();
 
         if (!rule) {
             return;
@@ -600,6 +712,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             return;
         }
 
+        hideCalendarEventId?.(eventId);
+
         router.delete(route('branches.booking.rules.destroy', [props.branch.id, rule.id]), {
             preserveScroll: true,
             preserveState: true,
@@ -609,6 +723,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
+                restoreCalendarEventId?.(eventId);
                 showError('Voľný čas sa nepodarilo vymazať.', errors);
             },
         });

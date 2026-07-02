@@ -12,7 +12,9 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class BranchAvailabilityRuleController extends Controller
 {
@@ -32,7 +34,7 @@ class BranchAvailabilityRuleController extends Controller
 
             'rules.*.date' => ['required', 'date'],
             'rules.*.starts_at' => ['required', 'date_format:H:i'],
-            'rules.*.ends_at' => ['required', 'date_format:H:i', 'after:rules.*.starts_at'],
+            'rules.*.ends_at' => ['required', 'date_format:H:i'],
 
             'rules.*.service_ids' => ['required', 'array', 'min:1'],
             'rules.*.service_ids.*' => ['integer', 'exists:services,id'],
@@ -41,6 +43,8 @@ class BranchAvailabilityRuleController extends Controller
             'rules.*.repeats' => ['required', 'boolean'],
             'rules.*.repeat_every' => ['nullable', 'integer', 'min:1'],
             'rules.*.repeat_unit' => ['nullable', 'in:days,weeks,months'],
+            'rules.*.repeat_weekdays' => ['nullable', 'array'],
+            'rules.*.repeat_weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
             'rules.*.repeat_ends_on' => ['nullable', 'date'],
 
             'rules.*.recurrence' => ['nullable', 'array'],
@@ -62,7 +66,16 @@ class BranchAvailabilityRuleController extends Controller
         DB::transaction(function () use ($branch, $validated, $recurrenceService): void {
             $keepIds = [];
 
-            foreach ($validated['rules'] as $ruleData) {
+            foreach ($validated['rules'] as $index => $ruleData) {
+                $startsAt = Carbon::createFromFormat('H:i', $ruleData['starts_at']);
+                $endsAt = Carbon::createFromFormat('H:i', $ruleData['ends_at']);
+
+                if (! $startsAt || ! $endsAt || $endsAt->lessThanOrEqualTo($startsAt)) {
+                    throw ValidationException::withMessages([
+                        "rules.{$index}.ends_at" => 'Koniec musí byť neskôr ako začiatok.',
+                    ]);
+                }
+
                 $date = Carbon::parse($ruleData['date'])->startOfDay();
                 $serviceIds = $this->normalizeServiceIds($ruleData['service_ids'] ?? []);
 
@@ -103,6 +116,10 @@ class BranchAvailabilityRuleController extends Controller
                     'excluded_dates' => $this->normalizeDateStrings($ruleData['excluded_dates'] ?? []),
                     'is_enabled' => (bool) $ruleData['is_enabled'],
                 ]);
+
+                if ($this->supportsRepeatWeekdaysColumn()) {
+                    $rule->repeat_weekdays = $this->resolveRepeatWeekdays($ruleData, $recurrenceService);
+                }
 
                 $rule->save();
                 $rule->services()->sync($serviceIds);
@@ -434,7 +451,7 @@ class BranchAvailabilityRuleController extends Controller
             $serviceIds = $this->normalizeServiceIds($sourceRule->service_ids ?? []);
         }
 
-        $newRule = BookingAvailabilityRule::query()->create([
+        $payload = [
             'branch_id' => $sourceRule->branch_id,
 
             'date' => $targetDate->toDateString(),
@@ -458,7 +475,15 @@ class BranchAvailabilityRuleController extends Controller
                 : [],
 
             'is_enabled' => (bool) $sourceRule->is_enabled,
-        ]);
+        ];
+
+        if ($this->supportsRepeatWeekdaysColumn()) {
+            $payload['repeat_weekdays'] = $repeats
+                ? $this->normalizeWeekdayCodes($sourceRule->repeat_weekdays ?? [])
+                : [];
+        }
+
+        $newRule = BookingAvailabilityRule::query()->create($payload);
 
         $newRule->services()->sync($serviceIds);
 
@@ -520,5 +545,35 @@ class BranchAvailabilityRuleController extends Controller
         }
 
         return $ruleData['repeat_ends_on'] ?? null;
+    }
+
+    private function resolveRepeatWeekdays(array $ruleData, RecurrenceService $recurrenceService): array
+    {
+        if (filled($ruleData['recurrence'] ?? null)) {
+            return $this->normalizeWeekdayCodes($ruleData['recurrence']['weekdays'] ?? []);
+        }
+
+        return $this->normalizeWeekdayCodes($ruleData['repeat_weekdays'] ?? []);
+    }
+
+    private function normalizeWeekdayCodes(array $weekdays): array
+    {
+        return collect($weekdays)
+            ->map(fn ($weekday): string => strtoupper((string) $weekday))
+            ->filter(fn (string $weekday): bool => in_array($weekday, ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'], true))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function supportsRepeatWeekdaysColumn(): bool
+    {
+        static $supportsRepeatWeekdays = null;
+
+        if ($supportsRepeatWeekdays === null) {
+            $supportsRepeatWeekdays = Schema::hasColumn('booking_availability_rules', 'repeat_weekdays');
+        }
+
+        return $supportsRepeatWeekdays;
     }
 }

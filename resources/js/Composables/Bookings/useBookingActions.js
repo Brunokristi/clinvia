@@ -2,7 +2,7 @@ import { router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
-export function useBookingActions({ props, dateTime, dialogs }) {
+export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
     const { toLocalDateTimeString } = dateTime;
 
@@ -28,6 +28,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
 
     const {
         bookingDialogVisible,
+        bookingRescheduleScopeDialogVisible,
         createBookingDialogVisible,
         groupEventOccurrenceDialogVisible,
         pendingCalendarSelection,
@@ -38,8 +39,9 @@ export function useBookingActions({ props, dateTime, dialogs }) {
     } = dialogs;
 
     const bookingNotes = ref({});
+    const pendingBookingReschedule = ref(null);
 
-    const reloadCalendarData = () => {
+    const reloadCalendarDataInternal = reloadCalendarData ?? (() => {
         router.reload({
             only: [
                 'calendarBookings',
@@ -52,7 +54,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             preserveScroll: true,
             preserveState: true,
         });
-    };
+    });
 
     const fillBookingNotes = (bookings = []) => {
         bookings.forEach((booking) => {
@@ -71,6 +73,14 @@ export function useBookingActions({ props, dateTime, dialogs }) {
     const closeBookingDialogs = () => {
         bookingDialogVisible.value = false;
         groupEventOccurrenceDialogVisible.value = false;
+    };
+
+    const getBookingRecordId = (booking) => {
+        return booking?.booking_id ?? booking?.record_id ?? booking?.id ?? null;
+    };
+
+    const isBookingRepeatable = (booking) => {
+        return Boolean(booking?.series_uuid || booking?.recurrence || booking?.is_recurring);
     };
 
     const availableSlotsForBooking = () => {
@@ -122,7 +132,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
                 createBookingDialogVisible.value = false;
                 pendingCalendarSelection.value = null;
                 showSuccess('Rezervácia bola vytvorená.');
-                reloadCalendarData();
+                reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 showError('Rezerváciu sa nepodarilo vytvoriť.', errors);
@@ -133,7 +143,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
     const updateBooking = (booking, status, options = {}) => {
         router.put(route('branches.booking.bookings.update', [
             props.branch.id,
-            booking.id,
+            getBookingRecordId(booking),
         ]), {
             status,
             notify_patient: true,
@@ -143,7 +153,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             onSuccess: () => {
                 closeBookingDialogs();
                 showSuccess('Rezervácia bola upravená.');
-                reloadCalendarData();
+                reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 showError('Rezerváciu sa nepodarilo upraviť.', errors);
@@ -152,9 +162,13 @@ export function useBookingActions({ props, dateTime, dialogs }) {
     };
 
     const cancelBooking = (booking, options = {}) => {
+        const eventId = booking?.calendar_event_id ?? `booking-${getBookingRecordId(booking)}`;
+
+        hideCalendarEventId?.(eventId);
+
         router.post(route('branches.booking.bookings.cancel', [
             props.branch.id,
-            booking.id,
+            getBookingRecordId(booking),
         ]), {
             notify_patient: true,
             delete_scope: options.delete_scope ?? null,
@@ -165,9 +179,9 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             onSuccess: () => {
                 closeBookingDialogs();
                 showSuccess('Rezervácia bola zrušená.');
-                reloadCalendarData();
             },
             onError: (errors) => {
+                restoreCalendarEventId?.(eventId);
                 showError('Rezerváciu sa nepodarilo zrušiť.', errors);
             },
         });
@@ -202,12 +216,16 @@ export function useBookingActions({ props, dateTime, dialogs }) {
 
         router.post(route('branches.booking.bookings.reschedule', [
             props.branch.id,
-            booking.id,
+            getBookingRecordId(booking),
         ]), {
             service_id: serviceIds[0] ?? data.service_id ?? booking.service_id,
             service_ids: serviceIds,
             starts_at: data.starts_at ?? null,
             ends_at: data.ends_at ?? null,
+            patient_name: data.patient_name ?? booking.patient_name ?? null,
+            patient_email: data.patient_email ?? booking.patient_email ?? null,
+            patient_phone: data.patient_phone ?? booking.patient_phone ?? null,
+            recurrence: data.recurrence ?? booking.recurrence ?? null,
             notify_patient: true,
             reschedule_scope: data.reschedule_scope ?? null,
             date: data.date ?? booking.occurrence_date ?? booking.starts_at ?? null,
@@ -217,7 +235,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             onSuccess: () => {
                 closeBookingDialogs();
                 showSuccess('Rezervácia bola presunutá.');
-                reloadCalendarData();
+                reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 showError('Rezerváciu sa nepodarilo presunúť.', errors);
@@ -256,17 +274,41 @@ export function useBookingActions({ props, dateTime, dialogs }) {
 
         const serviceIds = getBookingServiceIds(booking);
 
-        router.post(route('branches.booking.bookings.reschedule', [
-            props.branch.id,
-            booking.id,
-        ]), {
+        const payload = {
             service_id: serviceIds[0] ?? booking.service_id,
             service_ids: serviceIds,
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: changeInfo.event.end
                 ? toLocalDateTimeString(changeInfo.event.end)
                 : booking.ends_datetime ?? booking.ends_at,
+            date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
             notify_patient: true,
+        };
+
+        if (isBookingRepeatable(booking)) {
+            changeInfo.revert();
+
+            pendingBookingReschedule.value = {
+                booking,
+                payload,
+            };
+
+            bookingRescheduleScopeDialogVisible.value = true;
+
+            return;
+        }
+
+        router.post(route('branches.booking.bookings.reschedule', [
+            props.branch.id,
+            getBookingRecordId(booking),
+        ]), {
+            service_id: payload.service_id,
+            service_ids: payload.service_ids,
+            starts_at: payload.starts_at,
+            ends_at: payload.ends_at,
+            notify_patient: true,
+            reschedule_scope: 'occurrence',
+            date: payload.date,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -275,10 +317,38 @@ export function useBookingActions({ props, dateTime, dialogs }) {
                 showError('Rezerváciu sa nepodarilo presunúť.', errors);
             },
             onSuccess: () => {
+                changeInfo.event.setExtendedProp('booking', {
+                    ...booking,
+                    starts_at: payload.starts_at,
+                    starts_datetime: payload.starts_at,
+                    ends_at: payload.ends_at,
+                    ends_datetime: payload.ends_at,
+                    occurrence_date: payload.date,
+                });
                 showSuccess('Rezervácia bola presunutá.');
-                reloadCalendarData();
             },
         });
+    };
+
+    const submitPendingBookingRescheduleScope = (scope) => {
+        if (!pendingBookingReschedule.value) {
+            return;
+        }
+
+        const { booking, payload } = pendingBookingReschedule.value;
+
+        rescheduleBooking(booking, {
+            ...payload,
+            reschedule_scope: scope,
+        });
+
+        pendingBookingReschedule.value = null;
+        bookingRescheduleScopeDialogVisible.value = false;
+    };
+
+    const cancelPendingBookingReschedule = () => {
+        pendingBookingReschedule.value = null;
+        bookingRescheduleScopeDialogVisible.value = false;
     };
 
     const convertAppointmentRequest = (receiveInfo) => {
@@ -304,7 +374,7 @@ export function useBookingActions({ props, dateTime, dialogs }) {
             },
             onSuccess: () => {
                 showSuccess('Žiadosť bola premenená na rezerváciu.');
-                reloadCalendarData();
+                reloadCalendarDataInternal();
             },
             onFinish: () => {
                 receiveInfo.event.remove();
@@ -320,6 +390,8 @@ export function useBookingActions({ props, dateTime, dialogs }) {
         duplicateBooking,
         rescheduleBooking,
         rescheduleBookingByCalendarChange,
+        submitPendingBookingRescheduleScope,
+        cancelPendingBookingReschedule,
         updateBooking,
         convertAppointmentRequest,
     };

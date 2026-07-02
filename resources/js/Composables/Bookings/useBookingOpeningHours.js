@@ -34,6 +34,14 @@ export function useBookingOpeningHours({ props, dateTime }) {
         return openingDay.intervals ?? [];
     };
 
+    const getIntervalStartTime = (interval) => {
+        return formatTime(interval?.opens_at ?? interval?.starts_at ?? null);
+    };
+
+    const getIntervalEndTime = (interval) => {
+        return formatTime(interval?.closes_at ?? interval?.ends_at ?? null);
+    };
+
     const isDateDisabled = (date) => {
         if (!date) {
             return false;
@@ -83,8 +91,15 @@ export function useBookingOpeningHours({ props, dateTime }) {
         const endTime = getTimeFromDate(end);
 
         return intervals.some((interval) => {
-            return startTime >= formatTime(interval.opens_at)
-                && endTime <= formatTime(interval.closes_at);
+            const intervalStart = getIntervalStartTime(interval);
+            const intervalEnd = getIntervalEndTime(interval);
+
+            if (!intervalStart || !intervalEnd) {
+                return false;
+            }
+
+            return startTime >= intervalStart
+                && endTime <= intervalEnd;
         });
     };
 
@@ -125,10 +140,11 @@ export function useBookingOpeningHours({ props, dateTime }) {
                     daysOfWeek: [
                         getFullCalendarDayValue(openingDay),
                     ],
-                    startTime: formatTime(interval.opens_at),
-                    endTime: formatTime(interval.closes_at),
+                    startTime: getIntervalStartTime(interval),
+                    endTime: getIntervalEndTime(interval),
                 }));
-            });
+            })
+            .filter((interval) => interval.startTime && interval.endTime);
     };
 
     const getBranchOpeningHoursForCalendar = () => {
@@ -142,15 +158,22 @@ export function useBookingOpeningHours({ props, dateTime }) {
         }
 
         const min = intervals
-            .map((interval) => formatTime(interval.opens_at))
+            .map((interval) => getIntervalStartTime(interval))
             .filter(Boolean)
             .sort()[0];
 
         const max = intervals
-            .map((interval) => formatTime(interval.closes_at))
+            .map((interval) => getIntervalEndTime(interval))
             .filter(Boolean)
             .sort()
             .reverse()[0];
+
+        if (!min || !max) {
+            return {
+                min: '06:00:00',
+                max: '20:00:00',
+            };
+        }
 
         return {
             min: formatCalendarTime(min),

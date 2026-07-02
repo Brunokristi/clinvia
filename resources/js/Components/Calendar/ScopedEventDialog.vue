@@ -3,7 +3,7 @@ import Button from 'primevue/button';
 import { computed, ref } from 'vue';
 
 import EventDialog from '@/Components/Calendar/EventDialog.vue';
-import OccurrenceScopeDialog from '@/Components/Booking/OccurrenceScopeDialog.vue';
+import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
 
 const props = defineProps({
     visible: {
@@ -97,6 +97,18 @@ const props = defineProps({
     occurrenceDate: {
         type: String,
         default: '',
+    },
+    deleteCountOccurrence: {
+        type: Number,
+        default: 1,
+    },
+    deleteCountFromDate: {
+        type: Number,
+        default: null,
+    },
+    deleteCountSeries: {
+        type: Number,
+        default: null,
     },
     showDuplicate: {
         type: Boolean,
@@ -217,6 +229,9 @@ const duplicate = () => {
         :delete-disabled="deleteDisabled"
         :is-repeatable="isRepeatable"
         :occurrence-date="occurrenceDate"
+        :delete-count-occurrence="deleteCountOccurrence"
+        :delete-count-from-date="deleteCountFromDate"
+        :delete-count-series="deleteCountSeries"
         @close="closeDialog"
         @save="handleSave"
         @delete-occurrence="emit('delete-occurrence')"
