@@ -86,6 +86,9 @@ class RescheduleBookingAction
                 'patient_phone' => array_key_exists('patient_phone', $data)
                     ? $data['patient_phone']
                     : $lockedBooking->patient_phone,
+                'patient_birth_number' => array_key_exists('patient_birth_number', $data)
+                    ? $data['patient_birth_number']
+                    : $lockedBooking->patient_birth_number,
                 'status' => 'confirmed',
                 'admin_note' => $data['admin_note'] ?? $lockedBooking->admin_note,
             ];
@@ -122,6 +125,7 @@ class RescheduleBookingAction
             name: $booking->patient_name,
             email: $booking->patient_email,
             phone: $booking->patient_phone,
+            birthNumber: $booking->patient_birth_number,
         );
 
         return $booking->refresh()->load([

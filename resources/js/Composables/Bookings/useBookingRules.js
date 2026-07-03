@@ -88,6 +88,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         ends_at: '16:00',
 
         service_ids: [],
+        public_booking_type: 'immediate_booking',
 
         repeats: false,
         repeat_every: 1,
@@ -127,6 +128,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         ends_at: formatTime(rule.ends_at),
 
         service_ids: getRuleServiceIds(rule),
+        public_booking_type: rule.public_booking_type ?? 'immediate_booking',
 
         repeats: Boolean(rule.repeats),
         repeat_every: Number(rule.repeat_every ?? rule.repeat_interval ?? 1),
@@ -487,8 +489,110 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const cloneRule = (rule) => ({
         ...rule,
         service_ids: [...(rule.service_ids ?? [])],
+        repeat_weekdays: [...(rule.repeat_weekdays ?? [])],
         excluded_dates: [...(rule.excluded_dates ?? [])],
     });
+
+    const normalizeDateOnly = (value) => {
+        const parsed = new Date(`${String(value ?? '').slice(0, 10)}T00:00:00`);
+
+        if (Number.isNaN(parsed.getTime())) {
+            return null;
+        }
+
+        return getDateFromDate(parsed);
+    };
+
+    const subtractOneDay = (dateString) => {
+        const normalized = normalizeDateOnly(dateString);
+
+        if (!normalized) {
+            return null;
+        }
+
+        const date = new Date(`${normalized}T00:00:00`);
+
+        date.setDate(date.getDate() - 1);
+
+        return getDateFromDate(date);
+    };
+
+    const uniqueDateList = (values = []) => {
+        return [...new Set(values.filter(Boolean))].sort();
+    };
+
+    const buildScopedRuleUpdate = ({
+        scope,
+        rule,
+        ruleIndex,
+        occurrenceDate,
+        originalRule,
+    }) => {
+        const normalizedOccurrenceDate = normalizeDateOnly(occurrenceDate);
+
+        if (!normalizedOccurrenceDate || !rule || ruleIndex === null || ruleIndex < 0) {
+            return null;
+        }
+
+        if (scope === 'series' || !originalRule?.repeats) {
+            return [...ruleForm.rules];
+        }
+
+        if (scope === 'occurrence') {
+            const nextRules = [...ruleForm.rules];
+            const restoredSeriesRule = cloneRule(originalRule);
+
+            restoredSeriesRule.excluded_dates = uniqueDateList([
+                ...(restoredSeriesRule.excluded_dates ?? []),
+                normalizedOccurrenceDate,
+            ]);
+
+            nextRules[ruleIndex] = restoredSeriesRule;
+            nextRules.push({
+                ...cloneRule(rule),
+                id: null,
+                date: normalizedOccurrenceDate,
+                repeats: false,
+                repeat_every: 1,
+                repeat_unit: 'weeks',
+                repeat_weekdays: [],
+                repeat_ends_on: null,
+                excluded_dates: [],
+            });
+
+            return nextRules;
+        }
+
+        if (scope === 'from_date') {
+            const normalizedOriginalDate = normalizeDateOnly(originalRule?.date ?? rule.date);
+
+            if (!normalizedOriginalDate || normalizedOccurrenceDate <= normalizedOriginalDate) {
+                return [...ruleForm.rules];
+            }
+
+            const previousSeriesRule = cloneRule(originalRule);
+
+            previousSeriesRule.repeat_ends_on = subtractOneDay(normalizedOccurrenceDate);
+            previousSeriesRule.excluded_dates = (previousSeriesRule.excluded_dates ?? [])
+                .filter((date) => String(date).slice(0, 10) < normalizedOccurrenceDate);
+
+            const followingSeriesRule = {
+                ...cloneRule(rule),
+                id: null,
+                excluded_dates: (rule.excluded_dates ?? [])
+                    .filter((date) => String(date).slice(0, 10) >= normalizedOccurrenceDate),
+            };
+
+            const nextRules = [...ruleForm.rules];
+
+            nextRules[ruleIndex] = previousSeriesRule;
+            nextRules.push(followingSeriesRule);
+
+            return nextRules;
+        }
+
+        return [...ruleForm.rules];
+    };
 
     const restorePendingRuleReschedule = () => {
         if (selectedRuleOccurrence.value?.originalRule && currentRule.value) {
@@ -511,14 +615,48 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const saveRules = (options = {}) => {
-        const scope = typeof options === 'string'
-            ? options
-            : options.reschedule_scope ?? null;
+        const normalizedOptions = typeof options === 'string'
+            ? { reschedule_scope: options }
+            : (options ?? {});
+
+        const rescheduleScope = normalizedOptions.reschedule_scope ?? null;
+        const updateScope = normalizedOptions.update_scope ?? null;
 
         const rule = currentRule.value;
-        const occurrenceDate = getSelectedOccurrenceDate();
+        const occurrenceDate = normalizedOptions.occurrence_date ?? getSelectedOccurrenceDate();
 
-        if (scope && rule?.id && occurrenceDate) {
+        if (updateScope && rule?.id && occurrenceDate) {
+            const previousRules = ruleForm.rules.map((entry) => cloneRule(entry));
+            const nextRules = buildScopedRuleUpdate({
+                scope: updateScope,
+                rule,
+                ruleIndex: selectedRuleIndex.value,
+                occurrenceDate,
+                originalRule: cloneRule(normalizedOptions.original_rule ?? selectedRuleOccurrence.value?.originalRule ?? rule),
+            });
+
+            if (!nextRules) {
+                return;
+            }
+
+            ruleForm.rules = nextRules;
+
+            submitRules({
+                onSuccess: () => {
+                    closeRuleAfterSave();
+                    showSuccess('Voľný čas bol uložený.');
+                    reloadRuleStateSoon();
+                },
+                onError: (errors) => {
+                    ruleForm.rules = previousRules;
+                    showError('Voľný čas sa nepodarilo uložiť.', errors);
+                },
+            });
+
+            return;
+        }
+
+        if (rescheduleScope && rule?.id && occurrenceDate) {
             router.post(route('branches.booking.rules.reschedule', [
                 props.branch.id,
                 rule.id,
@@ -527,7 +665,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 date: rule.date,
                 starts_at: rule.starts_at,
                 ends_at: rule.ends_at,
-                reschedule_scope: scope,
+                reschedule_scope: rescheduleScope,
             }, {
                 preserveScroll: true,
                 preserveState: true,

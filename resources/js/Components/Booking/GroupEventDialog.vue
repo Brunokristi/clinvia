@@ -310,6 +310,7 @@ const buildSavePayload = (scope = 'occurrence') => {
             patient_name: patient?.patient_name ?? '',
             patient_email: patient?.patient_email ?? null,
             patient_phone: patient?.patient_phone ?? null,
+            patient_birth_number: patient?.patient_birth_number ?? null,
         }))
         : [];
 
@@ -352,6 +353,7 @@ const patientForm = reactive({
     patient_name: '',
     patient_email: '',
     patient_phone: '',
+    patient_birth_number: '',
     patient_phone_country: 'SK',
     patient_phone_full: '',
 });
@@ -367,9 +369,20 @@ const patientRecords = computed(() => {
             patient_name: String(patient?.patient_name ?? '').trim(),
             patient_email: String(patient?.patient_email ?? '').trim(),
             patient_phone: String(patient?.patient_phone ?? '').trim(),
+            patient_birth_number: String(patient?.patient_birth_number ?? '').trim(),
         }))
         .filter((patient) => patient.patient_name);
 });
+
+const formatPatientSuggestionLabel = (patient) => {
+    const details = [patient.patient_birth_number, patient.patient_email, patient.patient_phone]
+        .filter((value) => String(value ?? '').trim().length > 0)
+        .join(' · ');
+
+    return details
+        ? `${patient.patient_name} (${details})`
+        : patient.patient_name;
+};
 
 const uniqueValues = (values) => {
     const seen = new Set();
@@ -463,6 +476,10 @@ const applySelectedPatient = (patient) => {
         patientForm.patient_phone = parsedPhone.localNumber;
         patientForm.patient_phone_full = parsedPhone.fullNumber;
     }
+
+    if (patient.patient_birth_number) {
+        patientForm.patient_birth_number = patient.patient_birth_number;
+    }
 };
 
 const completePatientName = (event) => {
@@ -474,10 +491,15 @@ const completePatientName = (event) => {
 
         return normalizeSearch(patient.patient_name).includes(query)
             || normalizeSearch(patient.patient_email).includes(query)
-            || normalizeSearch(patient.patient_phone).includes(query);
+            || normalizeSearch(patient.patient_phone).includes(query)
+            || normalizeSearch(patient.patient_birth_number).includes(query);
     });
 
-    patientNameSuggestions.value = uniqueValues(matches.map((patient) => patient.patient_name));
+    patientNameSuggestions.value = matches.map((patient) => ({
+        label: formatPatientSuggestionLabel(patient),
+        value: patient.patient_name,
+        patient,
+    }));
 };
 
 const completePatientEmail = (event) => {
@@ -497,7 +519,11 @@ const completePatientEmail = (event) => {
 };
 
 const onPatientNameSelected = (event) => {
-    applySelectedPatient(findPatientByName(event?.value));
+    const selectedPatient = event?.value?.patient
+        ?? findPatientByName(event?.value?.value ?? event?.value);
+
+    applySelectedPatient(selectedPatient);
+    patientForm.patient_name = selectedPatient?.patient_name ?? '';
 };
 
 const onPatientEmailSelected = (event) => {
@@ -842,6 +868,7 @@ const resetPatientForm = () => {
     patientForm.patient_name = '';
     patientForm.patient_email = '';
     patientForm.patient_phone = '';
+    patientForm.patient_birth_number = '';
     patientForm.patient_phone_country = 'SK';
     patientForm.patient_phone_full = '';
 };
@@ -1031,6 +1058,7 @@ const addPatientToCapacityWindow = () => {
         patient_name: patientForm.patient_name,
         patient_email: patientForm.patient_email,
         patient_phone: patientForm.patient_phone_full || patientForm.patient_phone,
+        patient_birth_number: patientForm.patient_birth_number || null,
         notify_patient: true,
     });
 
@@ -1196,6 +1224,7 @@ const addPatientToCapacityWindow = () => {
                         :patient-name="booking.patient_name"
                         :patient-phone="booking.patient_phone"
                         :patient-email="booking.patient_email"
+                        :patient-birth-number="booking.patient_birth_number"
                     />
                 </div>
             </FormSection>
@@ -1210,6 +1239,7 @@ const addPatientToCapacityWindow = () => {
                         :patient-name="booking.patient_name"
                         :patient-phone="booking.patient_phone"
                         :patient-email="booking.patient_email"
+                        :patient-birth-number="booking.patient_birth_number"
                     >
                         <div class="mt-4 grid gap-4">
                             <div>
@@ -1237,6 +1267,7 @@ const addPatientToCapacityWindow = () => {
                         id="capacity_new_patient_name"
                         v-model="patientForm.patient_name"
                         :suggestions="patientNameSuggestions"
+                        option-label="label"
                         dropdown
                         complete-on-focus
                         class="w-full"
@@ -1244,7 +1275,14 @@ const addPatientToCapacityWindow = () => {
                         :disabled="!hasFreeCapacity"
                         @complete="completePatientName"
                         @item-select="onPatientNameSelected"
-                    />
+                    >
+                        <template #option="{ option }">
+                            <div class="flex flex-col">
+                                <span class="font-medium">{{ option.value }}</span>
+                                <span class="text-xs text-accent">{{ option.label }}</span>
+                            </div>
+                        </template>
+                    </AutoComplete>
                 </FormField>
 
                 <FormField label="Email" for="capacity_new_patient_email">
@@ -1267,6 +1305,16 @@ const addPatientToCapacityWindow = () => {
                         v-model="patientForm.patient_phone"
                         v-model:country-code="patientForm.patient_phone_country"
                         v-model:full-value="patientForm.patient_phone_full"
+                        :disabled="!hasFreeCapacity"
+                    />
+                </FormField>
+
+                <FormField label="Rodné číslo" for="capacity_new_patient_birth_number" span="md:col-span-2">
+                    <InputText
+                        id="capacity_new_patient_birth_number"
+                        v-model="patientForm.patient_birth_number"
+                        class="w-full"
+                        placeholder="napr. 900101/1234"
                         :disabled="!hasFreeCapacity"
                     />
                 </FormField>

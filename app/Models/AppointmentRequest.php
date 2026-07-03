@@ -17,6 +17,7 @@ class AppointmentRequest extends Model
         'patient_name',
         'patient_email',
         'patient_phone',
+        'patient_birth_number',
         'patient_note',
         'status',
         'request_type',

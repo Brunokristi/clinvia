@@ -106,6 +106,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             patient_name: data.patient_name,
             patient_email: data.patient_email,
             patient_phone: data.patient_phone,
+            patient_birth_number: data.patient_birth_number,
             notify_patient: true,
             recurrence: data.recurrence ?? null,
         }, {
@@ -219,6 +220,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             patient_name: data.patient_name ?? booking.patient_name ?? null,
             patient_email: data.patient_email ?? booking.patient_email ?? null,
             patient_phone: data.patient_phone ?? booking.patient_phone ?? null,
+            patient_birth_number: data.patient_birth_number ?? booking.patient_birth_number ?? null,
             recurrence: data.recurrence ?? booking.recurrence ?? null,
             notify_patient: true,
             reschedule_scope: data.reschedule_scope ?? null,
@@ -250,6 +252,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             patient_name: booking.patient_name ?? '',
             patient_email: booking.patient_email ?? '',
             patient_phone: booking.patient_phone ?? '',
+            patient_birth_number: booking.patient_birth_number ?? '',
             public_booking_type: booking.service?.public_booking_type ?? 'immediate_booking',
             recurrence: booking.recurrence ?? null,
         });

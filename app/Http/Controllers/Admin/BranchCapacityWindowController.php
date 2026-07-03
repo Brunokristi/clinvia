@@ -57,12 +57,14 @@ class BranchCapacityWindowController extends Controller
             'patients.*.patient_name' => ['required_with:patients', 'string', 'max:255'],
             'patients.*.patient_email' => ['nullable', 'email', 'max:255'],
             'patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
+            'patients.*.patient_birth_number' => ['nullable', 'string', 'max:255'],
 
             // Compatibility alias used by older/newer frontend flows.
             'group_patients' => ['nullable', 'array'],
             'group_patients.*.patient_name' => ['required_with:group_patients', 'string', 'max:255'],
             'group_patients.*.patient_email' => ['nullable', 'email', 'max:255'],
             'group_patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
+            'group_patients.*.patient_birth_number' => ['nullable', 'string', 'max:255'],
         ]);
 
         $rawPatients = collect($validated['patients'] ?? []);
@@ -141,6 +143,7 @@ class BranchCapacityWindowController extends Controller
                         'patient_name' => $patient['patient_name'],
                         'patient_email' => $patient['patient_email'] ?? null,
                         'patient_phone' => $patient['patient_phone'] ?? null,
+                        'patient_birth_number' => $patient['patient_birth_number'] ?? null,
                         'status' => 'confirmed',
                         'notify_patient' => true,
                     ]);
@@ -255,11 +258,13 @@ class BranchCapacityWindowController extends Controller
             'patients.*.patient_name' => ['required_with:patients', 'string', 'max:255'],
             'patients.*.patient_email' => ['nullable', 'email', 'max:255'],
             'patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
+            'patients.*.patient_birth_number' => ['nullable', 'string', 'max:255'],
 
             'group_patients' => ['nullable', 'array'],
             'group_patients.*.patient_name' => ['required_with:group_patients', 'string', 'max:255'],
             'group_patients.*.patient_email' => ['nullable', 'email', 'max:255'],
             'group_patients.*.patient_phone' => ['nullable', 'string', 'max:255'],
+            'group_patients.*.patient_birth_number' => ['nullable', 'string', 'max:255'],
         ]);
 
         $rawPatients = collect($validated['patients'] ?? []);
@@ -484,18 +489,24 @@ class BranchCapacityWindowController extends Controller
                     ->orderBy('id')
                     ->get();
 
-                $normalizePatientKey = static function (?string $name, ?string $email, ?string $phone): string {
+                $normalizePatientKey = static function (?string $name, ?string $email, ?string $phone, ?string $birthNumber): string {
                     $normalizedName = mb_strtolower(trim((string) $name));
                     $normalizedEmail = mb_strtolower(trim((string) ($email ?? '')));
                     $normalizedPhone = preg_replace('/\s+/', '', (string) ($phone ?? ''));
+                    $normalizedBirthNumber = trim((string) ($birthNumber ?? ''));
 
-                    return implode('|', [$normalizedName, $normalizedEmail, $normalizedPhone]);
+                    return implode('|', [$normalizedName, $normalizedEmail, $normalizedPhone, $normalizedBirthNumber]);
                 };
 
                 $existingBuckets = [];
 
                 foreach ($activeBookings as $booking) {
-                    $key = $normalizePatientKey($booking->patient_name, $booking->patient_email, $booking->patient_phone);
+                    $key = $normalizePatientKey(
+                        $booking->patient_name,
+                        $booking->patient_email,
+                        $booking->patient_phone,
+                        $booking->patient_birth_number,
+                    );
                     $existingBuckets[$key] ??= [];
                     $existingBuckets[$key][] = $booking;
                 }
@@ -505,6 +516,7 @@ class BranchCapacityWindowController extends Controller
                         $patient['patient_name'] ?? null,
                         $patient['patient_email'] ?? null,
                         $patient['patient_phone'] ?? null,
+                        $patient['patient_birth_number'] ?? null,
                     );
 
                     if (! empty($existingBuckets[$key])) {
@@ -521,6 +533,7 @@ class BranchCapacityWindowController extends Controller
                         'patient_name' => $patient['patient_name'],
                         'patient_email' => $patient['patient_email'] ?? null,
                         'patient_phone' => $patient['patient_phone'] ?? null,
+                        'patient_birth_number' => $patient['patient_birth_number'] ?? null,
                         'status' => 'confirmed',
                         'notify_patient' => true,
                     ]);

@@ -23,6 +23,7 @@ class Booking extends Model
         'patient_name',
         'patient_email',
         'patient_phone',
+        'patient_birth_number',
         'status',
         'patient_note',
         'admin_note',

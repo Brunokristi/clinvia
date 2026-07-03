@@ -49,6 +49,14 @@ class ConvertAppointmentRequestToBookingAction
             $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
 
             $services = $lockedAppointmentRequest->services;
+            $selectedPatient = is_array($data['selected_patient'] ?? null)
+                ? $data['selected_patient']
+                : null;
+
+            $patientName = trim((string) ($selectedPatient['patient_name'] ?? ''));
+            $patientEmail = trim((string) ($selectedPatient['patient_email'] ?? ''));
+            $patientPhone = trim((string) ($selectedPatient['patient_phone'] ?? ''));
+            $patientBirthNumber = trim((string) ($selectedPatient['patient_birth_number'] ?? ''));
 
             $booking = $this->createBookingAction->execute($branch, [
                 'service_id' => $services->first()->id,
@@ -59,9 +67,18 @@ class ConvertAppointmentRequestToBookingAction
                     ->all(),
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
-                'patient_name' => $lockedAppointmentRequest->patient_name,
-                'patient_email' => $lockedAppointmentRequest->patient_email,
-                'patient_phone' => $lockedAppointmentRequest->patient_phone,
+                'patient_name' => $patientName !== ''
+                    ? $patientName
+                    : $lockedAppointmentRequest->patient_name,
+                'patient_email' => $patientEmail !== ''
+                    ? $patientEmail
+                    : $lockedAppointmentRequest->patient_email,
+                'patient_phone' => $patientPhone !== ''
+                    ? $patientPhone
+                    : $lockedAppointmentRequest->patient_phone,
+                'patient_birth_number' => $patientBirthNumber !== ''
+                    ? $patientBirthNumber
+                    : $lockedAppointmentRequest->patient_birth_number,
                 'patient_note' => $lockedAppointmentRequest->patient_note,
                 'status' => 'confirmed',
                 'notify_patient' => $data['notify_patient'] ?? true,

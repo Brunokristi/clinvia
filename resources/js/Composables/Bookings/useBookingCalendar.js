@@ -305,6 +305,7 @@ export function useBookingCalendar(props, options = {}) {
                 patient_name: patient?.patient_name ?? '',
                 patient_email: patient?.patient_email ?? null,
                 patient_phone: patient?.patient_phone ?? null,
+                patient_birth_number: patient?.patient_birth_number ?? null,
             }))
             : [],
     });
@@ -485,6 +486,7 @@ export function useBookingCalendar(props, options = {}) {
                     patient_name: data.patient_name,
                     patient_email: data.patient_email,
                     patient_phone: data.patient_phone,
+                    patient_birth_number: data.patient_birth_number,
                     recurrence: data.recurrence ?? null,
                     reschedule_scope: resolvedScope,
                     date: data.target_occurrence_date ?? data.date ?? null,
@@ -504,6 +506,12 @@ export function useBookingCalendar(props, options = {}) {
                 }
 
                 const targetRule = rules.ruleForm.rules[targetRuleIndex];
+                const originalRule = {
+                    ...targetRule,
+                    service_ids: [...(targetRule.service_ids ?? [])],
+                    repeat_weekdays: [...(targetRule.repeat_weekdays ?? [])],
+                    excluded_dates: [...(targetRule.excluded_dates ?? [])],
+                };
                 const previousRepeatSignature = normalizeRuleRepeatForCompare(targetRule);
 
                 const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
@@ -541,7 +549,23 @@ export function useBookingCalendar(props, options = {}) {
                 }
 
                 dialogs.selectedRuleIndex.value = targetRuleIndex;
-                rules.saveRules();
+
+                const recurrenceChanged = hasRecurringRuleChanged(
+                    data.target_original_recurrence ?? null,
+                    data.recurrence ?? null,
+                );
+                const requestedScope = data.save_scope ?? (data.target_is_recurring ? 'series' : null);
+                const resolvedScope = data.target_is_recurring
+                    && recurrenceChanged
+                    && requestedScope === 'occurrence'
+                    ? 'series'
+                    : requestedScope;
+
+                rules.saveRules({
+                    update_scope: resolvedScope,
+                    occurrence_date: data.target_occurrence_date ?? selectionInfo.date,
+                    original_rule: originalRule,
+                });
 
                 return;
             }
@@ -580,6 +604,7 @@ export function useBookingCalendar(props, options = {}) {
                             patient_name: patient?.patient_name ?? '',
                             patient_email: patient?.patient_email ?? null,
                             patient_phone: patient?.patient_phone ?? null,
+                            patient_birth_number: patient?.patient_birth_number ?? null,
                         }))
                         : [],
                     update_scope: resolvedScope,
@@ -688,6 +713,7 @@ export function useBookingCalendar(props, options = {}) {
             patient_name: booking.patient_name ?? '',
             patient_email: booking.patient_email ?? '',
             patient_phone: booking.patient_phone ?? '',
+            patient_birth_number: booking.patient_birth_number ?? '',
             recurrence: booking.recurrence ?? null,
         });
     };
@@ -703,6 +729,20 @@ export function useBookingCalendar(props, options = {}) {
         const recurrenceFrequency = rule.repeat_unit === 'days'
             ? 'daily'
             : (rule.repeat_unit === 'months' ? 'monthly' : 'weekly');
+        const recurrence = rule.repeats
+            ? {
+                frequency: recurrenceFrequency,
+                interval: Number(rule.repeat_every ?? 1),
+                weekdays: recurrenceFrequency === 'weekly'
+                    ? [...(rule.repeat_weekdays ?? [])]
+                    : [],
+                ends: {
+                    type: rule.repeat_ends_on ? 'on' : 'never',
+                    count: null,
+                    until: rule.repeat_ends_on ?? null,
+                },
+            }
+            : null;
 
         dialogs.availabilityRuleDialogVisible.value = false;
 
@@ -711,26 +751,16 @@ export function useBookingCalendar(props, options = {}) {
             edit_mode: true,
             target_type: 'rule',
             target_id: rule.id,
+            target_occurrence_date: occurrenceDate,
+            target_is_recurring: Boolean(rule.repeats),
+            target_original_recurrence: recurrence,
             date: occurrenceDate,
             starts_at: `${occurrenceDate} ${rule.starts_at}:00`,
             ends_at: `${occurrenceDate} ${rule.ends_at}:00`,
             service_ids: [...(rule.service_ids ?? [])],
             service_id: rule.service_ids?.[0] ?? null,
             public_booking_type: rule.public_booking_type ?? 'immediate_booking',
-            recurrence: rule.repeats
-                ? {
-                    frequency: recurrenceFrequency,
-                    interval: Number(rule.repeat_every ?? 1),
-                    weekdays: recurrenceFrequency === 'weekly'
-                        ? [...(rule.repeat_weekdays ?? [])]
-                        : [],
-                    ends: {
-                        type: rule.repeat_ends_on ? 'on' : 'never',
-                        count: null,
-                        until: rule.repeat_ends_on ?? null,
-                    },
-                }
-                : null,
+            recurrence,
             is_enabled: Boolean(rule.is_enabled ?? true),
         });
     };
@@ -1019,7 +1049,7 @@ export function useBookingCalendar(props, options = {}) {
                 return isClosed ? 'Zatv.' : 'Otv.';
             }
 
-            return isClosed ? 'Zatvorene' : 'Otvorene';
+            return isClosed ? 'Zatvorené' : 'Otvorené';
         };
 
         const applyStatusTagState = (tag, options) => {
@@ -1130,6 +1160,10 @@ export function useBookingCalendar(props, options = {}) {
             arg.el.appendChild(wrapper);
         };
 
+        const isDayShownAsDisabled = (date) => {
+            return Boolean(isDateClosedByOpeningHours(date) || getEffectiveDisabledState(date));
+        };
+
         return {
             plugins: [
                 timeGridPlugin,
@@ -1220,7 +1254,7 @@ export function useBookingCalendar(props, options = {}) {
                     return [];
                 }
 
-                if (!getEffectiveDisabledState(dayInfo.date)) {
+                if (!isDayShownAsDisabled(dayInfo.date)) {
                     return [];
                 }
 
@@ -1233,7 +1267,7 @@ export function useBookingCalendar(props, options = {}) {
                     return [];
                 }
 
-                return getEffectiveDisabledState(dayInfo.date)
+                return isDayShownAsDisabled(dayInfo.date)
                     ? ['booking-disabled-day-header']
                     : [];
             },

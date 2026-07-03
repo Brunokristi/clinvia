@@ -294,6 +294,11 @@ class BranchBookingCalendarController extends Controller
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
+            'selected_patient' => ['nullable', 'array'],
+            'selected_patient.patient_name' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_email' => ['nullable', 'email', 'max:255'],
+            'selected_patient.patient_phone' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_birth_number' => ['nullable', 'string', 'max:255'],
         ]);
 
         $convertAppointmentRequestToBookingAction->execute($branch, $appointmentRequest, [
@@ -357,6 +362,7 @@ class BranchBookingCalendarController extends Controller
                 'patient_name' => $appointmentRequest->patient_name,
                 'patient_email' => $appointmentRequest->patient_email,
                 'patient_phone' => $appointmentRequest->patient_phone,
+                'patient_birth_number' => $appointmentRequest->patient_birth_number,
                 'patient_note' => $appointmentRequest->patient_note,
                 'services' => $appointmentRequest->services
                     ->map(fn (Service $service): array => [

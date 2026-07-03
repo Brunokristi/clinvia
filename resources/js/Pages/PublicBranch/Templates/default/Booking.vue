@@ -58,6 +58,7 @@ const currentStep = ref(1);
 const submittedSuccessfully = ref(false);
 const dateValue = ref(null);
 const selectedServiceIds = ref([...props.selectedServiceIds]);
+const availabilityPanel = ref('exact_slot');
 
 const visibleAvailabilityLimit = ref(5);
 const availabilityBatchSize = 5;
@@ -73,6 +74,7 @@ const bookingForm = useForm({
     patient_name: '',
     patient_email: '',
     patient_phone: '',
+    patient_birth_number: '',
     patient_note: '',
 
     website: '',
@@ -201,10 +203,16 @@ const canUseGeneralRequest = computed(() => {
     return props.canSubmitGeneralRequest && hasSelectedServices.value;
 });
 
+const hasRequestAvailability = computed(() => {
+    return hasPreferredOptions.value || canUseGeneralRequest.value;
+});
+
+const canSwitchAvailabilityMode = computed(() => {
+    return hasExactSlots.value && hasRequestAvailability.value;
+});
+
 const shouldShowGeneralRequest = computed(() => {
-    return canUseGeneralRequest.value
-        && !hasExactSlots.value
-        && !hasPreferredOptions.value;
+    return canUseGeneralRequest.value;
 });
 
 const selectedCapacityWindow = computed(() => {
@@ -305,6 +313,12 @@ const submitButtonLabel = computed(() => {
 });
 
 const availabilityHeading = computed(() => {
+    if (canSwitchAvailabilityMode.value && availabilityPanel.value === 'appointment_request') {
+        return hasPreferredOptions.value
+            ? 'Vyberte deň a časť dňa'
+            : 'Odoslať požiadavku';
+    }
+
     if (hasExactSlots.value) {
         return 'Vyberte konkrétny termín';
     }
@@ -321,6 +335,12 @@ const availabilityHeading = computed(() => {
 });
 
 const availabilityText = computed(() => {
+    if (canSwitchAvailabilityMode.value && availabilityPanel.value === 'appointment_request') {
+        return hasPreferredOptions.value
+            ? 'Vyberte dostupný deň a časť dňa. Presný čas vám následne potvrdíme.'
+            : 'Pre vybrané služby nie je dostupný online výber termínu. Môžete nám poslať požiadavku.';
+    }
+
     if (hasExactSlots.value) {
         return 'Tento termín si môžete rezervovať hneď.';
     }
@@ -366,6 +386,44 @@ watch(selectedServiceIds, (value) => {
     bookingForm.service_ids = value;
     clearAvailabilitySelection();
 });
+
+watch(
+    () => [hasExactSlots.value, hasRequestAvailability.value],
+    ([exactSlotsAvailable, requestAvailable]) => {
+        if (exactSlotsAvailable && !requestAvailable) {
+            availabilityPanel.value = 'exact_slot';
+
+            return;
+        }
+
+        if (!exactSlotsAvailable && requestAvailable) {
+            availabilityPanel.value = 'appointment_request';
+
+            return;
+        }
+
+        if (!exactSlotsAvailable && !requestAvailable) {
+            availabilityPanel.value = 'exact_slot';
+        }
+    },
+    { immediate: true },
+);
+
+watch(
+    () => props.selectedDate,
+    (value) => {
+        if (!value) {
+            dateValue.value = null;
+
+            return;
+        }
+
+        const parsedDate = new Date(`${value}T00:00:00`);
+
+        dateValue.value = Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+    },
+    { immediate: true },
+);
 
 const toDateString = (date) => {
     if (!date) {
@@ -457,9 +515,11 @@ const scrollToTop = () => {
 };
 
 const applyFilters = (pageNumber = 1, nextStep = currentStep.value) => {
+    const selectedDate = toDateString(dateValue.value) || props.selectedDate || toDateString(today);
+
     router.get(route('public.branch.booking', props.branch.slug), {
         services: selectedServiceIds.value,
-        date: toDateString(dateValue.value) || toDateString(today),
+        date: selectedDate,
         page: pageNumber,
     }, {
         preserveState: true,
@@ -477,6 +537,8 @@ const onPageChange = (event) => {
 };
 
 const selectCapacityWindow = (capacityWindow) => {
+    availabilityPanel.value = 'exact_slot';
+
     bookingForm.mode = 'exact_slot';
     bookingForm.request_type = '';
     bookingForm.capacity_window_id = capacityWindow.capacity_window_id ?? capacityWindow.id;
@@ -486,6 +548,8 @@ const selectCapacityWindow = (capacityWindow) => {
 };
 
 const selectOption = (option) => {
+    availabilityPanel.value = 'appointment_request';
+
     bookingForm.mode = 'appointment_request';
     bookingForm.request_type = 'preferred_period';
     bookingForm.preferred_option_id = option.id;
@@ -501,12 +565,27 @@ const selectGeneralRequest = () => {
         return;
     }
 
+    availabilityPanel.value = 'appointment_request';
+
     bookingForm.mode = 'appointment_request';
     bookingForm.request_type = 'general';
     bookingForm.capacity_window_id = '';
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = preferredDate;
     bookingForm.preferred_period = '';
+};
+
+const switchAvailabilityPanel = (panel) => {
+    if (!['exact_slot', 'appointment_request'].includes(panel)) {
+        return;
+    }
+
+    if (availabilityPanel.value === panel) {
+        return;
+    }
+
+    availabilityPanel.value = panel;
+    clearAvailabilitySelection();
 };
 
 const resetBookingFlow = () => {
@@ -526,11 +605,11 @@ const resetBookingFlow = () => {
         'patient_name',
         'patient_email',
         'patient_phone',
+        'patient_birth_number',
         'patient_note',
         'website',
         'form_started_at',
     );
-
     bookingForm.form_started_at = Date.now();
 };
 
@@ -661,9 +740,32 @@ const submitBooking = () => {
                             </p>
                         </div>
 
+                        <div
+                            v-if="canSwitchAvailabilityMode"
+                            class="grid grid-cols-2 gap-2 rounded-md border border-soft bg-white p-1"
+                        >
+                            <button
+                                type="button"
+                                class="rounded-md px-3 py-2 text-sm font-medium transition"
+                                :class="availabilityPanel === 'exact_slot' ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
+                                @click="switchAvailabilityPanel('exact_slot')"
+                            >
+                                Priama rezervácia
+                            </button>
+
+                            <button
+                                type="button"
+                                class="rounded-md px-3 py-2 text-sm font-medium transition"
+                                :class="availabilityPanel === 'appointment_request' ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
+                                @click="switchAvailabilityPanel('appointment_request')"
+                            >
+                                Požiadavka na termín
+                            </button>
+                        </div>
+
                         <div class="space-y-3">
                             <div
-                                v-if="hasExactSlots"
+                                v-if="hasExactSlots && (!canSwitchAvailabilityMode || availabilityPanel === 'exact_slot')"
                                 class="space-y-3"
                             >
                                 <button
@@ -710,118 +812,123 @@ const submitBooking = () => {
                             </div>
 
                             <div
-                                v-else-if="hasPreferredOptions"
+                                v-if="hasRequestAvailability && (!canSwitchAvailabilityMode || availabilityPanel === 'appointment_request')"
                                 class="space-y-3"
                             >
-                                <button
-                                    v-for="option in visibleAvailableOptions"
-                                    :key="option.id"
-                                    type="button"
-                                    class="w-full rounded-md border px-4 py-3 text-left transition"
-                                    :class="bookingForm.preferred_option_id === option.id
-                                        ? 'border-accent bg-accent text-white'
-                                        : 'border-soft bg-white text-dark hover:bg-soft'"
-                                    @click="selectOption(option)"
-                                >
-                                    <span class="flex items-center justify-between gap-4">
-                                        <span>
-                                            <span class="block font-semibold">
-                                                {{ formatDate(option.date) }}
-                                            </span>
-
-                                            <span class="block">
-                                                {{ option.period_label }}
-                                            </span>
-
-                                            <span
-                                                class="mt-1 block text-xs"
-                                                :class="bookingForm.preferred_option_id === option.id ? 'text-white/80' : 'text-accent'"
-                                            >
-                                                Presný čas vám potvrdíme.
-                                            </span>
-                                        </span>
-
-                                        <Tag
-                                            :value="bookingForm.preferred_option_id === option.id ? 'Vybrané' : 'Vybrať'"
-                                        />
-                                    </span>
-                                </button>
-
                                 <div
-                                    v-if="canShowMoreAvailableOptions"
-                                    class="flex justify-center pt-2"
+                                    v-if="hasPreferredOptions"
+                                    class="space-y-3"
                                 >
-                                    <Button
+                                    <button
+                                        v-for="option in visibleAvailableOptions"
+                                        :key="option.id"
                                         type="button"
-                                        :label="`Viac termínov (${hiddenAvailableOptionsCount})`"
-                                        outlined
-                                        @click="showMoreAvailability"
+                                        class="w-full rounded-md border px-4 py-3 text-left transition"
+                                        :class="bookingForm.preferred_option_id === option.id
+                                            ? 'border-accent bg-accent text-white'
+                                            : 'border-soft bg-white text-dark hover:bg-soft'"
+                                        @click="selectOption(option)"
+                                    >
+                                        <span class="flex items-center justify-between gap-4">
+                                            <span>
+                                                <span class="block font-semibold">
+                                                    {{ formatDate(option.date) }}
+                                                </span>
+
+                                                <span class="block">
+                                                    {{ option.period_label }}
+                                                </span>
+
+                                                <span
+                                                    class="mt-1 block text-xs"
+                                                    :class="bookingForm.preferred_option_id === option.id ? 'text-white/80' : 'text-accent'"
+                                                >
+                                                    Presný čas vám potvrdíme.
+                                                </span>
+                                            </span>
+
+                                            <Tag
+                                                :value="bookingForm.preferred_option_id === option.id ? 'Vybrané' : 'Vybrať'"
+                                            />
+                                        </span>
+                                    </button>
+
+                                    <div
+                                        v-if="canShowMoreAvailableOptions"
+                                        class="flex justify-center pt-2"
+                                    >
+                                        <Button
+                                            type="button"
+                                            :label="`Viac termínov (${hiddenAvailableOptionsCount})`"
+                                            outlined
+                                            @click="showMoreAvailability"
+                                        />
+                                    </div>
+
+                                    <Paginator
+                                        v-if="hasPagination"
+                                        :first="paginatorFirst"
+                                        :rows="pagination.per_page"
+                                        :total-records="pagination.total"
+                                        @page="onPageChange"
                                     />
                                 </div>
 
-                                <Paginator
-                                    v-if="hasPagination"
-                                    :first="paginatorFirst"
-                                    :rows="pagination.per_page"
-                                    :total-records="pagination.total"
-                                    @page="onPageChange"
-                                />
-                            </div>
-
-                            <div
-                                v-else-if="shouldShowGeneralRequest"
-                                class="space-y-3"
-                            >
                                 <div
-                                    class="w-full rounded-md border px-4 py-4 text-left transition"
-                                    :class="isGeneralRequestSelected
-                                        ? 'border-accent bg-accent text-white'
-                                        : 'border-soft bg-white text-dark hover:bg-soft'"
+                                    v-if="shouldShowGeneralRequest"
+                                    class="space-y-3"
                                 >
-                                    <div class="space-y-4">
-                                        <div class="flex items-start justify-between gap-4">
-                                            <div>
-                                                <p class="font-semibold">
-                                                    Odoslať požiadavku na termín
-                                                </p>
+                                    <div
+                                        class="w-full rounded-md border px-4 py-4 text-left transition"
+                                        :class="isGeneralRequestSelected
+                                            ? 'border-accent bg-accent text-white'
+                                            : 'border-soft bg-white text-dark hover:bg-soft'"
+                                    >
+                                        <div class="space-y-4">
+                                            <div class="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <p class="font-semibold">
+                                                        Odoslať požiadavku na termín
+                                                    </p>
 
-                                                <p
-                                                    class="mt-1 text-sm"
-                                                    :class="isGeneralRequestSelected ? 'text-white/80' : 'text-accent'"
-                                                >
-                                                    Vyberte preferovaný dátum a sestra vám navrhne dostupný termín.
-                                                </p>
+                                                    <p
+                                                        class="mt-1 text-sm"
+                                                        :class="isGeneralRequestSelected ? 'text-white/80' : 'text-accent'"
+                                                    >
+                                                        Vyberte preferovaný dátum a sestra vám navrhne dostupný termín.
+                                                    </p>
+                                                </div>
+
+                                                <Tag
+                                                    :value="isGeneralRequestSelected ? 'Vybrané' : 'Vybrať'"
+                                                />
                                             </div>
 
-                                            <Tag
-                                                :value="isGeneralRequestSelected ? 'Vybrané' : 'Vybrať'"
-                                            />
-                                        </div>
+                                            <div>
+                                                <label
+                                                    class="mb-2 block text-sm font-medium"
+                                                    :class="isGeneralRequestSelected ? 'text-white' : 'text-dark'"
+                                                >
+                                                    Preferovaný dátum
+                                                </label>
 
-                                        <div>
-                                            <label
-                                                class="mb-2 block text-sm font-medium"
-                                                :class="isGeneralRequestSelected ? 'text-white' : 'text-dark'"
-                                            >
-                                                Preferovaný dátum
-                                            </label>
-
-                                            <DatePicker
-                                                v-model="dateValue"
-                                                date-format="dd.mm.yy"
-                                                :min-date="today"
-                                                :disabled-days="disabledWeekdays"
-                                                class="w-full"
-                                                placeholder="Vyberte dátum"
-                                                @date-select="selectGeneralRequest"
-                                            />
+                                                <DatePicker
+                                                    v-model="dateValue"
+                                                    date-format="dd.mm.yy"
+                                                    :min-date="today"
+                                                    :disabled-days="disabledWeekdays"
+                                                    class="w-full"
+                                                    placeholder="Vyberte dátum"
+                                                    @date-select="selectGeneralRequest"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <p
-                                v-else
+                                v-if="!hasExactSlots && !hasRequestAvailability"
                                 class="text-center text-accent"
                             >
                                 Pre vybrané služby momentálne nie je dostupná online možnosť.
@@ -922,6 +1029,18 @@ const submitBooking = () => {
                                     <InputText
                                         v-model="bookingForm.patient_phone"
                                         class="w-full"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-dark">
+                                        Rodné číslo
+                                    </label>
+
+                                    <InputText
+                                        v-model="bookingForm.patient_birth_number"
+                                        class="w-full"
+                                        placeholder="napr. 900101/1234"
                                     />
                                 </div>
                             </div>

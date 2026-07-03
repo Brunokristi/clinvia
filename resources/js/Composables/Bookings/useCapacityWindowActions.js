@@ -323,6 +323,7 @@ export function useCapacityWindowActions({
                     patient_name: String(patient?.patient_name ?? '').trim(),
                     patient_email: patient?.patient_email ?? null,
                     patient_phone: patient?.patient_phone ?? null,
+                    patient_birth_number: patient?.patient_birth_number ?? null,
                 }))
                 .filter((patient) => patient.patient_name.length > 0),
         };
@@ -338,6 +339,7 @@ export function useCapacityWindowActions({
                 patient_name: booking?.patient_name ?? '',
                 patient_email: booking?.patient_email ?? null,
                 patient_phone: booking?.patient_phone ?? null,
+                patient_birth_number: booking?.patient_birth_number ?? null,
             }))
             .filter((patient) => String(patient.patient_name).trim().length > 0);
     };
@@ -356,6 +358,7 @@ export function useCapacityWindowActions({
                 patient_name: String(patient?.patient_name ?? '').trim(),
                 patient_email: patient?.patient_email ?? null,
                 patient_phone: patient?.patient_phone ?? null,
+                patient_birth_number: patient?.patient_birth_number ?? null,
             }))
             .filter((patient) => patient.patient_name.length > 0);
     };

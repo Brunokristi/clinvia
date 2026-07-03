@@ -33,14 +33,6 @@ const emit = defineEmits([
 
 <template>
     <Button
-        v-if="showPatients"
-        type="button"
-        label="Pacienti"
-        outlined
-        @click="emit('patients')"
-    />
-
-    <Button
         v-if="showDuplicate"
         type="button"
         :label="duplicateLabel"

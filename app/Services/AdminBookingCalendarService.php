@@ -182,6 +182,7 @@ class AdminBookingCalendarService
             'patient_name' => $booking->patient_name,
             'patient_email' => $booking->patient_email,
             'patient_phone' => $booking->patient_phone,
+            'patient_birth_number' => $booking->patient_birth_number,
 
             'date' => $booking->starts_at?->toDateString(),
 

@@ -91,6 +91,7 @@ class CreateBookingAction
                 'patient_name' => $data['patient_name'],
                 'patient_email' => $data['patient_email'] ?? null,
                 'patient_phone' => $data['patient_phone'] ?? null,
+                'patient_birth_number' => $data['patient_birth_number'] ?? null,
                 'status' => $data['status'] ?? 'confirmed',
                 'patient_note' => $data['patient_note'] ?? null,
                 'admin_note' => $data['admin_note'] ?? null,
@@ -127,6 +128,7 @@ class CreateBookingAction
             name: $booking->patient_name,
             email: $booking->patient_email,
             phone: $booking->patient_phone,
+            birthNumber: $booking->patient_birth_number,
         );
 
         BranchCalendarUpdated::dispatch(

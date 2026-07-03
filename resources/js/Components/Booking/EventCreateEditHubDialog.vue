@@ -76,12 +76,14 @@ const form = reactive({
     patient_name: '',
     patient_email: '',
     patient_phone: '',
+    patient_birth_number: '',
     patient_phone_country: 'SK',
     patient_phone_full: '',
     group_patients: [],
     group_patient_name: '',
     group_patient_email: '',
     group_patient_phone: '',
+    group_patient_birth_number: '',
     group_patient_phone_country: 'SK',
     group_patient_phone_full: '',
 });
@@ -100,9 +102,11 @@ const serviceOptions = computed(() => {
 const patientRecords = computed(() => {
     return (props.patients ?? [])
         .map((patient) => ({
+            id: patient?.id ?? null,
             patient_name: String(patient?.patient_name ?? '').trim(),
             patient_email: String(patient?.patient_email ?? '').trim(),
             patient_phone: String(patient?.patient_phone ?? '').trim(),
+            patient_birth_number: String(patient?.patient_birth_number ?? '').trim(),
         }))
         .filter((patient) => patient.patient_name);
 });
@@ -110,6 +114,16 @@ const patientRecords = computed(() => {
 const bookingPatientNameSuggestions = ref([]);
 const bookingPatientEmailSuggestions = ref([]);
 const groupPatientNameSuggestions = ref([]);
+
+const formatPatientSuggestionLabel = (patient) => {
+    const details = [patient.patient_birth_number, patient.patient_email, patient.patient_phone]
+        .filter((value) => String(value ?? '').trim().length > 0)
+        .join(' · ');
+
+    return details
+        ? `${patient.patient_name} (${details})`
+        : patient.patient_name;
+};
 
 const normalizeSearch = (value) => String(value ?? '').trim().toLowerCase();
 
@@ -139,7 +153,8 @@ const getMatchingPatients = (query) => {
 
         return normalizeSearch(patient.patient_name).includes(needle)
             || normalizeSearch(patient.patient_email).includes(needle)
-            || normalizeSearch(patient.patient_phone).includes(needle);
+            || normalizeSearch(patient.patient_phone).includes(needle)
+            || normalizeSearch(patient.patient_birth_number).includes(needle);
     });
 };
 
@@ -162,6 +177,10 @@ const applyBookingPatient = (patient) => {
         form.patient_phone = phone.localNumber;
         form.patient_phone_full = phone.fullNumber;
     }
+
+    if (patient.patient_birth_number) {
+        form.patient_birth_number = patient.patient_birth_number;
+    }
 };
 
 const applyGroupPatient = (patient) => {
@@ -183,14 +202,20 @@ const applyGroupPatient = (patient) => {
         form.group_patient_phone = phone.localNumber;
         form.group_patient_phone_full = phone.fullNumber;
     }
+
+    if (patient.patient_birth_number) {
+        form.group_patient_birth_number = patient.patient_birth_number;
+    }
 };
 
 const completeBookingPatientName = (event) => {
     const matches = getMatchingPatients(event?.query ?? '');
 
-    bookingPatientNameSuggestions.value = uniqueValues(
-        matches.map((patient) => patient.patient_name),
-    );
+    bookingPatientNameSuggestions.value = matches.map((patient) => ({
+        label: formatPatientSuggestionLabel(patient),
+        value: patient.patient_name,
+        patient,
+    }));
 };
 
 const completeBookingPatientEmail = (event) => {
@@ -205,9 +230,11 @@ const completeBookingPatientEmail = (event) => {
 const completeGroupPatientName = (event) => {
     const matches = getMatchingPatients(event?.query ?? '');
 
-    groupPatientNameSuggestions.value = uniqueValues(
-        matches.map((patient) => patient.patient_name),
-    );
+    groupPatientNameSuggestions.value = matches.map((patient) => ({
+        label: formatPatientSuggestionLabel(patient),
+        value: patient.patient_name,
+        patient,
+    }));
 };
 
 const findPatientByName = (name) => {
@@ -235,7 +262,11 @@ const findPatientByEmail = (email) => {
 };
 
 const onBookingPatientNameSelect = (event) => {
-    applyBookingPatient(findPatientByName(event?.value));
+    const selectedPatient = event?.value?.patient
+        ?? findPatientByName(event?.value?.value ?? event?.value);
+
+    applyBookingPatient(selectedPatient);
+    form.patient_name = selectedPatient?.patient_name ?? '';
 };
 
 const onBookingPatientEmailSelect = (event) => {
@@ -243,7 +274,11 @@ const onBookingPatientEmailSelect = (event) => {
 };
 
 const onGroupPatientNameSelect = (event) => {
-    applyGroupPatient(findPatientByName(event?.value));
+    const selectedPatient = event?.value?.patient
+        ?? findPatientByName(event?.value?.value ?? event?.value);
+
+    applyGroupPatient(selectedPatient);
+    form.group_patient_name = selectedPatient?.patient_name ?? '';
 };
 
 const selectedServices = computed(() => {
@@ -284,11 +319,11 @@ const groupServiceModel = computed({
 });
 
 const isEditMode = computed(() => Boolean(props.prefill?.edit_mode));
-const isRecurringBookingEdit = computed(() => {
+const isRecurringScopedEdit = computed(() => {
     return Boolean(
         isEditMode.value
-        && form.create_type === 'booking'
-        && props.prefill?.target_type === 'booking'
+        && ['booking', 'rule', 'group_event'].includes(form.create_type)
+        && ['booking', 'rule', 'group_event'].includes(props.prefill?.target_type)
         && props.prefill?.target_is_recurring,
     );
 });
@@ -542,6 +577,7 @@ const resetGroupPatientDraft = () => {
     form.group_patient_name = '';
     form.group_patient_email = '';
     form.group_patient_phone = '';
+    form.group_patient_birth_number = '';
     form.group_patient_phone_country = 'SK';
     form.group_patient_phone_full = '';
 };
@@ -556,6 +592,7 @@ const addGroupPatient = () => {
         patient_name: form.group_patient_name.trim(),
         patient_email: form.group_patient_email?.trim() || null,
         patient_phone: (form.group_patient_phone_full || form.group_patient_phone || '').trim() || null,
+        patient_birth_number: form.group_patient_birth_number?.trim() || null,
     });
 
     resetGroupPatientDraft();
@@ -613,6 +650,7 @@ const resetCreateForm = () => {
     form.patient_name = '';
     form.patient_email = '';
     form.patient_phone = '';
+    form.patient_birth_number = '';
     form.patient_phone_country = 'SK';
     form.patient_phone_full = '';
     form.group_patients = [];
@@ -650,12 +688,14 @@ const resetCreateForm = () => {
         form.patient_phone_country = patientPhone.countryCode;
         form.patient_phone = patientPhone.localNumber;
         form.patient_phone_full = patientPhone.fullNumber;
+        form.patient_birth_number = props.prefill.patient_birth_number ?? '';
         form.public_booking_type = props.prefill.public_booking_type ?? form.public_booking_type;
         form.group_patients = (props.prefill.group_patients ?? []).map((patient, index) => ({
             id: patient.id ?? `prefill-${index}`,
             patient_name: patient.patient_name ?? '',
             patient_email: patient.patient_email ?? null,
             patient_phone: patient.patient_phone ?? null,
+            patient_birth_number: patient.patient_birth_number ?? null,
         }));
     }
 };
@@ -766,6 +806,7 @@ const submitCreate = (saveScope = null) => {
             patient_name: form.group_patient_name.trim(),
             patient_email: form.group_patient_email?.trim() || null,
             patient_phone: (form.group_patient_phone_full || form.group_patient_phone || '').trim() || null,
+            patient_birth_number: form.group_patient_birth_number?.trim() || null,
         });
     }
 
@@ -796,10 +837,12 @@ const submitCreate = (saveScope = null) => {
         patient_name: form.patient_name,
         patient_email: form.patient_email,
         patient_phone: form.patient_phone_full || form.patient_phone,
+        patient_birth_number: form.patient_birth_number,
         group_patients: submittedGroupPatients.map((patient) => ({
             patient_name: patient.patient_name,
             patient_email: patient.patient_email,
             patient_phone: patient.patient_phone,
+            patient_birth_number: patient.patient_birth_number,
         })),
     });
 };
@@ -812,12 +855,12 @@ const submitCreate = (saveScope = null) => {
         v-model:starts-at="form.starts_at"
         v-model:ends-at="form.ends_at"
         width="max-w-3xl"
-        :is-repeatable="isRecurringBookingEdit"
+        :is-repeatable="isRecurringScopedEdit"
         :save-label="createSubmitLabel"
         :save-disabled="!canCreateSubmit"
         :show-delete="false"
         scope-mode="update"
-        scope-subject-label="rezervácia"
+        :scope-subject-label="currentEntityLabel"
         :title="createDialogTitle"
         @close="closeDialog"
         @save="submitCreate"
@@ -894,13 +937,21 @@ const submitCreate = (saveScope = null) => {
                             id="patient_name"
                             v-model="form.patient_name"
                             :suggestions="bookingPatientNameSuggestions"
+                            option-label="label"
                             dropdown
                             complete-on-focus
                             class="w-full"
                             placeholder="Meno a priezvisko"
                             @complete="completeBookingPatientName"
                             @item-select="onBookingPatientNameSelect"
-                        />
+                        >
+                            <template #option="{ option }">
+                                <div class="flex flex-col">
+                                    <span class="font-medium">{{ option.value }}</span>
+                                    <span class="text-xs text-accent">{{ option.label }}</span>
+                                </div>
+                            </template>
+                        </AutoComplete>
                     </FormField>
 
                     <FormField
@@ -928,6 +979,19 @@ const submitCreate = (saveScope = null) => {
                             v-model="form.patient_phone"
                             v-model:country-code="form.patient_phone_country"
                             v-model:full-value="form.patient_phone_full"
+                        />
+                    </FormField>
+
+                    <FormField
+                        label="Rodné číslo"
+                        for="patient_birth_number"
+                        span="md:col-span-2"
+                    >
+                        <InputText
+                            id="patient_birth_number"
+                            v-model="form.patient_birth_number"
+                            class="w-full"
+                            placeholder="napr. 900101/1234"
                         />
                     </FormField>
                 </FormSection>
@@ -1100,6 +1164,7 @@ const submitCreate = (saveScope = null) => {
                             id="group_patient_name"
                             v-model="form.group_patient_name"
                             :suggestions="groupPatientNameSuggestions"
+                            option-label="label"
                             dropdown
                             complete-on-focus
                             class="w-full"
@@ -1107,7 +1172,14 @@ const submitCreate = (saveScope = null) => {
                             :disabled="!canAddMoreGroupPatients"
                             @complete="completeGroupPatientName"
                             @item-select="onGroupPatientNameSelect"
-                        />
+                        >
+                            <template #option="{ option }">
+                                <div class="flex flex-col">
+                                    <span class="font-medium">{{ option.value }}</span>
+                                    <span class="text-xs text-accent">{{ option.label }}</span>
+                                </div>
+                            </template>
+                        </AutoComplete>
                     </FormField>
 
                     <FormField
@@ -1136,6 +1208,20 @@ const submitCreate = (saveScope = null) => {
                         />
                     </FormField>
 
+                    <FormField
+                        label="Rodné číslo"
+                        for="group_patient_birth_number"
+                        span="md:col-span-2"
+                    >
+                        <InputText
+                            id="group_patient_birth_number"
+                            v-model="form.group_patient_birth_number"
+                            class="w-full"
+                            placeholder="napr. 900101/1234"
+                            :disabled="!canAddMoreGroupPatients"
+                        />
+                    </FormField>
+
                     <div class="flex justify-end md:col-span-2">
                         <Button
                             type="button"
@@ -1156,6 +1242,7 @@ const submitCreate = (saveScope = null) => {
                             :patient-name="patient.patient_name"
                             :patient-phone="patient.patient_phone"
                             :patient-email="patient.patient_email"
+                            :patient-birth-number="patient.patient_birth_number"
                         >
                             <div class="mt-4">
                                 <Button

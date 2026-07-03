@@ -16,6 +16,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    patientBirthNumber: {
+        type: String,
+        default: '',
+    },
 });
 
 const displayName = computed(() => {
@@ -93,6 +97,12 @@ const phoneHref = computed(() => {
                     class="cursor-pointer"
                 />
             </a>
+
+            <Tag
+                v-if="patientBirthNumber"
+                icon="pi pi-id-card"
+                :value="patientBirthNumber"
+            />
         </div>
 
         <p

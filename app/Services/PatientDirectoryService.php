@@ -9,7 +9,13 @@ use Illuminate\Support\Facades\Schema;
 
 class PatientDirectoryService
 {
-    public function savePatient(Branch $branch, ?string $name, ?string $email = null, ?string $phone = null): ?Patient
+    public function savePatient(
+        Branch $branch,
+        ?string $name,
+        ?string $email = null,
+        ?string $phone = null,
+        ?string $birthNumber = null,
+    ): ?Patient
     {
         if (! Schema::hasTable('patients')) {
             return null;
@@ -23,8 +29,15 @@ class PatientDirectoryService
 
         $normalizedEmail = $this->normalizeEmail($email);
         $normalizedPhone = $this->normalizePhone($phone);
+        $normalizedBirthNumber = $this->normalizeBirthNumber($birthNumber);
 
-        $patient = $this->findExistingPatient($branch, $normalizedName, $normalizedEmail, $normalizedPhone)
+        $patient = $this->findExistingPatient(
+            $branch,
+            $normalizedName,
+            $normalizedEmail,
+            $normalizedPhone,
+            $normalizedBirthNumber,
+        )
             ?? new Patient(['branch_id' => $branch->id]);
 
         $patient->patient_name = $normalizedName;
@@ -35,6 +48,10 @@ class PatientDirectoryService
 
         if (filled($normalizedPhone)) {
             $patient->patient_phone = $normalizedPhone;
+        }
+
+        if (filled($normalizedBirthNumber)) {
+            $patient->patient_birth_number = $normalizedBirthNumber;
         }
 
         $patient->last_used_at = now();
@@ -54,7 +71,7 @@ class PatientDirectoryService
             ->orderByDesc('last_used_at')
             ->orderByDesc('id')
             ->limit($limit)
-            ->get(['id', 'patient_name', 'patient_email', 'patient_phone'])
+            ->get(['id', 'patient_name', 'patient_email', 'patient_phone', 'patient_birth_number'])
             ->values();
     }
 
@@ -63,7 +80,19 @@ class PatientDirectoryService
         string $name,
         ?string $email,
         ?string $phone,
+        ?string $birthNumber,
     ): ?Patient {
+        if (filled($birthNumber)) {
+            $byBirthNumber = Patient::query()
+                ->where('branch_id', $branch->id)
+                ->where('patient_birth_number', $birthNumber)
+                ->first();
+
+            if ($byBirthNumber) {
+                return $byBirthNumber;
+            }
+        }
+
         if (filled($email)) {
             $byEmail = Patient::query()
                 ->where('branch_id', $branch->id)
@@ -109,5 +138,10 @@ class PatientDirectoryService
     private function normalizePhone(?string $phone): ?string
     {
         return $this->normalizeValue($phone);
+    }
+
+    private function normalizeBirthNumber(?string $birthNumber): ?string
+    {
+        return $this->normalizeValue($birthNumber);
     }
 }
