@@ -232,6 +232,17 @@ class EventFrontendMapper
         $endsAt = $occurrence['occurrence_ends_at'] ?? null;
 
         $payload = $this->mapForLegacyPayload($event);
+
+        if ((bool) ($occurrence['is_recurring'] ?? false)) {
+            $payload = [
+                ...$payload,
+                'series_uuid' => data_get($rootEvent->metadata, 'series_uuid'),
+                'recurrence' => $rootEvent->recurrence_rule,
+                'recurrence_excluded_dates' => data_get($rootEvent->metadata, 'recurrence_excluded_dates', []),
+                ...$this->mapLegacyRepeatFields($rootEvent),
+            ];
+        }
+
         $payload['id'] = $event->id;
         $payload['root_event_id'] = $rootEvent->id;
         $payload['occurrence_id'] = $occurrence['occurrence_id'];
@@ -249,6 +260,7 @@ class EventFrontendMapper
         if ($event->type === EventType::Booking) {
             $payload['calendar_event_id'] = sprintf('booking-%s', $occurrence['occurrence_id']);
             $payload['occurrence_date'] = $startsAt?->toDateString();
+            $payload['occurrence_original_date'] = ($occurrence['occurrence_original_starts_at'] ?? null)?->toDateString();
         }
 
         if ($event->type === EventType::GroupEvent) {

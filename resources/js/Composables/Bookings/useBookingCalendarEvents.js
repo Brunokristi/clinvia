@@ -35,6 +35,40 @@ export function useBookingCalendarEvents({
         return `${date}T${String(time).slice(0, 5)}:00`;
     };
 
+    const normalizeTimeValue = (value, fallback) => {
+        if (!value) {
+            return String(fallback ?? '').slice(0, 5);
+        }
+
+        if (value instanceof Date) {
+            return value.toTimeString().slice(0, 5);
+        }
+
+        const stringValue = String(value).trim();
+
+        if (stringValue.includes('T')) {
+            return stringValue.slice(11, 16);
+        }
+
+        if (stringValue.includes(' ') && stringValue.length >= 16) {
+            return stringValue.slice(11, 16);
+        }
+
+        return stringValue.slice(0, 5);
+    };
+
+    const normalizeDateValue = (value) => {
+        if (!value) {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return value.toISOString().slice(0, 10);
+        }
+
+        return String(value).slice(0, 10);
+    };
+
     const normalizeCalendarDateTime = (value) => {
         if (!value) {
             return null;
@@ -65,9 +99,56 @@ export function useBookingCalendarEvents({
         }
 
         return (freeTimeRules.value ?? []).flatMap((rule) => {
-            return getRuleOccurrences(rule).map((occurrenceDate) => {
+            const normalizedOverrides = Array.isArray(rule.occurrence_overrides)
+                ? rule.occurrence_overrides
+                    .map((override) => ({
+                        originalDate: normalizeDateValue(override?.original_date),
+                        occurrenceDate: normalizeDateValue(override?.date),
+                        startsAt: normalizeTimeValue(override?.starts_at, rule.starts_at),
+                        endsAt: normalizeTimeValue(override?.ends_at, rule.ends_at),
+                        status: String(override?.status ?? 'confirmed'),
+                    }))
+                    .filter((override) => override.originalDate && override.occurrenceDate && override.status !== 'cancelled')
+                : [];
+
+            const overrideOriginalDates = new Set(normalizedOverrides.map((override) => override.originalDate));
+
+            const baseEvents = getRuleOccurrences(rule)
+                .filter((occurrenceDate) => !overrideOriginalDates.has(occurrenceDate))
+                .map((occurrenceDate) => {
+                    const eventId = `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${occurrenceDate}`;
+
+                    if (isHiddenEventId(eventId)) {
+                        return null;
+                    }
+
+                    return {
+                        id: eventId,
+                        title: 'Pravidlo rezervácií',
+                        start: getDateTimeValue(occurrenceDate, rule.starts_at),
+                        end: getDateTimeValue(occurrenceDate, rule.ends_at),
+                        editable: true,
+                        durationEditable: true,
+                        startEditable: true,
+                        classNames: [
+                            'booking-rule-free-time',
+                        ],
+                        extendedProps: {
+                            type: 'rule',
+                            rule,
+                            ruleIndex: rule.ruleIndex,
+                            occurrenceDate,
+                            occurrenceOriginalDate: occurrenceDate,
+                            isRepeatedOccurrence: Boolean(rule.repeats),
+                            isOverrideOccurrence: false,
+                        },
+                    };
+                })
+                .filter(Boolean);
+
+            const overrideEvents = normalizedOverrides.map((override) => {
                 const isRepeatedOccurrence = Boolean(rule.repeats);
-                const eventId = `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${occurrenceDate}`;
+                const eventId = `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${override.originalDate}-override`;
 
                 if (isHiddenEventId(eventId)) {
                     return null;
@@ -76,8 +157,8 @@ export function useBookingCalendarEvents({
                 return {
                     id: eventId,
                     title: 'Pravidlo rezervácií',
-                    start: getDateTimeValue(occurrenceDate, rule.starts_at),
-                    end: getDateTimeValue(occurrenceDate, rule.ends_at),
+                    start: getDateTimeValue(override.occurrenceDate, override.startsAt),
+                    end: getDateTimeValue(override.occurrenceDate, override.endsAt),
                     editable: true,
                     durationEditable: true,
                     startEditable: true,
@@ -88,11 +169,18 @@ export function useBookingCalendarEvents({
                         type: 'rule',
                         rule,
                         ruleIndex: rule.ruleIndex,
-                        occurrenceDate,
+                        occurrenceDate: override.occurrenceDate,
+                        occurrenceOriginalDate: override.originalDate,
                         isRepeatedOccurrence,
+                        isOverrideOccurrence: true,
                     },
                 };
             }).filter(Boolean);
+
+            return [
+                ...baseEvents,
+                ...overrideEvents,
+            ];
         });
     });
 

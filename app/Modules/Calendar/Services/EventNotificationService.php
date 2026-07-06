@@ -29,7 +29,7 @@ class EventNotificationService
             version: 1,
         );
 
-        SendEventNotificationJob::dispatchSync(
+        SendEventNotificationJob::dispatch(
             eventId: $event->id,
             action: $action->value,
             eventType: (string) $event->type?->value,

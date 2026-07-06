@@ -32,17 +32,10 @@ class BookingRescheduledNotification extends Notification
             'branch',
             'service',
             'services',
-            'bookingSlot',
-            'capacityWindow',
         ]);
 
-        $startsAt = $this->booking->starts_at
-            ?? $this->booking->capacityWindow?->starts_at
-            ?? $this->booking->bookingSlot?->starts_at;
-
-        $endsAt = $this->booking->ends_at
-            ?? $this->booking->capacityWindow?->ends_at
-            ?? $this->booking->bookingSlot?->ends_at;
+        $startsAt = $this->booking->starts_at;
+        $endsAt = $this->booking->ends_at;
 
         $oldAppointmentLabel = null;
 

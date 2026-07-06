@@ -94,11 +94,6 @@ const columns = [
         header: 'Domény',
         sortable: true,
     },
-    {
-        field: 'last_used_label',
-        header: 'Naposledy použitý',
-        sortable: true,
-    },
 ];
 
 const copyApiToken = async (apiClient) => {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Calendar;
 
+use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Services\EventMutationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -196,6 +197,90 @@ class RecurringEventEditTest extends TestCase
             'occurrence_starts_at' => '2026-07-13 09:00:00',
             'recurrence_rule' => $this->dailyRecurrence(),
         ], actorId: $fixture['user']->id, scope: 'this');
+    }
+
+    public function test_cancel_series_from_moved_override_cancels_root_and_override_children(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:30:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['MO'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-27']),
+        ]);
+
+        $override = app(EventMutationService::class)->update($event, [
+            'starts_at' => '2026-07-13 11:00:00',
+            'ends_at' => '2026-07-13 11:30:00',
+            'occurrence_starts_at' => '2026-07-13 09:00:00',
+        ], actorId: $fixture['user']->id, scope: 'this');
+
+        app(EventMutationService::class)->cancel($override, actorId: $fixture['user']->id, scope: 'series');
+
+        $event->refresh();
+        $override->refresh();
+
+        $this->assertSame('cancelled', $event->status);
+        $this->assertNotNull($event->cancelled_at);
+        $this->assertSame('cancelled', $override->status);
+        $this->assertNotNull($override->cancelled_at);
+    }
+
+    public function test_delete_series_from_moved_override_deletes_root_and_override_children(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:30:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['MO'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-27']),
+        ]);
+
+        $override = app(EventMutationService::class)->update($event, [
+            'starts_at' => '2026-07-13 11:00:00',
+            'ends_at' => '2026-07-13 11:30:00',
+            'occurrence_starts_at' => '2026-07-13 09:00:00',
+        ], actorId: $fixture['user']->id, scope: 'this');
+
+        app(EventMutationService::class)->delete($override, 'series');
+
+        $this->assertSoftDeleted((new Event())->getTable(), ['id' => $event->id]);
+        $this->assertSoftDeleted((new Event())->getTable(), ['id' => $override->id]);
+    }
+
+    public function test_occurrence_update_from_override_targets_root_series_and_does_not_create_nested_override(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 08:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['MO', 'TU', 'WE', 'TH', 'FR'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-31']),
+        ]);
+
+        $override = app(EventMutationService::class)->update($event, [
+            'starts_at' => '2026-07-07 08:30:00',
+            'ends_at' => '2026-07-07 09:30:00',
+            'occurrence_date' => '2026-07-07',
+        ], actorId: $fixture['user']->id, scope: 'this');
+
+        // Simulate a corrupted legacy override that still looks recurring.
+        $override->is_recurring = true;
+        $override->recurrence_rule = $event->recurrence_rule;
+        $override->save();
+
+        $updated = app(EventMutationService::class)->update($override, [
+            'starts_at' => '2026-07-07 07:00:00',
+            'ends_at' => '2026-07-07 08:00:00',
+            'occurrence_date' => '2026-07-07',
+        ], actorId: $fixture['user']->id, scope: 'this');
+
+        $override->refresh();
+        $updated->refresh();
+
+        $this->assertSame($override->id, $updated->id);
+        $this->assertSame('2026-07-07 07:00:00', $updated->starts_at?->format('Y-m-d H:i:s'));
+        $this->assertSame(0, Event::query()->where('recurrence_parent_id', $override->id)->count());
     }
 
     private function withRequestBody(array $input, callable $callback)

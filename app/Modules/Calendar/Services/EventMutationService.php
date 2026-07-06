@@ -12,6 +12,8 @@ use App\Modules\Calendar\Models\BookingEventDetail;
 use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Models\GroupEventDetail;
 use App\Modules\Calendar\Models\GroupEventParticipant;
+use App\Services\DisabledDayService;
+use App\Services\OpeningHoursService;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -25,6 +27,8 @@ class EventMutationService
         private readonly EventOccurrenceService $eventOccurrenceService,
         private readonly RecurrenceOverrideService $recurrenceOverrideService,
         private readonly RecurringEventSplitService $recurringEventSplitService,
+        private readonly DisabledDayService $disabledDayService,
+        private readonly OpeningHoursService $openingHoursService,
     ) {
     }
 
@@ -33,6 +37,14 @@ class EventMutationService
         $type = EventType::from((string) $payload['type']);
 
         $this->validatePayload($type, $payload);
+
+        if (isset($payload['starts_at']) && isset($payload['ends_at'])) {
+            $this->validateEventWindowIsAllowed(
+                $branch,
+                Carbon::parse($payload['starts_at']),
+                Carbon::parse($payload['ends_at']),
+            );
+        }
 
         $event = DB::transaction(function () use ($branch, $payload, $type, $actorId): Event {
             $event = Event::query()->create([
@@ -65,6 +77,7 @@ class EventMutationService
     public function update(Event $event, array $payload, ?int $actorId = null, ?string $scope = null): Event
     {
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
+        $event = $this->resolveScopedMutationEvent($event, $scope);
         $this->validateRecurringMutation($event, $payload, $scope);
 
         $updatedEvent = DB::transaction(function () use ($event, $payload, $actorId, $scope): Event {
@@ -132,6 +145,9 @@ class EventMutationService
 
     public function cancel(Event $event, ?int $actorId = null, ?string $scope = null): Event
     {
+        $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
+        $event = $this->resolveScopedMutationEvent($event, $scope);
+
         $updated = $this->update($event, [
             'status' => 'cancelled',
             'occurrence_starts_at' => request('occurrence_starts_at'),
@@ -144,6 +160,10 @@ class EventMutationService
 
         $updated->cancelled_at = now();
         $updated->save();
+
+        if ($scope === 'series') {
+            $this->cascadeSeriesCancellation($updated, $actorId);
+        }
 
         $this->eventNotificationService->dispatchMutationSignals(
             event: $updated,
@@ -158,6 +178,7 @@ class EventMutationService
     public function delete(Event $event, ?string $scope = null): void
     {
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
+        $event = $this->resolveScopedMutationEvent($event, $scope);
 
         DB::transaction(function () use ($event, $scope): void {
             $occurrenceStartsAt = $this->resolveOccurrenceStartsAt($event, [
@@ -198,6 +219,12 @@ class EventMutationService
                 }
 
                 return;
+            }
+
+            if ($scope === 'series') {
+                $event->recurrenceChildren()
+                    ->whereNull('deleted_at')
+                    ->delete();
             }
 
             $event->delete();
@@ -497,6 +524,24 @@ class EventMutationService
 
     private function applyPayloadToEvent(Event $event, array $payload, ?int $actorId): Event
     {
+        if (Arr::exists($payload, 'starts_at') || Arr::exists($payload, 'ends_at')) {
+            $branch = Branch::query()->find($event->branch_id);
+
+            if ($branch) {
+                $startsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at'])
+                    ? Carbon::parse($payload['starts_at'])
+                    : $event->starts_at;
+
+                $endsAt = Arr::exists($payload, 'ends_at') && filled($payload['ends_at'])
+                    ? Carbon::parse($payload['ends_at'])
+                    : $event->ends_at;
+
+                if ($startsAt && $endsAt) {
+                    $this->validateEventWindowIsAllowed($branch, $startsAt, $endsAt);
+                }
+            }
+        }
+
         $event->fill([
             'starts_at' => isset($payload['starts_at']) ? Carbon::parse($payload['starts_at']) : $event->starts_at,
             'ends_at' => isset($payload['ends_at']) ? Carbon::parse($payload['ends_at']) : $event->ends_at,
@@ -730,5 +775,86 @@ class EventMutationService
             'groupDetail',
             'participants',
         ];
+    }
+
+    private function validateStartDateIsOpen(Branch $branch, Carbon $startsAt): void
+    {
+        if (! $this->disabledDayService->isDisabled($branch, $startsAt)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'starts_at' => 'Tento deň je v kalendári zakázaný.',
+        ]);
+    }
+
+    private function validateEventWindowIsAllowed(Branch $branch, Carbon $startsAt, Carbon $endsAt): void
+    {
+        $this->validateStartDateIsOpen($branch, $startsAt);
+
+        if ($this->openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'starts_at' => 'Termín musí byť v rámci otváracích hodín.',
+        ]);
+    }
+
+    private function resolveScopedMutationEvent(Event $event, string $scope): Event
+    {
+        if (! in_array($scope, ['series', 'this_and_following', 'this'], true) || $event->recurrence_parent_id === null) {
+            return $event;
+        }
+
+        return $this->resolveSeriesRootEvent($event);
+    }
+
+    private function resolveSeriesRootEvent(Event $event): Event
+    {
+        $current = $event;
+        $visited = [];
+
+        while ($current->recurrence_parent_id !== null) {
+            if (isset($visited[$current->id])) {
+                break;
+            }
+
+            $visited[$current->id] = true;
+
+            $parent = Event::query()
+                ->with($this->relations())
+                ->find($current->recurrence_parent_id);
+
+            if (! $parent) {
+                break;
+            }
+
+            $current = $parent;
+        }
+
+        return $current;
+    }
+
+    private function cascadeSeriesCancellation(Event $event, ?int $actorId): void
+    {
+        if (! $event->is_recurring || $event->recurrence_parent_id !== null) {
+            return;
+        }
+
+        $cancelledAt = now();
+
+        $event->recurrenceChildren()
+            ->whereNull('deleted_at')
+            ->get()
+            ->each(function (Event $child) use ($cancelledAt, $actorId): void {
+                $child->status = 'cancelled';
+                $child->cancelled_at = $cancelledAt;
+                $child->updated_by = $actorId;
+                $child->metadata = array_merge($child->metadata ?? [], [
+                    'cancelled_at' => $cancelledAt->toIso8601String(),
+                ]);
+                $child->save();
+            });
     }
 }

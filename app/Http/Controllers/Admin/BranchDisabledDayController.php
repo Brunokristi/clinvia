@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class BranchDisabledDayController extends Controller
 {
+    private const TYPE_HOLIDAY_OPEN = 'holiday_open';
+
     public function index(Request $request, Branch $branch, DisabledDayService $disabledDayService): JsonResponse|RedirectResponse
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
@@ -61,10 +63,36 @@ class BranchDisabledDayController extends Controller
 
         $validated = $request->validate([
             'date' => ['required', 'date'],
-            'title' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:100'],
             'reason' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        $date = Carbon::parse($validated['date'])->toDateString();
+        $type = $validated['type'] ?? 'closed';
+
+        if ($type === self::TYPE_HOLIDAY_OPEN) {
+            BranchDisabledDay::query()->updateOrCreate(
+                [
+                    'branch_id' => $branch->id,
+                    'date' => $date,
+                ],
+                [
+                    'created_by' => $request->user()->id,
+                    'title' => $validated['title'] ?? 'Otvoreny sviatok',
+                    'type' => self::TYPE_HOLIDAY_OPEN,
+                    'reason' => $validated['reason'] ?? null,
+                ],
+            );
+
+            return back()->with('success', 'Deň bol otvorený (výnimka počas sviatku).');
+        }
+
+        if (! filled($validated['title'] ?? null)) {
+            throw ValidationException::withMessages([
+                'title' => 'Nazov je povinny.',
+            ]);
+        }
 
         $eventCount = $disabledDayService->eventCountOnDate($branch, $validated['date']);
 
@@ -74,15 +102,15 @@ class BranchDisabledDayController extends Controller
             ]);
         }
 
-        $disabledDay = BranchDisabledDay::query()->updateOrCreate(
+        BranchDisabledDay::query()->updateOrCreate(
             [
                 'branch_id' => $branch->id,
-                'date' => Carbon::parse($validated['date'])->toDateString(),
+                'date' => $date,
             ],
             [
                 'created_by' => $request->user()->id,
                 'title' => $validated['title'],
-                'type' => $validated['type'] ?? null,
+                'type' => $type,
                 'reason' => $validated['reason'] ?? null,
             ],
         );

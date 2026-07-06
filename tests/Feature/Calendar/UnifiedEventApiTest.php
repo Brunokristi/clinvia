@@ -3,6 +3,7 @@
 namespace Tests\Feature\Calendar;
 
 use App\Models\Branch;
+use App\Models\BranchDisabledDay;
 use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
@@ -16,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event as EventFacade;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\CreatesCalendarFixtures;
 use Tests\TestCase;
 
@@ -27,6 +29,7 @@ class UnifiedEventApiTest extends TestCase
     public function test_can_create_booking_event_and_send_patient_notification(): void
     {
         Notification::fake();
+        Queue::fake();
         EventFacade::fake([BranchEventUpdated::class]);
 
         $fixture = $this->createCalendarFixture();
@@ -70,7 +73,9 @@ class UnifiedEventApiTest extends TestCase
         ]);
 
         EventFacade::assertDispatched(BranchEventUpdated::class);
-        Notification::assertSentOnDemandTimes(BookingCreatedNotification::class, 1);
+        Queue::assertPushed(SendEventNotificationJob::class, function (SendEventNotificationJob $job) use ($eventId): bool {
+            return $job->eventId === $eventId;
+        });
     }
 
     public function test_event_frontend_mapper_preserves_expected_calendar_shape(): void
@@ -132,6 +137,43 @@ class UnifiedEventApiTest extends TestCase
         $this->assertSame('2026-07-20', $payload['calendarBookings'][0]['date']);
         $this->assertSame('Fixture Patient', $payload['calendarBookings'][0]['patient_name']);
         $this->assertSame('2026-07-20', $payload['calendarBookings'][0]['occurrence_date']);
+    }
+
+    public function test_event_read_adapter_skips_daily_occurrences_on_disabled_days(): void
+    {
+        $fixture = $this->createCalendarFixture();
+
+        $this->createBookingEvent($fixture, [
+            'starts_at' => '2026-07-06 09:00:00',
+            'ends_at' => '2026-07-06 09:30:00',
+            'is_recurring' => true,
+            'recurrence_rule' => $this->dailyRecurrence(1, [
+                'type' => 'on',
+                'until' => '2026-07-09',
+                'count' => null,
+            ]),
+            'metadata' => [
+                'recurrence_excluded_dates' => [],
+            ],
+        ]);
+
+        BranchDisabledDay::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'created_by' => null,
+            'date' => '2026-07-08',
+            'title' => 'Closed day',
+            'type' => 'holiday',
+            'reason' => null,
+        ]);
+
+        $payload = app(EventReadAdapterService::class)->getLegacyCalendarPayload(
+            $fixture['branch'],
+            Carbon::parse('2026-07-06')->startOfDay(),
+            Carbon::parse('2026-07-10')->endOfDay(),
+        );
+
+        $this->assertCount(3, $payload['calendarBookings']);
+        $this->assertSame(['2026-07-06', '2026-07-07', '2026-07-09'], collect($payload['calendarBookings'])->pluck('date')->all());
     }
 
     public function test_event_api_index_returns_virtual_occurrences_for_root_recurring_event(): void

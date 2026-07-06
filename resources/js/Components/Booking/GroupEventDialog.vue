@@ -17,6 +17,8 @@ import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 import PhoneInput from '@/Components/Forms/PhoneInput.vue';
+import PatientLookupField from '@/Components/Patients/PatientLookupField.vue';
+import PatientFormDialog from '@/Components/Patients/PatientFormDialog.vue';
 
 const props = defineProps({
     createEditVisible: {
@@ -46,6 +48,10 @@ const props = defineProps({
     patients: {
         type: Array,
         default: () => [],
+    },
+    branchId: {
+        type: [Number, String],
+        default: null,
     },
     repeatUnitOptions: {
         type: Array,
@@ -593,8 +599,13 @@ const pendingReschedulePayload = ref(null);
 const isResettingGroupForm = ref(false);
 const hasManuallyChangedDateTime = ref(false);
 const isDetailMode = ref(true);
+const addPatientDialogVisible = ref(false);
 const duplicatePatientsPromptVisible = ref(false);
 const pendingDuplicatePayload = ref(null);
+const selectedCapacityPatient = ref(null);
+const patientEditorVisible = ref(false);
+const editingCapacityPatient = ref(null);
+const patientEditorPrefillName = ref('');
 
 const bookings = computed(() => props.capacityWindow?.bookings ?? []);
 const capacity = computed(() => props.capacityWindow?.bookable_places ?? props.capacityWindow?.capacity ?? null);
@@ -871,6 +882,12 @@ const canAddPatient = computed(() => {
         && Boolean(patientForm.patient_name.trim());
 });
 
+const canAddSelectedExistingPatient = computed(() => {
+    return Boolean(props.capacityWindow)
+        && hasFreeCapacity.value
+        && Boolean(selectedCapacityPatient.value?.patient_name);
+});
+
 const deleteDialogTitle = computed(() => 'Delete this availability window?');
 const deleteDialogDescription = computed(() => {
     const bookingCount = bookings.value.length;
@@ -1124,6 +1141,50 @@ const enableEditMode = () => {
     editCapacityWindow();
 };
 
+const openAddPatientMode = () => {
+    if (!props.capacityWindow || !hasFreeCapacity.value) {
+        return;
+    }
+
+    selectedCapacityPatient.value = null;
+    addPatientDialogVisible.value = true;
+};
+
+const closeAddPatientDialog = () => {
+    addPatientDialogVisible.value = false;
+    selectedCapacityPatient.value = null;
+};
+
+const openPatientCreateDialog = ({ prefillName = '' } = {}) => {
+    editingCapacityPatient.value = null;
+    patientEditorPrefillName.value = String(prefillName ?? '').trim();
+    patientEditorVisible.value = true;
+};
+
+const openPatientEditDialog = (patient) => {
+    editingCapacityPatient.value = patient ?? null;
+    patientEditorPrefillName.value = '';
+    patientEditorVisible.value = true;
+};
+
+const handleCapacityPatientSelected = (patient) => {
+    selectedCapacityPatient.value = patient;
+};
+
+const handleCapacityPatientModelValueUpdate = (value) => {
+    if (!value) {
+        selectedCapacityPatient.value = null;
+    }
+};
+
+const handleCapacityPatientSaved = (patient) => {
+    if (!patient) {
+        return;
+    }
+
+    selectedCapacityPatient.value = patient;
+};
+
 const duplicateCapacityWindow = () => {
     pendingDuplicatePayload.value = props.capacityWindow;
     duplicatePatientsPromptVisible.value = true;
@@ -1150,6 +1211,8 @@ const cancelDuplicatePatientsPrompt = () => {
 const closeOccurrenceDialog = () => {
     pendingReschedulePayload.value = null;
     rescheduleChoiceVisible.value = false;
+    addPatientDialogVisible.value = false;
+    patientEditorVisible.value = false;
     hasManuallyChangedDateTime.value = false;
     isDetailMode.value = true;
 
@@ -1255,9 +1318,14 @@ const cancelPatientBooking = (booking) => {
     });
 };
 
-const addPatientToCapacityWindow = () => {
-    if (!props.capacityWindow || !canAddPatient.value) {
-        return;
+const addPatientToCapacityWindow = (patient = null) => {
+    const patientName = patient?.patient_name ?? patientForm.patient_name;
+    const patientEmail = patient?.patient_email ?? patientForm.patient_email;
+    const patientPhone = patient?.patient_phone ?? (patientForm.patient_phone_full || patientForm.patient_phone);
+    const patientBirthNumber = patient?.patient_birth_number ?? patientForm.patient_birth_number;
+
+    if (!props.capacityWindow || !hasFreeCapacity.value || !String(patientName ?? '').trim()) {
+        return false;
     }
 
     pendingReschedulePayload.value = null;
@@ -1267,14 +1335,25 @@ const addPatientToCapacityWindow = () => {
         date: selectedDateForBackend.value,
         starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
         ends_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.ends_at)),
-        patient_name: patientForm.patient_name,
-        patient_email: patientForm.patient_email,
-        patient_phone: patientForm.patient_phone_full || patientForm.patient_phone,
-        patient_birth_number: patientForm.patient_birth_number || null,
+        patient_name: String(patientName ?? '').trim(),
+        patient_email: String(patientEmail ?? '').trim(),
+        patient_phone: String(patientPhone ?? '').trim(),
+        patient_birth_number: String(patientBirthNumber ?? '').trim() || null,
         notify_patient: true,
     });
 
     resetPatientForm();
+
+    return true;
+};
+
+const submitPatientFromMiniDialog = () => {
+    const wasAdded = addPatientToCapacityWindow(selectedCapacityPatient.value);
+
+    if (wasAdded) {
+        addPatientDialogVisible.value = false;
+        selectedCapacityPatient.value = null;
+    }
 };
 </script>
 
@@ -1404,7 +1483,10 @@ const addPatientToCapacityWindow = () => {
         <template #footer-start>
             <EventOccurrenceActions
                 v-if="capacityWindow && isDetailMode"
+                show-patients
+                patients-label="+ Pacient"
                 @duplicate="duplicateCapacityWindow"
+                @patients="openAddPatientMode"
                 @edit="enableEditMode"
             />
         </template>
@@ -1564,6 +1646,47 @@ const addPatientToCapacityWindow = () => {
         subject-label="skupinový termín"
         @select="submitRescheduleScope"
         @cancel="closeRescheduleChoice"
+    />
+
+    <FormDialog
+        v-model:visible="addPatientDialogVisible"
+        title="Pridať pacienta"
+        width="max-w-xl"
+        :dismissable-mask="true"
+        @close="closeAddPatientDialog"
+    >
+        <form class="space-y-4" @submit.prevent="submitPatientFromMiniDialog">
+            <PatientLookupField
+                input-id="capacity_dialog_existing_patient"
+                :model-value="selectedCapacityPatient?.patient_name ?? ''"
+                :patients="patients"
+                placeholder="Vyberte pacienta"
+                add-button-label="Pridať pacienta"
+                footer-add-button-label="Pridať nového pacienta"
+                edit-button-label="Upraviť pacienta"
+                @update:model-value="handleCapacityPatientModelValueUpdate"
+                @select-patient="handleCapacityPatientSelected"
+                @request-add-patient="openPatientCreateDialog"
+                @request-edit-patient="openPatientEditDialog"
+            />
+
+            <div class="flex justify-end">
+                <Button
+                    type="submit"
+                    label="Pridať pacienta"
+                    icon="pi pi-user-plus"
+                    :disabled="!canAddSelectedExistingPatient"
+                />
+            </div>
+        </form>
+    </FormDialog>
+
+    <PatientFormDialog
+        v-model:visible="patientEditorVisible"
+        :branch-id="branchId"
+        :patient="editingCapacityPatient"
+        :prefill-name="patientEditorPrefillName"
+        @saved="handleCapacityPatientSaved"
     />
 
     <FormDialog

@@ -175,25 +175,180 @@ const addRuleInterval = (date, unit, every) => {
     return next;
 };
 
-const countRuleOccurrencesBetween = (startDate, endDate, rule) => {
-    if (!startDate || !endDate || endDate < startDate) {
-        return null;
+const getRecurrenceFrequency = (recurrence, rule) => {
+    const frequency = recurrence?.frequency
+        ?? recurrence?.repeat_unit
+        ?? recurrence?.unit
+        ?? (rule?.repeat_unit === 'days' ? 'daily' : (rule?.repeat_unit === 'months' ? 'monthly' : 'weekly'));
+
+    if (['daily', 'weekly', 'monthly', 'yearly'].includes(frequency)) {
+        return frequency;
     }
 
-    const unit = ['days', 'weeks', 'months'].includes(rule?.repeat_unit)
-        ? rule.repeat_unit
-        : 'weeks';
-    const every = Math.max(1, Number(rule?.repeat_every ?? 1));
-
-    let count = 0;
-    let cursor = new Date(startDate);
-
-    while (cursor <= endDate && count < 1000) {
-        count += 1;
-        cursor = addRuleInterval(cursor, unit, every);
+    if (frequency === 'days') {
+        return 'daily';
     }
 
-    return count;
+    if (frequency === 'months') {
+        return 'monthly';
+    }
+
+    return 'weekly';
+};
+
+const addRecurrenceInterval = (date, frequency, interval) => {
+    const next = new Date(date);
+
+    if (frequency === 'daily') {
+        next.setDate(next.getDate() + interval);
+
+        return next;
+    }
+
+    if (frequency === 'monthly') {
+        next.setMonth(next.getMonth() + interval);
+
+        return next;
+    }
+
+    if (frequency === 'yearly') {
+        next.setFullYear(next.getFullYear() + interval);
+
+        return next;
+    }
+
+    next.setDate(next.getDate() + (7 * interval));
+
+    return next;
+};
+
+const toIsoWeekday = (date) => {
+    const weekday = date.getDay();
+
+    return weekday === 0 ? 7 : weekday;
+};
+
+const getWeekStartMonday = (date) => {
+    const monday = new Date(date);
+    const isoWeekday = toIsoWeekday(monday);
+
+    monday.setDate(monday.getDate() - (isoWeekday - 1));
+    monday.setHours(0, 0, 0, 0);
+
+    return monday;
+};
+
+const weekdayCodeFromDate = (date) => {
+    return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()];
+};
+
+const getRuleWeekdayCodes = (rule) => {
+    const recurrenceWeekdays = Array.isArray(rule?.recurrence?.weekdays)
+        ? rule.recurrence.weekdays
+        : [];
+    const legacyWeekdays = Array.isArray(rule?.repeat_weekdays)
+        ? rule.repeat_weekdays
+        : [];
+
+    const weekdays = recurrenceWeekdays.length ? recurrenceWeekdays : legacyWeekdays;
+
+    return [...new Set(
+        weekdays
+            .map((weekday) => String(weekday).toUpperCase())
+            .filter((weekday) => ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].includes(weekday)),
+    )];
+};
+
+const getRuleOccurrences = (rule) => {
+    const startDate = parseDateOnly(rule?.date);
+
+    if (!startDate) {
+        return [];
+    }
+
+    const excludedDates = new Set(
+        Array.isArray(rule?.excluded_dates)
+            ? rule.excluded_dates.map((value) => String(value).slice(0, 10))
+            : [],
+    );
+
+    if (!rule?.repeats) {
+        const startDateString = startDate.toISOString().slice(0, 10);
+
+        return excludedDates.has(startDateString) ? [] : [startDateString];
+    }
+
+    const recurrence = rule?.recurrence ?? null;
+    const frequency = getRecurrenceFrequency(recurrence, rule);
+    const interval = Math.max(1, Number(recurrence?.interval ?? rule?.repeat_every ?? 1));
+    const untilDate = parseDateOnly(recurrence?.ends?.until ?? rule?.repeat_ends_on ?? null);
+    const maxOccurrences = Math.max(0, Number(recurrence?.ends?.count ?? 0));
+    const maxIterations = 2000;
+    const occurrences = [];
+
+    if (!untilDate && maxOccurrences <= 0) {
+        return [];
+    }
+
+    if (frequency === 'weekly') {
+        const weekdayCodes = getRuleWeekdayCodes(rule);
+        const startWeekdayCode = weekdayCodeFromDate(startDate);
+        const activeWeekdays = weekdayCodes.length ? weekdayCodes : [startWeekdayCode];
+        const seriesWeekStart = getWeekStartMonday(startDate);
+        let candidate = new Date(startDate);
+        let iterations = 0;
+
+        while (iterations < maxIterations) {
+            iterations += 1;
+
+            if (untilDate && candidate > untilDate) {
+                break;
+            }
+
+            const candidateDateString = candidate.toISOString().slice(0, 10);
+            const candidateWeekStart = getWeekStartMonday(candidate);
+            const weekDiff = Math.floor((candidateWeekStart.getTime() - seriesWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            const weekdayMatches = activeWeekdays.includes(weekdayCodeFromDate(candidate));
+            const intervalMatches = weekDiff >= 0 && weekDiff % interval === 0;
+
+            if (weekdayMatches && intervalMatches && !excludedDates.has(candidateDateString)) {
+                occurrences.push(candidateDateString);
+
+                if (maxOccurrences > 0 && occurrences.length >= maxOccurrences) {
+                    break;
+                }
+            }
+
+            candidate.setDate(candidate.getDate() + 1);
+        }
+
+        return occurrences;
+    }
+
+    let candidate = new Date(startDate);
+    let iterations = 0;
+
+    while (iterations < maxIterations) {
+        iterations += 1;
+
+        if (untilDate && candidate > untilDate) {
+            break;
+        }
+
+        const candidateDateString = candidate.toISOString().slice(0, 10);
+
+        if (!excludedDates.has(candidateDateString)) {
+            occurrences.push(candidateDateString);
+
+            if (maxOccurrences > 0 && occurrences.length >= maxOccurrences) {
+                break;
+            }
+        }
+
+        candidate = addRecurrenceInterval(candidate, frequency, interval);
+    }
+
+    return occurrences;
 };
 
 const deleteCountOccurrence = computed(() => 1);
@@ -203,10 +358,9 @@ const deleteCountSeries = computed(() => {
         return 1;
     }
 
-    const start = parseDateOnly(props.rule?.date);
-    const end = parseDateOnly(props.rule?.repeat_ends_on);
+    const occurrences = getRuleOccurrences(props.rule);
 
-    return countRuleOccurrencesBetween(start, end, props.rule);
+    return occurrences.length > 0 ? occurrences.length : null;
 });
 
 const deleteCountFromDate = computed(() => {
@@ -218,9 +372,34 @@ const deleteCountFromDate = computed(() => {
         props.selectedRuleOccurrence?.occurrenceDate
         ?? props.rule?.date,
     );
-    const end = parseDateOnly(props.rule?.repeat_ends_on);
 
-    return countRuleOccurrencesBetween(fromDate, end, props.rule);
+    if (!fromDate) {
+        return null;
+    }
+
+    const occurrences = getRuleOccurrences(props.rule);
+
+    if (!occurrences.length) {
+        return null;
+    }
+
+    const matchingIndex = occurrences.findIndex((dateString) => {
+        const parsed = parseDateOnly(dateString);
+
+        return parsed && parsed.getTime() === fromDate.getTime();
+    });
+
+    if (matchingIndex >= 0) {
+        return occurrences.length - matchingIndex;
+    }
+
+    const fallbackCount = occurrences.filter((dateString) => {
+        const parsed = parseDateOnly(dateString);
+
+        return parsed && parsed >= fromDate;
+    }).length;
+
+    return fallbackCount > 0 ? fallbackCount : null;
 });
 
 const ruleInfoItems = computed(() => {

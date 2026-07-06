@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\BranchEmployeeController;
 use App\Http\Controllers\Admin\BranchFaqItemController;
 use App\Http\Controllers\Admin\BranchInboxMessageController;
 use App\Http\Controllers\Admin\BranchOpeningHoursController;
+use App\Http\Controllers\Admin\BranchPatientController;
 use App\Http\Controllers\Admin\BranchPublicSiteController;
 use App\Http\Controllers\Admin\BranchReplyTemplateController;
 use App\Http\Controllers\Admin\BranchServiceController;
@@ -340,6 +341,18 @@ Route::middleware(['auth', 'active'])->group(function () {
 
                 Route::get('/contacts', [BranchController::class, 'settings'])
                     ->name('contacts.page');
+
+                Route::get('/patients', [BranchController::class, 'settings'])
+                    ->name('patients.page');
+
+                Route::post('/patients', [BranchPatientController::class, 'store'])
+                    ->name('patients.store');
+
+                Route::put('/patients/{patient}', [BranchPatientController::class, 'update'])
+                    ->name('patients.update');
+
+                Route::delete('/patients/{patient}', [BranchPatientController::class, 'destroy'])
+                    ->name('patients.destroy');
 
                 Route::post('/contacts', [BranchContactController::class, 'store'])
                     ->name('contacts.store');

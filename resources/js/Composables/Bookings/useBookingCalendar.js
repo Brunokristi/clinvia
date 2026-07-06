@@ -429,6 +429,110 @@ export function useBookingCalendar(props, options = {}) {
         return next;
     };
 
+    const weekdayCodeFromDate = (dateValue) => {
+        return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][dateValue.getDay()] ?? 'MO';
+    };
+
+    const getRecurrenceWeekdays = (seriesStart, recurrence) => {
+        const weekdays = Array.isArray(recurrence?.weekdays)
+            ? recurrence.weekdays
+                .map((weekday) => String(weekday).toUpperCase())
+                .filter((weekday) => ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].includes(weekday))
+            : [];
+
+        return weekdays.length > 0
+            ? [...new Set(weekdays)]
+            : [weekdayCodeFromDate(seriesStart)];
+    };
+
+    const getWeekStartMonday = (dateValue) => {
+        const date = new Date(dateValue);
+        const isoDay = date.getDay() === 0 ? 7 : date.getDay();
+
+        date.setDate(date.getDate() - (isoDay - 1));
+        date.setHours(0, 0, 0, 0);
+
+        return date;
+    };
+
+    const matchesRecurrenceDate = (seriesStart, candidateDate, recurrence) => {
+        if (!seriesStart || !candidateDate || candidateDate < seriesStart) {
+            return false;
+        }
+
+        const frequency = recurrence?.frequency ?? 'weekly';
+        const interval = Math.max(1, Number(recurrence?.interval ?? 1));
+
+        if (frequency === 'daily') {
+            const diffDays = Math.floor((candidateDate.getTime() - seriesStart.getTime()) / (24 * 60 * 60 * 1000));
+
+            return diffDays % interval === 0;
+        }
+
+        if (frequency === 'monthly') {
+            const diffMonths = (candidateDate.getFullYear() - seriesStart.getFullYear()) * 12
+                + (candidateDate.getMonth() - seriesStart.getMonth());
+
+            return diffMonths >= 0
+                && diffMonths % interval === 0
+                && candidateDate.getDate() === seriesStart.getDate();
+        }
+
+        if (frequency === 'yearly') {
+            const diffYears = candidateDate.getFullYear() - seriesStart.getFullYear();
+
+            return diffYears >= 0
+                && diffYears % interval === 0
+                && candidateDate.getMonth() === seriesStart.getMonth()
+                && candidateDate.getDate() === seriesStart.getDate();
+        }
+
+        const weekdays = getRecurrenceWeekdays(seriesStart, recurrence);
+
+        if (!weekdays.includes(weekdayCodeFromDate(candidateDate))) {
+            return false;
+        }
+
+        const seriesWeekStart = getWeekStartMonday(seriesStart);
+        const candidateWeekStart = getWeekStartMonday(candidateDate);
+        const diffWeeks = Math.round((candidateWeekStart.getTime() - seriesWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+
+        return diffWeeks >= 0 && diffWeeks % interval === 0;
+    };
+
+    const resolveRepeatEndsOnFromCount = (date, recurrence) => {
+        const count = Math.max(1, Number(recurrence?.ends?.count ?? 1));
+        const seriesStart = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+
+        if (Number.isNaN(seriesStart.getTime())) {
+            return null;
+        }
+
+        if (count === 1) {
+            return formatDateOnly(seriesStart);
+        }
+
+        let cursor = new Date(seriesStart);
+        let matches = 0;
+        let safety = 0;
+
+        while (matches < count && safety < 5000) {
+            if (matchesRecurrenceDate(seriesStart, cursor, recurrence)) {
+                matches += 1;
+
+                if (matches === count) {
+                    return formatDateOnly(cursor);
+                }
+            }
+
+            cursor = new Date(cursor);
+            cursor.setDate(cursor.getDate() + 1);
+            safety += 1;
+        }
+
+        return null;
+    };
+
     const resolveRepeatEndsOn = (date, recurrence = null) => {
         if (!recurrence || !date) {
             return null;
@@ -444,17 +548,8 @@ export function useBookingCalendar(props, options = {}) {
             return null;
         }
 
-        const { repeat_every, repeat_unit } = recurrenceFrequencyToRepeatSettings(recurrence);
-
         if (recurrence?.ends?.type === 'after') {
-            const count = Math.max(1, Number(recurrence?.ends?.count ?? 1));
-            let cursor = new Date(startDate);
-
-            for (let index = 1; index < count; index += 1) {
-                cursor = addRepeatIntervalToDate(cursor, repeat_unit, repeat_every);
-            }
-
-            return formatDateOnly(cursor);
+            return resolveRepeatEndsOnFromCount(date, recurrence);
         }
 
         const fallback = new Date(startDate);
@@ -549,7 +644,10 @@ export function useBookingCalendar(props, options = {}) {
                     data.target_original_recurrence ?? booking.recurrence ?? null,
                     data.recurrence ?? null,
                 );
-                const requestedScope = data.save_scope ?? (data.target_is_recurring ? 'series' : null);
+                const requestedScope = data.save_scope
+                    ?? (data.target_is_recurring
+                        ? (data.target_occurrence_date ? 'occurrence' : 'series')
+                        : null);
                 let resolvedScope = requestedScope;
 
                 if (data.target_is_recurring && recurrenceChanged && requestedScope === 'occurrence') {
@@ -605,6 +703,7 @@ export function useBookingCalendar(props, options = {}) {
                     ends_at: selectionInfo.ends_at,
                     service_ids: data.service_ids ?? [],
                     public_booking_type: data.public_booking_type ?? targetRule.public_booking_type,
+                    recurrence: data.recurrence ?? null,
                     repeats: Boolean(data.repeats),
                     repeat_every: Number(repeatSettings.repeat_every ?? data.repeat_every ?? 1),
                     repeat_unit: repeatSettings.repeat_unit ?? data.repeat_unit ?? 'weeks',
@@ -730,6 +829,7 @@ export function useBookingCalendar(props, options = {}) {
                 ends_at: selectionInfo.ends_at,
                 service_ids: data.service_ids ?? [],
                 public_booking_type: data.public_booking_type ?? 'immediate_booking',
+                recurrence: data.recurrence ?? null,
                 repeats: Boolean(data.repeats),
                 ...recurrenceFrequencyToRepeatSettings(data.recurrence ?? null),
                 repeat_weekdays: data.recurrence?.frequency === 'weekly'
@@ -815,7 +915,9 @@ export function useBookingCalendar(props, options = {}) {
             target_type: 'booking',
             target_id: getBookingRecordId(booking),
             target_calendar_event_id: booking.calendar_event_id ?? null,
-            target_occurrence_date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
+            target_occurrence_date: booking.occurrence_original_date
+                ?? booking.occurrence_date
+                ?? String(booking.starts_at ?? '').slice(0, 10),
             target_is_recurring: Boolean(booking.recurrence),
             target_original_recurrence: booking.recurrence ?? null,
             date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
@@ -839,6 +941,7 @@ export function useBookingCalendar(props, options = {}) {
         }
 
         const occurrenceDate = payload?.selectedRuleOccurrence?.occurrenceDate ?? rule.date;
+        const occurrenceOriginalDate = payload?.selectedRuleOccurrence?.occurrenceOriginalDate ?? occurrenceDate;
         const recurrenceFrequency = rule.repeat_unit === 'days'
             ? 'daily'
             : (rule.repeat_unit === 'months' ? 'monthly' : 'weekly');
@@ -864,7 +967,7 @@ export function useBookingCalendar(props, options = {}) {
             edit_mode: true,
             target_type: 'rule',
             target_id: rule.id,
-            target_occurrence_date: occurrenceDate,
+            target_occurrence_date: occurrenceOriginalDate,
             target_is_recurring: Boolean(rule.repeats),
             target_original_recurrence: recurrence,
             date: occurrenceDate,
@@ -905,6 +1008,8 @@ export function useBookingCalendar(props, options = {}) {
             dialogs.selectedRuleOccurrence.value = {
                 ruleIndex,
                 occurrenceDate: clickInfo.event.extendedProps.occurrenceDate,
+                occurrenceOriginalDate: clickInfo.event.extendedProps.occurrenceOriginalDate
+                    ?? clickInfo.event.extendedProps.occurrenceDate,
                 isRepeatedOccurrence: clickInfo.event.extendedProps.isRepeatedOccurrence,
                 originalRule: cloneRuleForRestore(rule),
             };

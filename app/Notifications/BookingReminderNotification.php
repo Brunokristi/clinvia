@@ -32,8 +32,6 @@ class BookingReminderNotification extends Notification
             'branch',
             'service',
             'services',
-            'bookingSlot',
-            'capacityWindow',
         ]);
 
         $appointmentLabel = $this->startsAt->format('d.m.Y H:i');

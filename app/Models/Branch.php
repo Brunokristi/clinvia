@@ -56,6 +56,13 @@ class Branch extends Model
         return $this->hasMany(Contact::class)->orderBy('sort_order');
     }
 
+    public function patients(): HasMany
+    {
+        return $this->hasMany(Patient::class)
+            ->orderByDesc('last_used_at')
+            ->orderByDesc('id');
+    }
+
     public function openingHours(): HasMany
     {
         return $this->hasMany(OpeningHour::class)->orderBy('day_of_week');

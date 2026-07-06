@@ -27,17 +27,13 @@ class BookingCancelledNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $this->booking->loadMissing(['branch', 'service', 'services', 'bookingSlot', 'capacityWindow']);
+        $this->booking->loadMissing(['branch', 'service', 'services']);
 
         $startsAt = $this->appointmentStartsAt
-            ?? $this->booking->starts_at
-            ?? $this->booking->capacityWindow?->starts_at
-            ?? $this->booking->bookingSlot?->starts_at;
+            ?? $this->booking->starts_at;
 
         $endsAt = $this->appointmentEndsAt
-            ?? $this->booking->ends_at
-            ?? $this->booking->capacityWindow?->ends_at
-            ?? $this->booking->bookingSlot?->ends_at;
+            ?? $this->booking->ends_at;
 
         $appointmentLabel = null;
 

@@ -95,7 +95,9 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         repeat_unit: 'weeks',
         repeat_weekdays: [],
         repeat_ends_on: null,
+        recurrence: null,
         excluded_dates: [],
+        occurrence_overrides: [],
 
         is_enabled: true,
     });
@@ -135,7 +137,19 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         repeat_unit: rule.repeat_unit ?? 'weeks',
         repeat_weekdays: Array.isArray(rule.repeat_weekdays) ? [...rule.repeat_weekdays] : [],
         repeat_ends_on: formatDate(rule.repeat_ends_on),
+        recurrence: rule.recurrence ?? rule.recurrence_rule ?? null,
         excluded_dates: rule.excluded_dates ?? [],
+        occurrence_overrides: Array.isArray(rule.occurrence_overrides)
+            ? rule.occurrence_overrides
+                .map((override) => ({
+                    original_date: String(override?.original_date ?? '').slice(0, 10),
+                    date: String(override?.date ?? '').slice(0, 10),
+                    starts_at: override?.starts_at ? String(override.starts_at).slice(0, 5) : null,
+                    ends_at: override?.ends_at ? String(override.ends_at).slice(0, 5) : null,
+                    status: override?.status ?? null,
+                }))
+                .filter((override) => override.original_date && override.date)
+            : [],
 
         is_enabled: Boolean(rule.is_enabled),
     });
@@ -231,7 +245,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const getSelectedOccurrenceDate = () => {
         const rule = getSelectedRule();
 
-        return selectedRuleOccurrence.value?.occurrenceDate
+        return selectedRuleOccurrence.value?.occurrenceOriginalDate
+            ?? selectedRuleOccurrence.value?.occurrenceDate
             ?? rule?.date
             ?? null;
     };
@@ -340,11 +355,11 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         const intervalWeeks = Math.max(1, Number(rule.repeat_every || 1));
         const weekdayCodes = getRuleWeekdayCodes(rule);
         const seriesWeekStart = getWeekStartMonday(startDate);
-        const firstCandidate = new Date(Math.max(startDate.getTime(), calendarStart.getTime()));
+        const maxOccurrences = Math.max(0, Number(rule?.recurrence?.ends?.count ?? 0));
+        let producedOccurrences = 0;
+        let candidate = new Date(startDate);
 
-        firstCandidate.setHours(0, 0, 0, 0);
-
-        let candidate = firstCandidate;
+        candidate.setHours(0, 0, 0, 0);
 
         while (candidate <= maxEndDate) {
             const candidateDateString = getDateFromDate(candidate);
@@ -362,7 +377,19 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 && !excludedDates.includes(candidateDateString)
                 && !isBlockedDate(candidateDateString)
             ) {
-                occurrences.push(candidateDateString);
+                producedOccurrences += 1;
+
+                if (maxOccurrences > 0 && producedOccurrences > maxOccurrences) {
+                    break;
+                }
+
+                if (candidate >= calendarStart) {
+                    occurrences.push(candidateDateString);
+                }
+            }
+
+            if (maxOccurrences > 0 && producedOccurrences >= maxOccurrences) {
+                break;
             }
 
             candidate = new Date(candidate);
@@ -370,6 +397,26 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         return occurrences;
+    };
+
+    const getCountLimitedMaxEndDate = (startDate, rule) => {
+        const maxOccurrences = Math.max(0, Number(rule?.recurrence?.ends?.count ?? 0));
+
+        if (maxOccurrences <= 0) {
+            return null;
+        }
+
+        const frequency = rule?.recurrence?.frequency ?? (rule?.repeat_unit === 'days' ? 'daily' : (rule?.repeat_unit === 'months' ? 'monthly' : 'weekly'));
+        const interval = Math.max(1, Number(rule?.recurrence?.interval ?? rule?.repeat_every ?? 1));
+        let cursor = new Date(startDate);
+
+        for (let index = 1; index < maxOccurrences; index += 1) {
+            cursor = addRecurrenceInterval(cursor, frequency, interval);
+        }
+
+        cursor.setHours(23, 59, 59, 999);
+
+        return cursor;
     };
 
     const getRuleOccurrences = (rule) => {
@@ -393,10 +440,13 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         const repeatEndDate = rule.repeat_ends_on
             ? new Date(`${rule.repeat_ends_on}T23:59:59`)
             : null;
+        const countLimitedEndDate = getCountLimitedMaxEndDate(startDate, rule);
 
-        const maxEndDate = repeatEndDate && repeatEndDate < calendarEnd
-            ? repeatEndDate
-            : calendarEnd;
+        const maxEndDateCandidates = [calendarEnd, repeatEndDate, countLimitedEndDate]
+            .filter(Boolean)
+            .sort((first, second) => first.getTime() - second.getTime());
+
+        const maxEndDate = maxEndDateCandidates[0] ?? calendarEnd;
 
         if (!rule.repeats) {
             if (
@@ -422,16 +472,29 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         let occurrenceDate = startDate;
+        const maxOccurrences = Math.max(0, Number(rule?.recurrence?.ends?.count ?? 0));
+        let producedOccurrences = 0;
 
         while (occurrenceDate <= maxEndDate) {
             const occurrenceDateString = getDateFromDate(occurrenceDate);
 
             if (
-                occurrenceDate >= calendarStart
-                && !excludedDates.includes(occurrenceDateString)
+                !excludedDates.includes(occurrenceDateString)
                 && !isBlockedDate(occurrenceDateString)
             ) {
-                occurrences.push(occurrenceDateString);
+                producedOccurrences += 1;
+
+                if (maxOccurrences > 0 && producedOccurrences > maxOccurrences) {
+                    break;
+                }
+
+                if (occurrenceDate >= calendarStart) {
+                    occurrences.push(occurrenceDateString);
+                }
+            }
+
+            if (maxOccurrences > 0 && producedOccurrences >= maxOccurrences) {
+                break;
             }
 
             occurrenceDate = addRepeatInterval(occurrenceDate, rule);
@@ -470,6 +533,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             repeat_unit: rule.repeats ? (rule.repeat_unit || 'weeks') : 'weeks',
             repeat_weekdays: rule.repeats ? (rule.repeat_weekdays ?? []) : [],
             repeat_ends_on: rule.repeats ? rule.repeat_ends_on : null,
+            recurrence: rule.repeats ? (rule.recurrence ?? null) : null,
             excluded_dates: rule.excluded_dates ?? [],
 
             is_enabled: Boolean(rule.is_enabled),
@@ -490,7 +554,9 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         ...rule,
         service_ids: [...(rule.service_ids ?? [])],
         repeat_weekdays: [...(rule.repeat_weekdays ?? [])],
+        recurrence: rule.recurrence ? JSON.parse(JSON.stringify(rule.recurrence)) : null,
         excluded_dates: [...(rule.excluded_dates ?? [])],
+        occurrence_overrides: (rule.occurrence_overrides ?? []).map((override) => ({ ...override })),
     });
 
     const normalizeDateOnly = (value) => {
@@ -740,19 +806,30 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         if (rule.repeats && rule.id) {
             changeInfo.revert();
 
-            Object.assign(rule, nextRule);
+            const occurrenceDate = changeInfo.event.extendedProps.occurrenceOriginalDate
+                ?? changeInfo.event.extendedProps.occurrenceDate
+                ?? previousRule.date;
 
-            selectedRuleIndex.value = index;
-            selectedRuleOccurrence.value = {
-                ruleIndex: index,
-                occurrenceDate: changeInfo.event.extendedProps.occurrenceDate ?? previousRule.date,
-                isRepeatedOccurrence: true,
-                originalRule: previousRule,
-                pendingReschedule: nextRule,
-                source: 'calendar_drag',
-            };
-
-            ruleRescheduleScopeDialogVisible.value = true;
+            router.post(route('branches.booking.rules.reschedule', [
+                props.branch.id,
+                rule.id,
+            ]), {
+                occurrence_date: occurrenceDate,
+                date: nextRule.date,
+                starts_at: nextRule.starts_at,
+                ends_at: nextRule.ends_at,
+                reschedule_scope: 'occurrence',
+            }, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    showSuccess('Voľný čas bol presunutý.');
+                    reloadRuleStateSoon();
+                },
+                onError: (errors) => {
+                    showError('Voľný čas sa nepodarilo presunúť.', errors);
+                },
+            });
 
             return;
         }

@@ -31,6 +31,43 @@ class EventReadAdapterService
             ->map(fn (Event $event) => $this->mapper->mapForLegacyPayload($event))
             ->all();
 
+        $availabilityOverrideMap = $expandedOccurrences
+            ->filter(fn (array $occurrence) => $occurrence['event']->type === EventType::AvailabilityRule)
+            ->filter(fn (array $occurrence) => (bool) ($occurrence['is_override'] ?? false))
+            ->groupBy(fn (array $occurrence) => (int) $occurrence['root_event_id'])
+            ->map(function ($occurrences) {
+                return $occurrences
+                    ->map(function (array $occurrence): array {
+                        /** @var Event $override */
+                        $override = $occurrence['event'];
+
+                        return [
+                            'root_event_id' => (int) ($occurrence['root_event_id'] ?? 0),
+                            'original_date' => $override->recurrence_original_starts_at?->toDateString(),
+                            'date' => ($occurrence['occurrence_starts_at'] ?? null)?->toDateString(),
+                            'starts_at' => ($occurrence['occurrence_starts_at'] ?? null)?->format('H:i'),
+                            'ends_at' => ($occurrence['occurrence_ends_at'] ?? null)?->format('H:i'),
+                            'status' => $override->status,
+                        ];
+                    })
+                    ->filter(fn (array $override) => ! empty($override['original_date']) && ! empty($override['date']))
+                    ->values()
+                    ->all();
+            })
+            ->all();
+
+        $availabilityRules = collect($availabilityRules)
+            ->map(function (array $rule) use ($availabilityOverrideMap): array {
+                $eventId = (int) ($rule['id'] ?? 0);
+
+                return [
+                    ...$rule,
+                    'occurrence_overrides' => $availabilityOverrideMap[$eventId] ?? [],
+                ];
+            })
+            ->values()
+            ->all();
+
         $calendarBookings = $expandedOccurrences
             ->filter(fn (array $occurrence) => $occurrence['event']->type === EventType::Booking)
             ->map(fn (array $occurrence) => $this->mapper->mapExpandedOccurrenceForLegacyPayload($occurrence))

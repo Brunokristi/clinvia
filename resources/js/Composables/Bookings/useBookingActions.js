@@ -209,6 +209,11 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
     const rescheduleBooking = (booking, data = {}) => {
         const serviceIds = getBookingServiceIds(booking, data);
+        const inferredRecurringScope = isBookingRepeatable(booking)
+            ? (data.date || booking.occurrence_original_date || booking.occurrence_date ? 'occurrence' : 'series')
+            : null;
+        const requestedScope = data.reschedule_scope ?? inferredRecurringScope;
+        const shouldSendRecurrence = requestedScope !== 'occurrence';
 
         router.post(route('branches.booking.bookings.reschedule', [
             props.branch.id,
@@ -222,10 +227,16 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             patient_email: data.patient_email ?? booking.patient_email ?? null,
             patient_phone: data.patient_phone ?? booking.patient_phone ?? null,
             patient_birth_number: data.patient_birth_number ?? booking.patient_birth_number ?? null,
-            recurrence: data.recurrence ?? booking.recurrence ?? null,
+            ...(shouldSendRecurrence
+                ? { recurrence: data.recurrence ?? booking.recurrence ?? null }
+                : {}),
             notify_patient: true,
-            reschedule_scope: data.reschedule_scope ?? null,
-            date: data.date ?? booking.occurrence_date ?? booking.starts_at ?? null,
+            reschedule_scope: requestedScope,
+            date: data.date
+                ?? booking.occurrence_original_date
+                ?? booking.occurrence_date
+                ?? booking.starts_at
+                ?? null,
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -279,7 +290,9 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             ends_at: changeInfo.event.end
                 ? toLocalDateTimeString(changeInfo.event.end)
                 : booking.ends_datetime ?? booking.ends_at,
-            date: booking.occurrence_date ?? String(booking.starts_at ?? '').slice(0, 10),
+            date: booking.occurrence_original_date
+                ?? booking.occurrence_date
+                ?? String(booking.starts_at ?? '').slice(0, 10),
             notify_patient: true,
         };
 

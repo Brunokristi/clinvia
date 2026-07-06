@@ -14,6 +14,8 @@ import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
 import PhoneInput from '@/Components/Forms/PhoneInput.vue';
+import PatientLookupField from '@/Components/Patients/PatientLookupField.vue';
+import PatientFormDialog from '@/Components/Patients/PatientFormDialog.vue';
 
 const props = defineProps({
     visible: {
@@ -27,6 +29,10 @@ const props = defineProps({
     patients: {
         type: Array,
         default: () => [],
+    },
+    branchId: {
+        type: [Number, String],
+        default: null,
     },
     selection: {
         type: Object,
@@ -114,6 +120,10 @@ const patientRecords = computed(() => {
 const bookingPatientNameSuggestions = ref([]);
 const bookingPatientEmailSuggestions = ref([]);
 const groupPatientNameSuggestions = ref([]);
+const patientDialogVisible = ref(false);
+const selectedBookingPatient = ref(null);
+const editingPatient = ref(null);
+const patientDialogPrefillName = ref('');
 
 const formatPatientSuggestionLabel = (patient) => {
     const details = [patient.patient_birth_number, patient.patient_email, patient.patient_phone]
@@ -279,6 +289,44 @@ const onGroupPatientNameSelect = (event) => {
 
     applyGroupPatient(selectedPatient);
     form.group_patient_name = selectedPatient?.patient_name ?? '';
+};
+
+const bookingPatientNameInput = computed(() => String(form.patient_name ?? '').trim());
+const groupPatientNameInput = computed(() => String(form.group_patient_name ?? '').trim());
+
+const openPatientCreateDialog = ({ prefillName = '' } = {}) => {
+    editingPatient.value = null;
+    patientDialogPrefillName.value = String(prefillName ?? '').trim();
+    patientDialogVisible.value = true;
+};
+
+const openAddPatientDialog = ({ prefillName = '' } = {}) => {
+    openPatientCreateDialog({ prefillName });
+};
+
+const openPatientEditDialog = (patient) => {
+    editingPatient.value = patient ?? null;
+    patientDialogPrefillName.value = '';
+    patientDialogVisible.value = true;
+};
+
+const handleBookingPatientSelected = (patient) => {
+    selectedBookingPatient.value = patient;
+
+    if (!patient) {
+        return;
+    }
+
+    applyBookingPatient(patient);
+    form.patient_name = patient.patient_name ?? '';
+};
+
+const handlePatientSaved = (patient) => {
+    if (!patient) {
+        return;
+    }
+
+    handleBookingPatientSelected(patient);
 };
 
 const selectedServices = computed(() => {
@@ -711,6 +759,15 @@ watch(() => props.visible, (visible) => {
     }
 });
 
+watch(
+    () => [props.patients, form.patient_name],
+    () => {
+        const matchedPatient = findPatientByName(form.patient_name);
+        selectedBookingPatient.value = matchedPatient;
+    },
+    { deep: true },
+);
+
 watch(() => props.selection, () => {
     if (props.visible) {
         resetCreateForm();
@@ -974,41 +1031,30 @@ const submitCreate = (saveScope = null) => {
                         required
                         span="md:col-span-2"
                     >
-                        <AutoComplete
-                            id="patient_name"
+                        <PatientLookupField
+                            input-id="patient_name"
                             v-model="form.patient_name"
-                            :suggestions="bookingPatientNameSuggestions"
-                            option-label="label"
-                            dropdown
-                            complete-on-focus
-                            class="w-full"
+                            :patients="patients"
                             placeholder="Meno a priezvisko"
-                            @complete="completeBookingPatientName"
-                            @item-select="onBookingPatientNameSelect"
-                        >
-                            <template #option="{ option }">
-                                <div class="flex flex-col">
-                                    <span class="font-medium">{{ option.value }}</span>
-                                    <span class="text-xs text-accent">{{ option.label }}</span>
-                                </div>
-                            </template>
-                        </AutoComplete>
+                            add-button-label="Pridať pacienta"
+                            footer-add-button-label="Pridať nového pacienta"
+                            edit-button-label="Upraviť pacienta"
+                            @select-patient="handleBookingPatientSelected"
+                            @request-add-patient="openPatientCreateDialog"
+                            @request-edit-patient="openPatientEditDialog"
+                        />
                     </FormField>
 
                     <FormField
                         label="E-mail"
                         for="patient_email"
                     >
-                        <AutoComplete
+                        <InputText
                             id="patient_email"
                             v-model="form.patient_email"
-                            :suggestions="bookingPatientEmailSuggestions"
-                            dropdown
-                            complete-on-focus
+                            type="email"
                             class="w-full"
                             placeholder="napr. pacient@email.sk"
-                            @complete="completeBookingPatientEmail"
-                            @item-select="onBookingPatientEmailSelect"
                         />
                     </FormField>
 
@@ -1220,6 +1266,39 @@ const submitCreate = (saveScope = null) => {
                                     <span class="text-xs text-accent">{{ option.label }}</span>
                                 </div>
                             </template>
+
+                            <template #empty>
+                                <div class="space-y-2 p-2">
+                                    <p class="text-xs text-accent">
+                                        Nenašiel sa žiadny pacient.
+                                    </p>
+
+                                    <Button
+                                        type="button"
+                                        size="small"
+                                        icon="pi pi-user-plus"
+                                        label="Pridať pacienta"
+                                        text
+                                        :disabled="!canAddMoreGroupPatients"
+                                        @click="openAddPatientDialog({ target: 'group', prefillName: groupPatientNameInput })"
+                                    />
+                                </div>
+                            </template>
+
+                            <template #footer>
+                                <div class="p-2">
+                                    <Button
+                                        type="button"
+                                        size="small"
+                                        icon="pi pi-user-plus"
+                                        label="Pridať nového pacienta"
+                                        class="w-full"
+                                        text
+                                        :disabled="!canAddMoreGroupPatients"
+                                        @click="openAddPatientDialog({ target: 'group', prefillName: groupPatientNameInput })"
+                                    />
+                                </div>
+                            </template>
                         </AutoComplete>
                     </FormField>
 
@@ -1316,4 +1395,12 @@ const submitCreate = (saveScope = null) => {
             </template>
         </FormPage>
     </EventCreateEditDialog>
+
+    <PatientFormDialog
+        v-model:visible="patientDialogVisible"
+        :branch-id="branchId"
+        :patient="editingPatient"
+        :prefill-name="patientDialogPrefillName"
+        @saved="handlePatientSaved"
+    />
 </template>

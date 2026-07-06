@@ -188,6 +188,25 @@ const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
     }
 
     if (!existing?.id) {
+        if (existing?.source === 'holiday') {
+            router.post(route('branches.booking.disabled-days.store', props.branch.id), {
+                date: dateOnly,
+                title: 'Otvoreny sviatok',
+                type: 'holiday_open',
+                reason: null,
+            }, {
+                preserveState: true,
+                preserveScroll: true,
+                onSuccess: () => {
+                    callbacks.onSuccess?.();
+                    reloadCalendarData();
+                },
+                onError: () => {
+                    callbacks.onError?.();
+                },
+            });
+        }
+
         return;
     }
 
@@ -1663,6 +1682,7 @@ onBeforeUnmount(() => {
             v-model:visible="createBookingDialogVisible"
             :services="services"
             :patients="patients"
+            :branch-id="props.branch.id"
             :selection="pendingCalendarSelection"
             :prefill="createBookingPrefill"
             @close="closeCreateBookingDialog"
@@ -1672,6 +1692,7 @@ onBeforeUnmount(() => {
         <BookingDialog
             v-model:detail-visible="bookingDialogVisible"
             :booking="selectedBooking"
+            :series-bookings="props.calendarBookings"
             @edit-in-unified-form="openBookingInUnifiedEditor"
             @cancel-booking="cancelBooking"
             @duplicate-booking="duplicateBooking"
@@ -1722,6 +1743,7 @@ onBeforeUnmount(() => {
             :capacity-windows="calendarCapacityWindows"
             :services="services"
             :patients="patients"
+            :branch-id="props.branch.id"
             :repeat-unit-options="repeatUnitOptions"
             :booking-notes="bookingNotes"
             :loading="false"

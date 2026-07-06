@@ -48,6 +48,15 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
             'rules.*.repeat_weekdays' => ['nullable', 'array'],
             'rules.*.repeat_weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
             'rules.*.repeat_ends_on' => ['nullable', 'date'],
+            'rules.*.recurrence' => ['nullable', 'array'],
+            'rules.*.recurrence.frequency' => ['required_with:rules.*.recurrence', 'in:daily,weekly,monthly,yearly'],
+            'rules.*.recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'rules.*.recurrence.weekdays' => ['nullable', 'array'],
+            'rules.*.recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'rules.*.recurrence.ends' => ['nullable', 'array'],
+            'rules.*.recurrence.ends.type' => ['required_with:rules.*.recurrence.ends', 'in:never,on,after'],
+            'rules.*.recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'rules.*.recurrence.ends.until' => ['nullable', 'date'],
             'rules.*.excluded_dates' => ['nullable', 'array'],
             'rules.*.excluded_dates.*' => ['date'],
             'rules.*.is_enabled' => ['required', 'boolean'],
@@ -279,6 +288,10 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
 
     private function buildRecurrenceRule(array $ruleData): ?array
     {
+        if (filled($ruleData['recurrence'] ?? null)) {
+            return $ruleData['recurrence'];
+        }
+
         if (! (bool) ($ruleData['repeats'] ?? false)) {
             return null;
         }

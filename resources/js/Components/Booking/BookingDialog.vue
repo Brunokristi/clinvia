@@ -13,6 +13,10 @@ const props = defineProps({
         type: Object,
         default: null,
     },
+    seriesBookings: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const emit = defineEmits([
@@ -160,9 +164,47 @@ const countOccurrencesBetween = (startDate, endDate, recurrence) => {
 };
 
 const bookingOccurrenceDate = computed(() => {
-    return props.booking?.occurrence_date
+    return props.booking?.occurrence_original_date
+        ?? props.booking?.occurrence_date
         ?? String(props.booking?.starts_at ?? '').slice(0, 10)
         ?? null;
+});
+
+const seriesOccurrenceDates = computed(() => {
+    if (!props.booking) {
+        return [];
+    }
+
+    const selectedRootEventId = Number(props.booking?.root_event_id ?? props.booking?.id ?? 0);
+    const selectedSeriesUuid = props.booking?.series_uuid ?? null;
+    const occurrences = [];
+
+    (props.seriesBookings ?? []).forEach((booking) => {
+        const bookingRootEventId = Number(booking?.root_event_id ?? booking?.id ?? 0);
+        const bookingSeriesUuid = booking?.series_uuid ?? null;
+
+        const belongsToSameSeries = (selectedRootEventId > 0 && bookingRootEventId > 0 && bookingRootEventId === selectedRootEventId)
+            || (selectedSeriesUuid && bookingSeriesUuid && bookingSeriesUuid === selectedSeriesUuid);
+
+        if (!belongsToSameSeries) {
+            return;
+        }
+
+        const dateOnly = String(
+            booking?.occurrence_original_date
+            ?? booking?.occurrence_date
+            ?? booking?.starts_at
+            ?? '',
+        ).slice(0, 10);
+
+        if (!dateOnly) {
+            return;
+        }
+
+        occurrences.push(dateOnly);
+    });
+
+    return [...new Set(occurrences)].sort();
 });
 
 const deleteCountOccurrence = computed(() => 1);
@@ -179,6 +221,10 @@ const getFallbackSeriesEndDate = (fromDate) => {
 };
 
 const deleteCountSeries = computed(() => {
+    if (seriesOccurrenceDates.value.length > 0) {
+        return seriesOccurrenceDates.value.length;
+    }
+
     if (!props.booking?.recurrence) {
         return 1;
     }
@@ -202,6 +248,18 @@ const deleteCountSeries = computed(() => {
 });
 
 const deleteCountFromDate = computed(() => {
+    if (seriesOccurrenceDates.value.length > 0) {
+        const fromDate = String(bookingOccurrenceDate.value ?? '').slice(0, 10);
+
+        if (!fromDate) {
+            return seriesOccurrenceDates.value.length;
+        }
+
+        const count = seriesOccurrenceDates.value.filter((dateOnly) => dateOnly >= fromDate).length;
+
+        return count > 0 ? count : null;
+    }
+
     if (!props.booking?.recurrence) {
         return 1;
     }

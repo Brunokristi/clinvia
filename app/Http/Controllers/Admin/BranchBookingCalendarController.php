@@ -6,12 +6,12 @@ use App\Events\BranchCalendarUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
 use App\Models\Branch;
-use App\Models\BranchDisabledDay;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Notifications\RequestCancelledNotification;
 use App\Modules\Calendar\Actions\ConvertAppointmentRequestToEventAction;
 use App\Modules\Calendar\Services\EventReadAdapterService;
+use App\Services\DisabledDayService;
 use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +19,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,6 +28,7 @@ class BranchBookingCalendarController extends Controller
         Request $request,
         Branch $branch,
         EventReadAdapterService $eventReadAdapterService,
+        DisabledDayService $disabledDayService,
     ): JsonResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -50,13 +50,7 @@ class BranchBookingCalendarController extends Controller
         $calendarBookings = collect($legacyPayload['calendarBookings'] ?? []);
         $calendarCapacityWindows = collect($legacyPayload['calendarCapacityWindows'] ?? []);
 
-        $disabledDays = Schema::hasTable('branch_disabled_days')
-            ? BranchDisabledDay::query()
-                ->where('branch_id', $branch->id)
-                ->whereBetween('date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
-                ->orderBy('date')
-                ->get()
-            : collect();
+        $disabledDays = $disabledDayService->getDisabledDaysForRange($branch, $rangeStart, $rangeEnd);
 
         return response()->json([
             'data' => [
@@ -73,6 +67,7 @@ class BranchBookingCalendarController extends Controller
         Branch $branch,
         PatientDirectoryService $patientDirectoryService,
         EventReadAdapterService $eventReadAdapterService,
+        DisabledDayService $disabledDayService,
     ): Response {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -125,13 +120,7 @@ class BranchBookingCalendarController extends Controller
             
             'calendarCapacityWindows' => $calendarCapacityWindows,
 
-            'disabledDays' => Schema::hasTable('branch_disabled_days')
-                ? BranchDisabledDay::query()
-                    ->where('branch_id', $branch->id)
-                    ->whereBetween('date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
-                    ->orderBy('date')
-                    ->get()
-                : collect(),
+            'disabledDays' => $disabledDayService->getDisabledDaysForRange($branch, $rangeStart, $rangeEnd),
 
             'pendingAppointmentRequests' => $this->getPendingAppointmentRequests($branch),
 

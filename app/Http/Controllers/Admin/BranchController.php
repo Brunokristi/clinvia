@@ -191,6 +191,7 @@ class BranchController extends Controller
         $routeName = $request->route()->getName();
         $tabName = match ($routeName) {
             'branches.contacts.page' => 'contacts',
+            'branches.patients.page' => 'patients',
             'branches.opening-hours.page' => 'openingHours',
             'branches.employees.page' => 'employees',
             'branches.services.page' => 'services',
@@ -204,6 +205,7 @@ class BranchController extends Controller
             'company:id,legal_name,slug',
             'company.users:id,first_name,last_name,email,global_role,is_active',
             'contacts',
+            'patients',
             'openingHours.intervals',
             'employees',
             'services.category',
@@ -213,7 +215,7 @@ class BranchController extends Controller
             'users:id,first_name,last_name,email,global_role,is_active',
             'branchInvitations.invitedBy:id,first_name,last_name,email',
             'publicSite',
-        ])->loadCount(['contacts', 'openingHours', 'employees', 'services', 'users']);
+        ])->loadCount(['contacts', 'patients', 'openingHours', 'employees', 'services', 'users']);
 
         $availableUsers = User::query()
             ->select(['id', 'first_name', 'last_name', 'email', 'global_role', 'is_active'])

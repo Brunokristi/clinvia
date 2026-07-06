@@ -9,6 +9,7 @@ import { computed, ref } from 'vue';
 
 import Edit from './Settings/Edit.vue';
 import Contacts from './Settings/Contacts.vue';
+import Patients from './Settings/Patients.vue';
 import OpeningHours from './Settings/OpeningHours.vue';
 import Employees from './Settings/Employees.vue';
 import Services from './Settings/Services.vue';
@@ -107,6 +108,16 @@ const settingsTabs = computed(() => [
         componentProps: {
             branch: props.branch,
             contacts: props.contacts,
+        },
+    },
+    {
+        value: 'patients',
+        label: 'Pacienti',
+        description: 'Správa pacientov priradených k tejto pobočke.',
+        stats: `${props.branch.patients_count ?? props.branch.patients?.length ?? 0} pacientov`,
+        component: Patients,
+        componentProps: {
+            branch: props.branch,
         },
     },
     {
