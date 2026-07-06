@@ -174,6 +174,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             onSuccess: () => {
                 closeBookingDialogs();
                 showSuccess('Rezervácia bola zrušená.');
+                reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 restoreCalendarEventId?.(eventId);

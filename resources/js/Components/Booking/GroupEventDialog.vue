@@ -223,6 +223,56 @@ watch(() => props.groupEvent?.date, () => {
     }
 });
 
+const selectedServiceDurationMinutes = computed(() => {
+    const serviceId = Number(props.groupEvent?.service_id ?? 0);
+
+    if (!serviceId) {
+        return 0;
+    }
+
+    const selectedService = (props.services ?? []).find((service) => Number(service?.id) === serviceId);
+
+    if (!selectedService) {
+        return 0;
+    }
+
+    return Number(
+        selectedService.duration_minutes
+            ?? selectedService.duration
+            ?? selectedService.length_minutes
+            ?? selectedService.minutes
+            ?? 0,
+    );
+});
+
+watch(
+    () => [props.groupEvent?.service_id, props.groupEvent?.date, props.groupEvent?.starts_at],
+    () => {
+        if (!props.groupEvent || !props.groupEvent.date || !props.groupEvent.starts_at) {
+            return;
+        }
+
+        if (selectedServiceDurationMinutes.value <= 0) {
+            return;
+        }
+
+        const baseDate = formatDateForBackend(props.groupEvent.date);
+
+        if (!baseDate) {
+            return;
+        }
+
+        const start = new Date(`${baseDate}T${String(props.groupEvent.starts_at).slice(0, 5)}:00`);
+
+        if (Number.isNaN(start.getTime())) {
+            return;
+        }
+
+        start.setMinutes(start.getMinutes() + selectedServiceDurationMinutes.value);
+        props.groupEvent.ends_at = formatTimeForBackend(start);
+    },
+);
+
 const datePickerModel = computed({
     get: () => {
         if (!props.groupEvent?.date) {
@@ -305,20 +355,28 @@ const closeCreateEditDialog = () => {
 };
 
 const buildSavePayload = (scope = 'occurrence') => {
-    const groupPatients = Array.isArray(props.groupEvent?.group_patients)
-        ? props.groupEvent.group_patients.map((patient) => ({
-            patient_name: patient?.patient_name ?? '',
-            patient_email: patient?.patient_email ?? null,
-            patient_phone: patient?.patient_phone ?? null,
-            patient_birth_number: patient?.patient_birth_number ?? null,
-        }))
-        : [];
+    const recurrence = props.groupEvent?.recurrence ?? (props.groupEvent?.repeats
+        ? {
+            frequency: props.groupEvent.repeat_unit === 'days'
+                ? 'daily'
+                : (props.groupEvent.repeat_unit === 'months' ? 'monthly' : 'weekly'),
+            interval: Math.max(1, Number(props.groupEvent.repeat_every ?? 1)),
+            weekdays: props.groupEvent.repeat_unit === 'weeks'
+                ? [...(props.groupEvent.repeat_weekdays ?? [])]
+                : [],
+            ends: {
+                type: props.groupEvent.repeat_ends_on ? 'on' : 'never',
+                count: null,
+                until: props.groupEvent.repeat_ends_on ? String(props.groupEvent.repeat_ends_on).slice(0, 10) : null,
+            },
+        }
+        : null);
 
     return {
         ...props.groupEvent,
-        group_patients: groupPatients,
         update_scope: scope,
         repeat_ends_on: props.groupEvent.repeats ? String(props.groupEvent.repeat_ends_on).slice(0, 10) : null,
+        recurrence,
         admin_note: null,
         notify_patient: true,
         notification_reason: null,
@@ -594,11 +652,125 @@ const currentSeriesWindows = computed(() => {
         });
 });
 
+const parseDateOnly = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date
+        ? new Date(value.getFullYear(), value.getMonth(), value.getDate())
+        : new Date(`${String(value).slice(0, 10)}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return date;
+};
+
+const getRecurrenceFrequency = (recurrence) => {
+    const frequency = recurrence?.frequency ?? recurrence?.repeat_unit ?? recurrence?.unit;
+
+    if (['daily', 'weekly', 'monthly', 'yearly'].includes(frequency)) {
+        return frequency;
+    }
+
+    if (frequency === 'days') {
+        return 'daily';
+    }
+
+    if (frequency === 'months') {
+        return 'monthly';
+    }
+
+    return 'weekly';
+};
+
+const addRecurrenceInterval = (date, frequency, interval) => {
+    const next = new Date(date);
+
+    if (frequency === 'daily') {
+        next.setDate(next.getDate() + interval);
+
+        return next;
+    }
+
+    if (frequency === 'monthly') {
+        next.setMonth(next.getMonth() + interval);
+
+        return next;
+    }
+
+    if (frequency === 'yearly') {
+        next.setFullYear(next.getFullYear() + interval);
+
+        return next;
+    }
+
+    next.setDate(next.getDate() + (7 * interval));
+
+    return next;
+};
+
+const countOccurrencesBetween = (startDate, endDate, recurrence) => {
+    if (!startDate || !endDate || endDate < startDate) {
+        return null;
+    }
+
+    const frequency = getRecurrenceFrequency(recurrence);
+    const interval = Math.max(1, Number(recurrence?.interval ?? recurrence?.repeat_every ?? 1));
+    let cursor = new Date(startDate);
+    let count = 0;
+
+    while (cursor <= endDate && count < 2000) {
+        count += 1;
+        cursor = addRecurrenceInterval(cursor, frequency, interval);
+    }
+
+    return count;
+};
+
+const getFallbackSeriesEndDate = (fromDate) => {
+    if (!fromDate) {
+        return null;
+    }
+
+    const fallback = new Date(fromDate);
+    fallback.setFullYear(fallback.getFullYear() + 2);
+
+    return fallback;
+};
+
+const currentCapacityWindowRecurrence = computed(() => {
+    return props.capacityWindow?.recurrence
+        ?? props.capacityWindow?.recurrence_rule
+        ?? null;
+});
+
 const deleteCountOccurrence = computed(() => 1);
 
 const deleteCountSeries = computed(() => {
     if (!isCapacityWindowRepeatable.value) {
         return 1;
+    }
+
+    const recurrence = currentCapacityWindowRecurrence.value;
+
+    if (recurrence) {
+        if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
+            return Number(recurrence.ends.count);
+        }
+
+        const startDate = parseDateOnly(
+            recurrence?.starts_on
+            ?? recurrence?.start_date
+            ?? props.capacityWindow?.series_starts_at
+            ?? props.capacityWindow?.starts_at,
+        );
+        const endDate = parseDateOnly(recurrence?.ends?.until)
+            ?? getFallbackSeriesEndDate(startDate);
+
+        return countOccurrencesBetween(startDate, endDate, recurrence);
     }
 
     return currentSeriesWindows.value.length || null;
@@ -610,6 +782,46 @@ const deleteCountFromDate = computed(() => {
     }
 
     const selectedDate = selectedDateForBackend.value;
+    const recurrence = currentCapacityWindowRecurrence.value;
+
+    if (recurrence) {
+        if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
+            const total = Number(recurrence.ends.count);
+            const frequency = getRecurrenceFrequency(recurrence);
+            const interval = Math.max(1, Number(recurrence?.interval ?? recurrence?.repeat_every ?? 1));
+            const startDate = parseDateOnly(
+                recurrence?.starts_on
+                ?? recurrence?.start_date
+                ?? props.capacityWindow?.series_starts_at
+                ?? props.capacityWindow?.starts_at,
+            );
+            const fromDate = parseDateOnly(selectedDate);
+
+            if (!startDate || !fromDate || fromDate < startDate) {
+                return total;
+            }
+
+            let index = 1;
+            let cursor = new Date(startDate);
+
+            while (cursor < fromDate && index < 2000) {
+                cursor = addRecurrenceInterval(cursor, frequency, interval);
+                index += 1;
+            }
+
+            if (cursor > fromDate) {
+                return null;
+            }
+
+            return Math.max(1, total - index + 1);
+        }
+
+        const fromDate = parseDateOnly(selectedDate);
+        const endDate = parseDateOnly(recurrence?.ends?.until)
+            ?? getFallbackSeriesEndDate(fromDate);
+
+        return countOccurrencesBetween(fromDate, endDate, recurrence);
+    }
 
     if (!selectedDate) {
         return deleteCountSeries.value;

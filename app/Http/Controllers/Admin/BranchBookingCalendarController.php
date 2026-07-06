@@ -2,19 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Actions\ConvertAppointmentRequestToBookingAction;
 use App\Events\BranchCalendarUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
-use App\Models\Booking;
-use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
 use App\Models\BranchDisabledDay;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
 use App\Notifications\RequestCancelledNotification;
-use App\Services\AdminBookingCalendarService;
-use App\Services\CapacityWindowService;
+use App\Modules\Calendar\Actions\ConvertAppointmentRequestToEventAction;
+use App\Modules\Calendar\Services\EventReadAdapterService;
 use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -31,8 +28,7 @@ class BranchBookingCalendarController extends Controller
     public function events(
         Request $request,
         Branch $branch,
-        AdminBookingCalendarService $calendarService,
-        CapacityWindowService $capacityWindowService,
+        EventReadAdapterService $eventReadAdapterService,
     ): JsonResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -44,26 +40,15 @@ class BranchBookingCalendarController extends Controller
         $rangeStart = Carbon::parse($validated['start'])->startOfDay();
         $rangeEnd = Carbon::parse($validated['end'])->endOfDay();
 
-        $availabilityRules = BookingAvailabilityRule::query()
-            ->where('branch_id', $branch->id)
-            ->with('services')
-            ->orderBy('date')
-            ->orderBy('starts_at')
-            ->get()
-            ->map(fn (BookingAvailabilityRule $rule): array => $this->formatAvailabilityRuleForFrontend($rule))
-            ->values();
-
-        $calendarBookings = $calendarService->getCalendarBookings(
+        $legacyPayload = $eventReadAdapterService->getLegacyCalendarPayload(
             branch: $branch,
             rangeStart: $rangeStart,
             rangeEnd: $rangeEnd,
         );
 
-        $calendarCapacityWindows = $capacityWindowService->getCalendarCapacityWindows(
-            branch: $branch,
-            rangeStart: $rangeStart,
-            rangeEnd: $rangeEnd,
-        );
+        $availabilityRules = collect($legacyPayload['availabilityRules'] ?? []);
+        $calendarBookings = collect($legacyPayload['calendarBookings'] ?? []);
+        $calendarCapacityWindows = collect($legacyPayload['calendarCapacityWindows'] ?? []);
 
         $disabledDays = Schema::hasTable('branch_disabled_days')
             ? BranchDisabledDay::query()
@@ -86,9 +71,8 @@ class BranchBookingCalendarController extends Controller
     public function index(
         Request $request,
         Branch $branch,
-        AdminBookingCalendarService $calendarService,
-        CapacityWindowService $capacityWindowService,
         PatientDirectoryService $patientDirectoryService,
+        EventReadAdapterService $eventReadAdapterService,
     ): Response {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
@@ -116,26 +100,15 @@ class BranchBookingCalendarController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        $availabilityRules = BookingAvailabilityRule::query()
-            ->where('branch_id', $branch->id)
-            ->with('services')
-            ->orderBy('date')
-            ->orderBy('starts_at')
-            ->get()
-            ->map(fn (BookingAvailabilityRule $rule): array => $this->formatAvailabilityRuleForFrontend($rule))
-            ->values();
-
-        $calendarBookings = $calendarService->getCalendarBookings(
+        $legacyPayload = $eventReadAdapterService->getLegacyCalendarPayload(
             branch: $branch,
             rangeStart: $rangeStart,
             rangeEnd: $rangeEnd,
         );
 
-        $calendarCapacityWindows = $capacityWindowService->getCalendarCapacityWindows(
-            branch: $branch,
-            rangeStart: $rangeStart,
-            rangeEnd: $rangeEnd,
-        );
+        $availabilityRules = collect($legacyPayload['availabilityRules'] ?? []);
+        $calendarBookings = collect($legacyPayload['calendarBookings'] ?? []);
+        $calendarCapacityWindows = collect($legacyPayload['calendarCapacityWindows'] ?? []);
 
         return Inertia::render('Admin/Branches/Bookings', [
             'branch' => $branch,
@@ -162,11 +135,11 @@ class BranchBookingCalendarController extends Controller
 
             'pendingAppointmentRequests' => $this->getPendingAppointmentRequests($branch),
 
-            'todayBookingsCount' => $calendarService->getCalendarBookings(
+            'todayBookingsCount' => collect($eventReadAdapterService->getLegacyCalendarPayload(
                 branch: $branch,
                 rangeStart: $date->copy()->startOfDay(),
                 rangeEnd: $date->copy()->endOfDay(),
-            )->count(),
+            )['calendarBookings'] ?? [])->count(),
 
             'unreadMessagesCount' => BranchInboxMessage::query()
                 ->where('branch_id', $branch->id)
@@ -177,17 +150,23 @@ class BranchBookingCalendarController extends Controller
         ]);
     }
 
-    public function dashboard(Request $request, Branch $branch, AdminBookingCalendarService $calendarService): Response
+    public function dashboard(
+        Request $request,
+        Branch $branch,
+        EventReadAdapterService $eventReadAdapterService,
+    ): Response
     {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
 
         $today = now()->toDateString();
 
-        $todayBookings = $calendarService->getCalendarBookings(
+        $legacyPayload = $eventReadAdapterService->getLegacyCalendarPayload(
             branch: $branch,
             rangeStart: Carbon::parse($today)->startOfDay(),
             rangeEnd: Carbon::parse($today)->endOfDay(),
         );
+
+        $todayBookings = collect($legacyPayload['calendarBookings'] ?? []);
 
         return Inertia::render('Admin/Branches/Dashboard', [
             'branch' => $branch->load(['company:id,legal_name,slug']),
@@ -286,7 +265,7 @@ class BranchBookingCalendarController extends Controller
         Request $request,
         Branch $branch,
         AppointmentRequest $appointmentRequest,
-        ConvertAppointmentRequestToBookingAction $convertAppointmentRequestToBookingAction,
+        ConvertAppointmentRequestToEventAction $convertAppointmentRequestToEventAction,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
@@ -301,12 +280,26 @@ class BranchBookingCalendarController extends Controller
             'selected_patient.patient_birth_number' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $convertAppointmentRequestToBookingAction->execute($branch, $appointmentRequest, [
-            ...$validated,
-            'notify_patient' => $request->boolean('notify_patient', true),
-        ]);
+        $startsAt = Carbon::parse($validated['starts_at']);
 
-        return back()->with('success', 'Žiadosť bola presunutá do kalendára.');
+        $event = $convertAppointmentRequestToEventAction->execute($branch, $appointmentRequest, [
+            'starts_at' => $startsAt,
+            'ends_at' => $startsAt->copy()->addMinutes((int) max(15, $appointmentRequest->total_duration_minutes)),
+            'patient_name' => data_get($validated, 'selected_patient.patient_name') ?: $appointmentRequest->patient_name,
+            'patient_email' => data_get($validated, 'selected_patient.patient_email') ?: $appointmentRequest->patient_email,
+            'patient_phone' => data_get($validated, 'selected_patient.patient_phone') ?: $appointmentRequest->patient_phone,
+            'patient_birth_number' => data_get($validated, 'selected_patient.patient_birth_number') ?: $appointmentRequest->patient_birth_number,
+            'notify_patient' => $request->boolean('notify_patient', true),
+        ], $request->user()?->id);
+
+        BranchCalendarUpdated::dispatch(
+            branchId: $branch->id,
+            action: 'appointment_request_converted',
+            bookingId: $event->id,
+            appointmentRequestId: $appointmentRequest->id,
+        );
+
+        return back()->with('success', 'Ziadost bola presunuta do kalendara.');
     }
 
     public function cancelAppointmentRequest(
@@ -376,105 +369,4 @@ class BranchBookingCalendarController extends Controller
             ->values();
     }
 
-    private function formatAvailabilityRuleForFrontend(BookingAvailabilityRule $rule): array
-    {
-        $serviceIds = $rule->services
-            ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
-            ->filter(fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-
-        if ($serviceIds === []) {
-            $serviceIds = $this->normalizeServiceIds($rule->service_ids ?? []);
-        }
-
-        return [
-            'id' => $rule->id,
-
-            'date' => $rule->date
-                ? Carbon::parse($rule->date)->toDateString()
-                : null,
-
-            'day_of_week' => $rule->day_of_week,
-
-            'starts_at' => $this->formatTimeForFrontend($rule->starts_at),
-            'ends_at' => $this->formatTimeForFrontend($rule->ends_at),
-
-            'slot_mode' => $rule->slot_mode,
-            'bookable_places' => (int) ($rule->bookable_places ?: 1),
-
-            'service_id' => $rule->service_id ? (int) $rule->service_id : null,
-            'service_ids' => $serviceIds,
-
-            'services' => $rule->services
-                ->map(fn (Service $service): array => [
-                    'id' => $service->id,
-                    'name' => $service->name,
-                    'duration_minutes' => $service->duration_minutes,
-                    'booking_type' => $service->booking_type,
-                    'public_booking_type' => $service->public_booking_type,
-                ])
-                ->values()
-                ->all(),
-
-            'repeats' => (bool) $rule->repeats,
-            'repeat_every' => (int) ($rule->repeat_every ?: 1),
-            'repeat_unit' => $rule->repeat_unit ?: 'weeks',
-            'repeat_weekdays' => collect($rule->repeat_weekdays ?? [])
-                ->map(fn ($weekday): string => strtoupper((string) $weekday))
-                ->filter(fn (string $weekday): bool => in_array($weekday, ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'], true))
-                ->values()
-                ->all(),
-
-            'repeat_ends_on' => $rule->repeat_ends_on
-                ? Carbon::parse($rule->repeat_ends_on)->toDateString()
-                : null,
-
-            'excluded_dates' => $this->normalizeDateStrings($rule->excluded_dates ?? []),
-
-            'is_enabled' => (bool) $rule->is_enabled,
-        ];
-    }
-
-    private function formatTimeForFrontend($time): ?string
-    {
-        if (! $time) {
-            return null;
-        }
-
-        if ($time instanceof Carbon) {
-            return $time->format('H:i');
-        }
-
-        $time = (string) $time;
-
-        if (preg_match('/^\d{2}:\d{2}/', $time)) {
-            return substr($time, 0, 5);
-        }
-
-        return Carbon::parse($time)->format('H:i');
-    }
-
-    private function normalizeServiceIds(array $serviceIds): array
-    {
-        return collect($serviceIds)
-            ->map(fn ($id): int => (int) $id)
-            ->filter(fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    private function normalizeDateStrings(array $dates): array
-    {
-        return collect($dates)
-            ->filter()
-            ->map(fn ($date): string => Carbon::parse($date)->startOfDay()->toDateString())
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
-    }
 }

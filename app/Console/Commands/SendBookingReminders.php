@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Booking;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
 use App\Notifications\BookingReminderNotification;
 use App\Services\DisabledDayService;
 use App\Services\RecurrenceService;
@@ -10,7 +12,6 @@ use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Facades\Schema;
 
 class SendBookingReminders extends Command
 {
@@ -24,85 +25,99 @@ class SendBookingReminders extends Command
         $rangeStart = $targetDate->copy()->startOfDay();
         $rangeEnd = $targetDate->copy()->endOfDay();
 
-        $baseQuery = Booking::query()
+        $baseQuery = Event::query()
             ->with([
+                'bookingDetail',
                 'branch',
-                'service',
                 'services',
-                'bookingSlot',
-                'capacityWindow',
             ])
+            ->where('type', EventType::Booking->value)
             ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-            ->whereNotNull('patient_email');
+            ->whereHas('bookingDetail', fn ($query) => $query->whereNotNull('patient_email'));
 
         $sentCount = 0;
 
-        $oneOffBookings = (clone $baseQuery)
+        $oneOffEvents = (clone $baseQuery)
             ->whereBetween('starts_at', [$rangeStart, $rangeEnd])
-            ->when(
-                Schema::hasColumn('bookings', 'recurrence'),
-                fn ($query) => $query->whereNull('recurrence'),
-            )
+            ->where(function ($query) {
+                $query
+                    ->where('is_recurring', false)
+                    ->orWhereNull('is_recurring');
+            })
             ->orderBy('starts_at')
             ->get();
 
-        foreach ($oneOffBookings as $booking) {
-            if (! $this->shouldSendReminderForOccurrence($booking, $booking->starts_at->copy())) {
+        foreach ($oneOffEvents as $event) {
+            $bookingPayload = $this->toLegacyBookingPayload($event);
+
+            if (! $bookingPayload || ! $bookingPayload->starts_at instanceof Carbon) {
                 continue;
             }
 
-            Notification::route('mail', $booking->patient_email)
+            if (! $this->shouldSendReminderForOccurrence($event, $bookingPayload->starts_at->copy())) {
+                continue;
+            }
+
+            Notification::route('mail', $bookingPayload->patient_email)
                 ->notify(new BookingReminderNotification(
-                    booking: $booking,
-                    startsAt: $booking->starts_at->copy(),
-                    endsAt: $booking->ends_at?->copy(),
+                    booking: $bookingPayload,
+                    startsAt: $bookingPayload->starts_at->copy(),
+                    endsAt: $bookingPayload->ends_at?->copy(),
                     isRecurring: false,
                 ));
 
             $sentCount++;
         }
 
-        if (Schema::hasColumn('bookings', 'recurrence')) {
-            $recurringBookings = (clone $baseQuery)
-                ->whereNotNull('recurrence')
-                ->where('starts_at', '<=', $rangeEnd)
-                ->orderBy('starts_at')
-                ->get();
+        $recurringEvents = (clone $baseQuery)
+            ->where('is_recurring', true)
+            ->whereNotNull('recurrence_rule')
+            ->where('starts_at', '<=', $rangeEnd)
+            ->orderBy('starts_at')
+            ->get();
 
-            foreach ($recurringBookings as $booking) {
-                $occurrenceDates = $recurrenceService->getOccurrenceDates(
-                    seriesStart: $booking->starts_at->copy(),
-                    rangeStart: $rangeStart,
-                    rangeEnd: $rangeEnd,
-                    recurrence: $booking->recurrence,
-                    excludedDates: $booking->recurrence_excluded_dates ?? [],
-                );
+        foreach ($recurringEvents as $event) {
+            $bookingPayload = $this->toLegacyBookingPayload($event);
 
-                foreach ($occurrenceDates as $occurrenceDate) {
-                    if ($disabledDayService->isDisabled($booking->branch, $occurrenceDate)) {
-                        continue;
-                    }
+            if (! $bookingPayload || ! $bookingPayload->starts_at instanceof Carbon) {
+                continue;
+            }
 
-                    $occurrenceStartsAt = Carbon::parse($occurrenceDate->toDateString() . ' ' . $booking->starts_at->format('H:i:s'));
+            $occurrenceDates = $recurrenceService->getOccurrenceDates(
+                seriesStart: $bookingPayload->starts_at->copy(),
+                rangeStart: $rangeStart,
+                rangeEnd: $rangeEnd,
+                recurrence: $event->recurrence_rule ?? [],
+                excludedDates: collect(data_get($event->metadata, 'recurrence_excluded_dates', []))
+                    ->filter()
+                    ->values()
+                    ->all(),
+            );
 
-                    $occurrenceEndsAt = $booking->ends_at
-                        ? Carbon::parse($occurrenceDate->toDateString() . ' ' . $booking->ends_at->format('H:i:s'))
-                        : null;
-
-                    if (! $this->shouldSendReminderForOccurrence($booking, $occurrenceStartsAt)) {
-                        continue;
-                    }
-
-                    Notification::route('mail', $booking->patient_email)
-                        ->notify(new BookingReminderNotification(
-                            booking: $booking,
-                            startsAt: $occurrenceStartsAt,
-                            endsAt: $occurrenceEndsAt,
-                            isRecurring: true,
-                        ));
-
-                    $sentCount++;
+            foreach ($occurrenceDates as $occurrenceDate) {
+                if ($disabledDayService->isDisabled($event->branch, $occurrenceDate)) {
+                    continue;
                 }
+
+                $occurrenceStartsAt = Carbon::parse($occurrenceDate->toDateString() . ' ' . $bookingPayload->starts_at->format('H:i:s'));
+
+                $occurrenceEndsAt = $bookingPayload->ends_at
+                    ? Carbon::parse($occurrenceDate->toDateString() . ' ' . $bookingPayload->ends_at->format('H:i:s'))
+                    : null;
+
+                if (! $this->shouldSendReminderForOccurrence($event, $occurrenceStartsAt)) {
+                    continue;
+                }
+
+                Notification::route('mail', $bookingPayload->patient_email)
+                    ->notify(new BookingReminderNotification(
+                        booking: $bookingPayload,
+                        startsAt: $occurrenceStartsAt,
+                        endsAt: $occurrenceEndsAt,
+                        isRecurring: true,
+                    ));
+
+                $sentCount++;
             }
         }
 
@@ -122,14 +137,47 @@ class SendBookingReminders extends Command
         return now()->addDay()->startOfDay();
     }
 
-    private function shouldSendReminderForOccurrence(Booking $booking, Carbon $occurrenceStartsAt): bool
+    private function shouldSendReminderForOccurrence(Event $event, Carbon $occurrenceStartsAt): bool
     {
-        if (blank($booking->patient_email)) {
+        if (blank($event->bookingDetail?->patient_email)) {
             return false;
         }
 
-        $cacheKey = sprintf('booking-reminder:%d:%s', $booking->id, $occurrenceStartsAt->toDateString());
+        $cacheKey = sprintf('booking-reminder:%d:%s', $event->id, $occurrenceStartsAt->toDateString());
 
         return Cache::add($cacheKey, true, now()->addDays(3));
+    }
+
+    private function toLegacyBookingPayload(Event $event): ?Booking
+    {
+        if (! $event->bookingDetail || ! $event->starts_at) {
+            return null;
+        }
+
+        $legacyBooking = new Booking();
+
+        $legacyBooking->id = $event->id;
+        $legacyBooking->branch_id = $event->branch_id;
+        $legacyBooking->starts_at = $event->starts_at;
+        $legacyBooking->ends_at = $event->ends_at;
+        $legacyBooking->patient_name = $event->bookingDetail->patient_name;
+        $legacyBooking->patient_email = $event->bookingDetail->patient_email;
+        $legacyBooking->patient_phone = $event->bookingDetail->patient_phone;
+        $legacyBooking->patient_birth_number = $event->bookingDetail->patient_birth_number;
+        $legacyBooking->patient_note = $event->bookingDetail->public_notes;
+        $legacyBooking->admin_note = $event->bookingDetail->internal_notes;
+        $legacyBooking->status = $event->status;
+        $legacyBooking->service_id = $event->services->first()?->id;
+        $legacyBooking->recurrence = $event->recurrence_rule;
+        $legacyBooking->recurrence_excluded_dates = collect(data_get($event->metadata, 'recurrence_excluded_dates', []))
+            ->filter()
+            ->values()
+            ->all();
+
+        $legacyBooking->setRelation('branch', $event->branch);
+        $legacyBooking->setRelation('service', $event->services->first());
+        $legacyBooking->setRelation('services', $event->services);
+
+        return $legacyBooking;
     }
 }

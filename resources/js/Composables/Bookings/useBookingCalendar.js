@@ -262,6 +262,82 @@ export function useBookingCalendar(props, options = {}) {
         },
     );
 
+    const getSelectedBookingRecordId = (booking) => {
+        return booking?.booking_id
+            ?? booking?.record_id
+            ?? booking?.id
+            ?? null;
+    };
+
+    const findLatestBookingSnapshot = (selectedBooking, calendarBookings = [], capacityWindows = []) => {
+        const selectedId = Number(getSelectedBookingRecordId(selectedBooking));
+
+        if (!selectedId) {
+            return null;
+        }
+
+        const selectedOccurrenceDate = selectedBooking?.occurrence_date
+            ?? String(selectedBooking?.starts_at ?? '').slice(0, 10)
+            ?? null;
+
+        const directMatch = (calendarBookings ?? []).find((booking) => {
+            const bookingId = Number(getSelectedBookingRecordId(booking));
+
+            if (!bookingId || bookingId !== selectedId) {
+                return false;
+            }
+
+            if (!selectedOccurrenceDate) {
+                return true;
+            }
+
+            const bookingOccurrenceDate = booking?.occurrence_date
+                ?? String(booking?.starts_at ?? '').slice(0, 10)
+                ?? null;
+
+            return bookingOccurrenceDate === selectedOccurrenceDate;
+        });
+
+        if (directMatch) {
+            return directMatch;
+        }
+
+        for (const capacityWindow of (capacityWindows ?? [])) {
+            for (const booking of (capacityWindow?.bookings ?? [])) {
+                if (Number(getSelectedBookingRecordId(booking)) === selectedId) {
+                    return {
+                        ...booking,
+                        starts_at: booking?.starts_at ?? capacityWindow?.starts_at,
+                        starts_datetime: booking?.starts_datetime ?? capacityWindow?.starts_datetime,
+                        ends_at: booking?.ends_at ?? capacityWindow?.ends_at,
+                        ends_datetime: booking?.ends_datetime ?? capacityWindow?.ends_datetime,
+                    };
+                }
+            }
+        }
+
+        return null;
+    };
+
+    watch(
+        () => [props.calendarBookings, props.calendarCapacityWindows],
+        ([calendarBookings, capacityWindows]) => {
+            const selectedBooking = dialogs.selectedBooking.value;
+
+            if (!selectedBooking) {
+                return;
+            }
+
+            const latestBooking = findLatestBookingSnapshot(selectedBooking, calendarBookings, capacityWindows);
+
+            if (!latestBooking) {
+                return;
+            }
+
+            dialogs.selectedBooking.value = latestBooking;
+        },
+    );
+
     const events = useBookingCalendarEvents({
         props,
         showAvailabilityRules,
@@ -300,14 +376,6 @@ export function useBookingCalendar(props, options = {}) {
         recurrence: data.recurrence ?? null,
         apply_to_series: false,
         is_enabled: true,
-        group_patients: Array.isArray(data.group_patients)
-            ? data.group_patients.map((patient) => ({
-                patient_name: patient?.patient_name ?? '',
-                patient_email: patient?.patient_email ?? null,
-                patient_phone: patient?.patient_phone ?? null,
-                patient_birth_number: patient?.patient_birth_number ?? null,
-            }))
-            : [],
     });
 
     const recurrenceFrequencyToRepeatSettings = (recurrence = null) => {
@@ -427,6 +495,10 @@ export function useBookingCalendar(props, options = {}) {
             !== JSON.stringify(normalizeRecurrenceForCompare(nextRecurrence));
     };
 
+    const isRecurrenceRemoved = (previousRecurrence = null, nextRecurrence = null) => {
+        return Boolean(previousRecurrence) && !nextRecurrence;
+    };
+
     const continueFromCreateChoice = (data) => {
         const selectionInfo = dialogs.getSelectionFromCreateChoiceData(data);
 
@@ -473,10 +545,20 @@ export function useBookingCalendar(props, options = {}) {
                     data.target_original_recurrence ?? booking.recurrence ?? null,
                     data.recurrence ?? null,
                 );
+                const recurrenceRemoved = isRecurrenceRemoved(
+                    data.target_original_recurrence ?? booking.recurrence ?? null,
+                    data.recurrence ?? null,
+                );
                 const requestedScope = data.save_scope ?? (data.target_is_recurring ? 'series' : null);
-                const resolvedScope = data.target_is_recurring && recurrenceChanged && requestedScope === 'occurrence'
-                    ? 'series'
-                    : requestedScope;
+                let resolvedScope = requestedScope;
+
+                if (data.target_is_recurring && recurrenceChanged && requestedScope === 'occurrence') {
+                    resolvedScope = 'series';
+                }
+
+                if (data.target_is_recurring && recurrenceRemoved) {
+                    resolvedScope = 'from_date';
+                }
 
                 bookingActions.rescheduleBooking(booking, {
                     service_id: data.service_id,
@@ -554,12 +636,20 @@ export function useBookingCalendar(props, options = {}) {
                     data.target_original_recurrence ?? null,
                     data.recurrence ?? null,
                 );
+                const recurrenceRemoved = isRecurrenceRemoved(
+                    data.target_original_recurrence ?? null,
+                    data.recurrence ?? null,
+                );
                 const requestedScope = data.save_scope ?? (data.target_is_recurring ? 'series' : null);
-                const resolvedScope = data.target_is_recurring
-                    && recurrenceChanged
-                    && requestedScope === 'occurrence'
-                    ? 'series'
-                    : requestedScope;
+                let resolvedScope = requestedScope;
+
+                if (data.target_is_recurring && recurrenceChanged && requestedScope === 'occurrence') {
+                    resolvedScope = 'series';
+                }
+
+                if (data.target_is_recurring && recurrenceRemoved) {
+                    resolvedScope = 'from_date';
+                }
 
                 rules.saveRules({
                     update_scope: resolvedScope,
@@ -573,11 +663,21 @@ export function useBookingCalendar(props, options = {}) {
             if (data.target_type === 'group_event' && data.target_id) {
                 const repeatSettings = recurrenceFrequencyToRepeatSettings(data.recurrence ?? null);
                 const requestedScope = data.save_scope ?? 'occurrence';
-                const resolvedScope = data.target_is_recurring
-                    && data.save_scope === 'occurrence'
-                    && JSON.stringify(normalizeRecurrenceForCompare(data.target_original_recurrence ?? null)) !== JSON.stringify(normalizeRecurrenceForCompare(data.recurrence ?? null))
-                    ? 'series'
-                    : requestedScope;
+                const recurrenceChanged = JSON.stringify(normalizeRecurrenceForCompare(data.target_original_recurrence ?? null))
+                    !== JSON.stringify(normalizeRecurrenceForCompare(data.recurrence ?? null));
+                const recurrenceRemoved = isRecurrenceRemoved(
+                    data.target_original_recurrence ?? null,
+                    data.recurrence ?? null,
+                );
+                let resolvedScope = requestedScope;
+
+                if (requestedScope === 'occurrence' && recurrenceChanged) {
+                    resolvedScope = 'series';
+                }
+
+                if (recurrenceRemoved) {
+                    resolvedScope = 'from_date';
+                }
 
                 capacityWindowActions.saveCapacityWindow({
                     id: Number(data.target_id),
@@ -648,8 +748,21 @@ export function useBookingCalendar(props, options = {}) {
         }
 
         if (data.create_type === 'group_event') {
+            const recurrence = data.recurrence ?? null;
+            const repeatSettings = recurrenceFrequencyToRepeatSettings(recurrence);
+
             capacityWindowActions.saveCapacityWindow(createGroupEventDraft({
                 ...data,
+                repeats: Boolean(recurrence),
+                repeat_every: Number(repeatSettings.repeat_every ?? 1),
+                repeat_unit: repeatSettings.repeat_unit ?? 'weeks',
+                repeat_weekdays: recurrence?.frequency === 'weekly'
+                    ? [...(recurrence?.weekdays ?? [])]
+                    : [],
+                repeat_ends_on: recurrence
+                    ? resolveRepeatEndsOn(selectionInfo.date, recurrence)
+                    : null,
+                recurrence,
                 date: selectionInfo.date,
                 starts_at: selectionInfo.starts_at,
                 ends_at: selectionInfo.ends_at,
@@ -1117,24 +1230,15 @@ export function useBookingCalendar(props, options = {}) {
                 const previousState = getEffectiveDisabledState(arg.date);
                 const nextChecked = !previousState;
 
-                optimisticDisabledDays.value = {
-                    ...optimisticDisabledDays.value,
-                    [dateOnly]: nextChecked,
-                };
-
                 applyStatusTagState(tag, {
                     isClosed: nextChecked,
                     isLocked: false,
                     title,
+                    containerWidth: arg.el.clientWidth,
                 });
 
                 toggleDisabledDayByDate(arg.date, nextChecked, {
                     onError: () => {
-                        optimisticDisabledDays.value = {
-                            ...optimisticDisabledDays.value,
-                            [dateOnly]: previousState,
-                        };
-
                         applyStatusTagState(tag, {
                             isClosed: previousState,
                             isLocked: false,

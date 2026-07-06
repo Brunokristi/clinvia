@@ -22,3 +22,13 @@ Broadcast::channel('branches.{branchId}.calendar', function ($user, int $branchI
 
     return $user->canAccessBranch($branch);
 });
+
+Broadcast::channel('branches.{branchId}.events', function ($user, int $branchId) {
+    $branch = Branch::query()->find($branchId);
+
+    if (! $branch) {
+        return false;
+    }
+
+    return $user->canAccessBranch($branch);
+});

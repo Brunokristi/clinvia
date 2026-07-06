@@ -3,8 +3,9 @@
 namespace App\Services;
 
 use App\Models\Branch;
-use App\Models\CapacityWindow;
 use App\Models\Service;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -62,23 +63,15 @@ class BookingAvailabilityService
 
         $to = $from->copy()->addDays(90)->endOfDay();
 
-        return CapacityWindow::query()
-            ->with('service')
-            ->withCount([
-                'bookings as confirmed_bookings_count' => function ($query) {
-                    $query->whereNotIn('status', [
-                        'cancelled',
-                        'rejected',
-                        'no_show',
-                    ]);
-                },
-            ])
+        return Event::query()
+            ->with(['services', 'groupDetail'])
             ->where('branch_id', $branch->id)
-            ->where('service_id', $service->id)
-            ->where('status', 'active')
+            ->where('type', EventType::GroupEvent)
+            ->whereHas('services', fn ($query) => $query->where('services.id', $service->id))
+            ->whereNotIn('status', ['cancelled'])
             ->where('starts_at', '>=', $from)
             ->where('starts_at', '<=', $to)
-            ->whereHas('service', function ($query) {
+            ->whereHas('services', function ($query) {
                 $query
                     ->where('is_active', true)
                     ->where('is_bookable', true);
@@ -86,14 +79,17 @@ class BookingAvailabilityService
             ->orderBy('starts_at')
             ->limit(30)
             ->get()
-            ->filter(fn (CapacityWindow $capacityWindow) => $this->isCapacityWindowAvailable($capacityWindow))
+            ->filter(fn (Event $event) => $this->isCapacityWindowAvailable($event))
             ->values();
     }
 
-    public function isCapacityWindowAvailable(CapacityWindow $capacityWindow): bool
+    public function isCapacityWindowAvailable(Event $event): bool
     {
-        return $capacityWindow->status === 'active'
-            && $capacityWindow->starts_at->isFuture()
-            && (int) $capacityWindow->confirmed_bookings_count < (int) $capacityWindow->capacity;
+        $capacity = (int) ($event->groupDetail?->capacity ?? 0);
+        $reserved = (int) ($event->groupDetail?->reserved_places ?? 0);
+
+        return $event->status !== 'cancelled'
+            && $event->starts_at?->isFuture()
+            && $reserved < $capacity;
     }
 }

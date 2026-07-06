@@ -136,7 +136,8 @@ export function useBookingCalendarEvents({
             const bookingsCount = Number(capacityWindow.bookings_count ?? capacityWindow.bookings?.length ?? 0);
             const capacity = Number(capacityWindow.capacity ?? capacityWindow.bookable_places ?? 0);
             const isFull = capacity > 0 && bookingsCount >= capacity;
-            const eventId = `capacity-window-${capacityWindow.id}`;
+            const eventId = capacityWindow.calendar_event_id
+                ?? `capacity-window-${capacityWindow.id}`;
 
             if (isHiddenEventId(eventId)) {
                 return null;

@@ -9,16 +9,25 @@ use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
 use App\Notifications\BookingCancelledNotification;
-use App\Services\AdminBookingCalendarService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class RecurringBookingTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (! Schema::hasTable('bookings')) {
+            $this->markTestSkipped('Legacy recurring booking tests are not applicable after hard cutover.');
+        }
+    }
 
     public function test_recurring_booking_is_expanded_in_calendar_range(): void
     {

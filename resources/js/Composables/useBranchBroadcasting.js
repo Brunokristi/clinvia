@@ -1,17 +1,25 @@
 import { onBeforeUnmount, onMounted } from 'vue';
 
 export function useBranchBroadcasting(branchId, callback) {
-    const channelName = `branches.${branchId}.calendar`;
+    const legacyChannelName = `branches.${branchId}.calendar`;
+    const unifiedChannelName = `branches.${branchId}.events`;
 
     onMounted(() => {
         window.Echo
-            .private(channelName)
+            .private(legacyChannelName)
             .listen('.calendar.updated', (event) => {
+                callback(event);
+            });
+
+        window.Echo
+            .private(unifiedChannelName)
+            .listen('.event.updated', (event) => {
                 callback(event);
             });
     });
 
     onBeforeUnmount(() => {
-        window.Echo?.leave(channelName);
+        window.Echo?.leave(legacyChannelName);
+        window.Echo?.leave(unifiedChannelName);
     });
 }

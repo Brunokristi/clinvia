@@ -1,11 +1,11 @@
 <?php
 
 use App\Http\Controllers\Admin\ApiClientController;
-use App\Http\Controllers\Admin\BranchAvailabilityRuleController;
+use App\Http\Controllers\Admin\BranchAvailabilityRuleEventBridgeController;
 use App\Http\Controllers\Admin\BranchBookingCalendarController;
-use App\Http\Controllers\Admin\BranchBookingController;
+use App\Http\Controllers\Admin\BranchBookingEventBridgeController;
 use App\Http\Controllers\Admin\BranchDisabledDayController;
-use App\Http\Controllers\Admin\BranchCapacityWindowController;
+use App\Http\Controllers\Admin\BranchCapacityEventBridgeController;
 use App\Http\Controllers\Admin\BranchContactController;
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BranchEmployeeController;
@@ -32,6 +32,7 @@ use App\Http\Controllers\BranchServicesPdfController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBranchSiteController;
+use App\Modules\Calendar\Http\Controllers\EventController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -215,19 +216,19 @@ Route::middleware(['auth', 'active'])->group(function () {
                 |--------------------------------------------------------------------------
                 */
 
-                Route::put('/booking/rules', [BranchAvailabilityRuleController::class, 'sync'])
+                Route::put('/booking/rules', [BranchAvailabilityRuleEventBridgeController::class, 'sync'])
                     ->name('booking.rules.update');
 
-                Route::delete('/booking/rules/{rule}', [BranchAvailabilityRuleController::class, 'deleteSeries'])
+                Route::delete('/booking/rules/{rule}', [BranchAvailabilityRuleEventBridgeController::class, 'deleteSeries'])
                     ->name('booking.rules.destroy');
 
-                Route::post('/booking/rules/{rule}/exclude-date', [BranchAvailabilityRuleController::class, 'deleteOccurrence'])
+                Route::post('/booking/rules/{rule}/exclude-date', [BranchAvailabilityRuleEventBridgeController::class, 'deleteOccurrence'])
                     ->name('booking.rules.exclude-date');
 
-                Route::post('/booking/rules/{rule}/end-before-date', [BranchAvailabilityRuleController::class, 'deleteFutureOccurrences'])
+                Route::post('/booking/rules/{rule}/end-before-date', [BranchAvailabilityRuleEventBridgeController::class, 'deleteFutureOccurrences'])
                     ->name('booking.rules.end-before-date');
 
-                Route::post('/booking/rules/{rule}/reschedule', [BranchAvailabilityRuleController::class, 'reschedule'])
+                Route::post('/booking/rules/{rule}/reschedule', [BranchAvailabilityRuleEventBridgeController::class, 'reschedule'])
                     ->name('booking.rules.reschedule');
 
 
@@ -256,19 +257,19 @@ Route::middleware(['auth', 'active'])->group(function () {
                 |--------------------------------------------------------------------------
                 */
 
-                Route::post('/booking/bookings', [BranchBookingController::class, 'store'])
+                Route::post('/booking/bookings', [BranchBookingEventBridgeController::class, 'store'])
                     ->name('booking.bookings.store');
 
-                Route::put('/booking/bookings/{booking}', [BranchBookingController::class, 'update'])
+                Route::put('/booking/bookings/{booking}', [BranchBookingEventBridgeController::class, 'update'])
                     ->name('booking.bookings.update');
 
-                Route::post('/booking/bookings/{booking}/cancel', [BranchBookingController::class, 'cancel'])
+                Route::post('/booking/bookings/{booking}/cancel', [BranchBookingEventBridgeController::class, 'cancel'])
                     ->name('booking.bookings.cancel');
 
-                Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingController::class, 'reschedule'])
+                Route::post('/booking/bookings/{booking}/reschedule', [BranchBookingEventBridgeController::class, 'reschedule'])
                     ->name('booking.bookings.reschedule');
 
-                Route::post('/booking/bookings/{booking}/duplicate', [BranchBookingController::class, 'duplicate'])
+                Route::post('/booking/bookings/{booking}/duplicate', [BranchBookingEventBridgeController::class, 'duplicate'])
                     ->name('booking.bookings.duplicate');
 
                 /*
@@ -295,25 +296,25 @@ Route::middleware(['auth', 'active'])->group(function () {
                 |--------------------------------------------------------------------------
                 */
 
-                Route::post('/booking/capacity-windows', [BranchCapacityWindowController::class, 'store'])
+                Route::post('/booking/capacity-windows', [BranchCapacityEventBridgeController::class, 'store'])
                     ->name('booking.capacity-windows.store');
 
-                Route::put('/booking/capacity-windows/{capacityWindow}', [BranchCapacityWindowController::class, 'update'])
+                Route::put('/booking/capacity-windows/{capacityWindow}', [BranchCapacityEventBridgeController::class, 'update'])
                     ->name('booking.capacity-windows.update');
 
-                Route::post('/booking/capacity-windows/{capacityWindow}/cancel', [BranchCapacityWindowController::class, 'cancel'])
+                Route::post('/booking/capacity-windows/{capacityWindow}/cancel', [BranchCapacityEventBridgeController::class, 'cancel'])
                     ->name('booking.capacity-windows.cancel');
 
-                Route::post('/booking/capacity-windows/{capacityWindow}/reschedule', [BranchCapacityWindowController::class, 'reschedule'])
+                Route::post('/booking/capacity-windows/{capacityWindow}/reschedule', [BranchCapacityEventBridgeController::class, 'reschedule'])
                     ->name('booking.capacity-windows.reschedule');
 
-                Route::post('/booking/capacity-windows/{capacityWindow}/bookings', [BranchCapacityWindowController::class, 'storeBooking'])
+                Route::post('/booking/capacity-windows/{capacityWindow}/bookings', [BranchCapacityEventBridgeController::class, 'storeBooking'])
                     ->name('booking.capacity-windows.bookings.store');
 
-                Route::delete('/booking/capacity-windows/{capacityWindow}', [BranchCapacityWindowController::class, 'destroy'])
+                Route::delete('/booking/capacity-windows/{capacityWindow}', [BranchCapacityEventBridgeController::class, 'destroy'])
                     ->name('booking.capacity-windows.destroy');
 
-                Route::delete('/booking/capacity-windows/{capacityWindow}/series', [BranchCapacityWindowController::class, 'destroySeries'])
+                Route::delete('/booking/capacity-windows/{capacityWindow}/series', [BranchCapacityEventBridgeController::class, 'destroySeries'])
                     ->name('booking.capacity-windows.destroy-series');
 
                 /*
@@ -325,13 +326,13 @@ Route::middleware(['auth', 'active'])->group(function () {
                 |--------------------------------------------------------------------------
                 */
 
-                Route::delete('/booking/capacity-windows/{capacityWindow}/occurrence', [BranchCapacityWindowController::class, 'destroy'])
+                Route::delete('/booking/capacity-windows/{capacityWindow}/occurrence', [BranchCapacityEventBridgeController::class, 'destroy'])
                     ->name('booking.capacity-windows.delete-occurrence');
 
-                Route::delete('/booking/capacity-windows/{capacityWindow}/from-date', [BranchCapacityWindowController::class, 'destroySeries'])
+                Route::delete('/booking/capacity-windows/{capacityWindow}/from-date', [BranchCapacityEventBridgeController::class, 'destroySeries'])
                     ->name('booking.capacity-windows.delete-from-date');
 
-                Route::delete('/booking/capacity-windows/{capacityWindow}/delete-series', [BranchCapacityWindowController::class, 'destroySeries'])
+                Route::delete('/booking/capacity-windows/{capacityWindow}/delete-series', [BranchCapacityEventBridgeController::class, 'destroySeries'])
                     ->name('booking.capacity-windows.delete-series');
 
                 Route::put('/booking/messages/{message}/read', [BranchBookingCalendarController::class, 'markMessageRead'])
@@ -483,5 +484,43 @@ Route::middleware(['auth', 'active'])->group(function () {
             });
     });
 });
+
+Route::middleware(['auth', 'active', 'manage.branches'])
+    ->prefix('admin/branches/{branch}')
+    ->name('admin.branches.')
+    ->group(function () {
+        Route::get('/events', [EventController::class, 'index'])
+            ->name('events.index');
+
+        Route::post('/events', [EventController::class, 'store'])
+            ->name('events.store');
+
+        Route::get('/events/{event}', [EventController::class, 'show'])
+            ->name('events.show');
+
+        Route::patch('/events/{event}', [EventController::class, 'update'])
+            ->name('events.update');
+
+        Route::patch('/events/{event}/reschedule', [EventController::class, 'reschedule'])
+            ->name('events.reschedule');
+
+        Route::patch('/events/{event}/resize', [EventController::class, 'resize'])
+            ->name('events.resize');
+
+        Route::post('/events/{event}/cancel', [EventController::class, 'cancel'])
+            ->name('events.cancel');
+
+        Route::delete('/events/{event}', [EventController::class, 'destroy'])
+            ->name('events.destroy');
+
+        Route::post('/events/{event}/duplicate', [EventController::class, 'duplicate'])
+            ->name('events.duplicate');
+
+        Route::post('/events/{event}/participants', [EventController::class, 'addParticipant'])
+            ->name('events.participants.store');
+
+        Route::delete('/events/{event}/participants/{participant}', [EventController::class, 'removeParticipant'])
+            ->name('events.participants.destroy');
+    });
 
 require __DIR__ . '/auth.php';

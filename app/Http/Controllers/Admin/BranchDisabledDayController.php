@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class BranchDisabledDayController extends Controller
 {
@@ -65,6 +66,14 @@ class BranchDisabledDayController extends Controller
             'reason' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        $eventCount = $disabledDayService->eventCountOnDate($branch, $validated['date']);
+
+        if ($eventCount > 0) {
+            throw ValidationException::withMessages([
+                'date' => 'Tento deň nie je možné zatvoriť, pretože už obsahuje kalendárové udalosti.',
+            ]);
+        }
+
         $disabledDay = BranchDisabledDay::query()->updateOrCreate(
             [
                 'branch_id' => $branch->id,
@@ -78,14 +87,7 @@ class BranchDisabledDayController extends Controller
             ],
         );
 
-        $bookingCount = $disabledDayService->bookingCountOnDate($branch, $disabledDay->date);
-
-        return back()->with([
-            'success' => 'Deň bol zatvorený.',
-            'warning' => $bookingCount > 0
-                ? "Tento deň už obsahuje {$bookingCount} rezervácií. Neboli zmazané."
-                : null,
-        ]);
+        return back()->with('success', 'Deň bol zatvorený.');
     }
 
     public function update(Request $request, Branch $branch, int $disabledDay, DisabledDayService $disabledDayService): RedirectResponse

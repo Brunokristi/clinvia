@@ -7,6 +7,8 @@ use App\Models\BranchDisabledDay;
 use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
 use App\Notifications\BookingReminderNotification;
 use App\Support\BookingCalendarInvite;
 use Carbon\Carbon;
@@ -25,16 +27,31 @@ class BookingReminderCommandTest extends TestCase
 
         $fixture = $this->createFixture();
 
-        $fixture['branch']->bookings()->create([
-            'service_id' => $fixture['service']->id,
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
             'starts_at' => Carbon::parse('2026-07-03 10:00:00'),
             'ends_at' => Carbon::parse('2026-07-03 10:30:00'),
+            'timezone' => config('app.timezone', 'Europe/Bratislava'),
+            'title' => 'One Off Booking',
+            'is_recurring' => false,
+        ]);
+
+        $event->bookingDetail()->create([
             'patient_name' => 'One Off Patient',
             'patient_email' => 'oneoff@example.com',
             'patient_phone' => '+421900000555',
-            'status' => 'confirmed',
-            'recurrence' => null,
-            'recurrence_excluded_dates' => [],
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => 30,
+                'price_snapshot' => null,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
         ]);
 
         $this->artisan('bookings:send-reminders', ['--date' => '2026-07-03'])
@@ -61,16 +78,16 @@ class BookingReminderCommandTest extends TestCase
 
         $fixture = $this->createFixture();
 
-        $booking = $fixture['branch']->bookings()->create([
-            'service_id' => $fixture['service']->id,
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
             'starts_at' => Carbon::parse('2026-07-01 09:00:00'),
             'ends_at' => Carbon::parse('2026-07-01 09:30:00'),
-            'patient_name' => 'Recurring Patient',
-            'patient_email' => 'recurring@example.com',
-            'patient_phone' => '+421900000556',
-            'status' => 'confirmed',
-            'series_uuid' => (string) Str::uuid(),
-            'recurrence' => [
+            'timezone' => config('app.timezone', 'Europe/Bratislava'),
+            'title' => 'Recurring Booking',
+            'is_recurring' => true,
+            'recurrence_rule' => [
                 'frequency' => 'daily',
                 'interval' => 1,
                 'ends' => [
@@ -79,13 +96,24 @@ class BookingReminderCommandTest extends TestCase
                     'count' => null,
                 ],
             ],
-            'recurrence_excluded_dates' => [],
+            'metadata' => [
+                'recurrence_excluded_dates' => [],
+            ],
         ]);
 
-        $booking->services()->sync([
+        $event->bookingDetail()->create([
+            'patient_name' => 'Recurring Patient',
+            'patient_email' => 'recurring@example.com',
+            'patient_phone' => '+421900000556',
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
             $fixture['service']->id => [
                 'duration_minutes_snapshot' => 30,
                 'price_snapshot' => null,
+                'sort_order' => 0,
+                'quantity' => 1,
             ],
         ]);
 

@@ -551,12 +551,7 @@ const canAddGroupPatient = computed(() => {
 });
 
 const canManageGroupPatientsOnCreate = computed(() => {
-    if (!isGroupEventType.value) {
-        return false;
-    }
-
-    // For recurring group-event creation, patients are added per concrete occurrence later.
-    return isEditMode.value || !form.recurrence;
+    return false;
 });
 
 const remainingGroupCapacity = computed(() => {
@@ -736,7 +731,7 @@ watch(
 );
 
 watch(calculatedEndsAtDate, (endsAt) => {
-    if (!isBookingType.value || !endsAt) {
+    if ((!isBookingType.value && !isGroupEventType.value) || !endsAt) {
         return;
     }
 
@@ -746,7 +741,7 @@ watch(calculatedEndsAtDate, (endsAt) => {
 watch(
     () => [form.service_ids, form.date, form.starts_at],
     () => {
-        if (!isBookingType.value) {
+        if (!isBookingType.value && !isGroupEventType.value) {
             return;
         }
 
@@ -772,14 +767,60 @@ const closeDialog = () => {
     emit('close');
 };
 
+const weekdayCodeFromDate = (value) => {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][date.getDay()] ?? null;
+};
+
+const alignRecurringWeekdayWithSelectedDate = (recurrence) => {
+    if (!recurrence || recurrence.frequency !== 'weekly') {
+        return recurrence;
+    }
+
+    const selectedWeekday = weekdayCodeFromDate(form.date ?? form.starts_at);
+
+    if (!selectedWeekday) {
+        return recurrence;
+    }
+
+    const originalRecurrence = props.prefill?.target_original_recurrence ?? null;
+    const currentWeekdays = [...(recurrence.weekdays ?? [])];
+    const originalWeekdays = [...(originalRecurrence?.weekdays ?? [])];
+
+    if (currentWeekdays.length !== 1 || originalWeekdays.length !== 1) {
+        return recurrence;
+    }
+
+    if (currentWeekdays[0] !== originalWeekdays[0]) {
+        return recurrence;
+    }
+
+    return {
+        ...recurrence,
+        weekdays: [selectedWeekday],
+    };
+};
+
 const submitCreate = (saveScope = null) => {
     if (!canCreateSubmit.value) {
         return;
     }
 
-    const recurrence = form.recurrence
+    let recurrence = form.recurrence
         ? JSON.parse(JSON.stringify(form.recurrence))
         : null;
+
+    recurrence = alignRecurringWeekdayWithSelectedDate(recurrence);
+
     const repeatEvery = recurrence
         ? Math.max(1, Number(recurrence.interval ?? 1))
         : 1;
@@ -1083,7 +1124,7 @@ const submitCreate = (saveScope = null) => {
             <template v-else-if="isGroupEventType">
                 <FormSection
                     title="Skupinový termín"
-                    description="Nastavte termín, kapacitu a voliteľne pridajte pacientov už pri vytvorení skupiny."
+                    description="Nastavte termín a kapacitu. Pacientov pridáte až po vytvorení konkrétneho termínu."
                     columns="md:grid-cols-2"
                 >
                     <FormField

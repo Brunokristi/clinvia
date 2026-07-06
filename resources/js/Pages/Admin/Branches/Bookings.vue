@@ -168,7 +168,18 @@ const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
                 callbacks.onSuccess?.();
                 reloadCalendarData();
             },
-            onError: () => {
+            onError: (errors) => {
+                const firstError = Object.values(errors ?? {})?.[0];
+
+                toast.add({
+                    severity: 'error',
+                    summary: 'Chyba',
+                    detail: Array.isArray(firstError)
+                        ? firstError[0]
+                        : (firstError || 'Deň sa nepodarilo zatvoriť.'),
+                    life: 5000,
+                });
+
                 callbacks.onError?.();
             },
         });
@@ -610,6 +621,10 @@ const getBookingServiceLabel = (booking) => {
 };
 
 const getCapacityWindowEventId = (capacityWindow) => {
+    if (capacityWindow?.calendar_event_id) {
+        return String(capacityWindow.calendar_event_id);
+    }
+
     const capacityWindowId = capacityWindow?.id
         ?? capacityWindow?.capacity_window_id
         ?? capacityWindow?.window_id

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\BranchDisabledDay;
 use Carbon\Carbon;
@@ -11,6 +10,11 @@ use Illuminate\Support\Facades\Schema;
 
 class DisabledDayService
 {
+	public function __construct(
+		private readonly \App\Modules\Calendar\Services\RecurrenceExpansionService $recurrenceExpansionService,
+	) {
+	}
+
 	public function isDisabled(Branch $branch, Carbon|string $date): bool
 	{
 		if (! Schema::hasTable('branch_disabled_days')) {
@@ -39,13 +43,20 @@ class DisabledDayService
 			->get();
 	}
 
+	public function eventCountOnDate(Branch $branch, Carbon|string $date): int
+	{
+		$normalizedDate = Carbon::parse($this->normalizeDate($date));
+
+		return $this->recurrenceExpansionService->forBranch(
+			$branch,
+			$normalizedDate->copy()->startOfDay(),
+			$normalizedDate->copy()->endOfDay(),
+		)->count();
+	}
+
 	public function bookingCountOnDate(Branch $branch, Carbon|string $date): int
 	{
-		return Booking::query()
-			->where('branch_id', $branch->id)
-			->whereDate('starts_at', $this->normalizeDate($date))
-			->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-			->count();
+		return $this->eventCountOnDate($branch, $date);
 	}
 
 	private function normalizeDate(Carbon|string $date): string

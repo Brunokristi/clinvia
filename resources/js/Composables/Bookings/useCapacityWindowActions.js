@@ -285,11 +285,14 @@ export function useCapacityWindowActions({
         };
     };
 
-    const normalizeCapacityWindowPayload = (groupEvent) => {
-        const rawPatients = Array.isArray(groupEvent.group_patients)
-            ? groupEvent.group_patients
-            : (Array.isArray(groupEvent.patients) ? groupEvent.patients : []);
+    const getCapacityWindowRecurrence = (capacityWindow) => {
+        return capacityWindow?.recurrence
+            ?? capacityWindow?.recurrence_rule
+            ?? inferRecurrenceFromSeries(capacityWindow)
+            ?? null;
+    };
 
+    const normalizeCapacityWindowPayload = (groupEvent) => {
         const recurrence = groupEvent.recurrence ?? (groupEvent.repeats
             ? {
                 frequency: groupEvent.repeat_unit === 'days'
@@ -318,14 +321,6 @@ export function useCapacityWindowActions({
             repeat_unit: groupEvent.repeats ? groupEvent.repeat_unit : 'weeks',
             repeat_ends_on: groupEvent.repeats ? getDateOnly(groupEvent.repeat_ends_on) : null,
             recurrence,
-            patients: rawPatients
-                .map((patient) => ({
-                    patient_name: String(patient?.patient_name ?? '').trim(),
-                    patient_email: patient?.patient_email ?? null,
-                    patient_phone: patient?.patient_phone ?? null,
-                    patient_birth_number: patient?.patient_birth_number ?? null,
-                }))
-                .filter((patient) => patient.patient_name.length > 0),
         };
     };
 
@@ -475,9 +470,8 @@ export function useCapacityWindowActions({
                 !previousStartsAt.startsWith(nextStartsAt.slice(0, 16))
                 || !previousEndsAt.startsWith(nextEndsAt.slice(0, 16))
             );
-        const recurrencePayload = shouldReschedule && updateScope === 'occurrence'
-            ? null
-            : recurrence;
+        const shouldSendRecurrence = updateScope !== 'occurrence';
+        const recurrencePayload = shouldSendRecurrence ? recurrence : undefined;
         const normalizeRecurrenceForCompare = (value) => {
             if (!value) {
                 return null;
@@ -496,8 +490,10 @@ export function useCapacityWindowActions({
                 },
             };
         };
-        const hasRecurrenceChanged = JSON.stringify(normalizeRecurrenceForCompare(groupEvent.target_original_recurrence ?? null))
-            !== JSON.stringify(normalizeRecurrenceForCompare(recurrencePayload));
+        const hasRecurrenceChanged = shouldSendRecurrence
+            ? JSON.stringify(normalizeRecurrenceForCompare(groupEvent.target_original_recurrence ?? null))
+            !== JSON.stringify(normalizeRecurrenceForCompare(recurrencePayload))
+            : false;
         const shouldSyncPatients = updateScope === 'occurrence' && !hasRecurrenceChanged;
 
         const finishUpdate = (message = 'Skupinový termín bol upravený.') => {
@@ -551,7 +547,7 @@ export function useCapacityWindowActions({
                         .filter((patient) => patient.patient_name.length > 0),
                 }
                 : {}),
-            recurrence: recurrencePayload,
+            ...(shouldSendRecurrence ? { recurrence: recurrencePayload } : {}),
         }, {
             preserveScroll: true,
             preserveState: true,
@@ -592,14 +588,15 @@ export function useCapacityWindowActions({
         const date = getDateOnly(capacityWindow.date ?? getExistingStart(capacityWindow));
         const startsAt = getExistingStart(capacityWindow);
         const endsAt = getExistingEnd(capacityWindow);
+        const recurrence = getCapacityWindowRecurrence(capacityWindow);
 
         openCreateBookingWithPrefill({
             create_type: 'group_event',
             edit_mode: true,
             target_type: 'group_event',
             target_id: getCapacityWindowId(capacityWindow),
-            target_is_recurring: Boolean(capacityWindow.series_uuid),
-            target_original_recurrence: inferRecurrenceFromSeries(capacityWindow),
+            target_is_recurring: Boolean(capacityWindow.series_uuid || capacityWindow.is_recurring || recurrence),
+            target_original_recurrence: recurrence,
             date,
             starts_at: startsAt,
             ends_at: endsAt,
@@ -610,7 +607,7 @@ export function useCapacityWindowActions({
             capacity: capacityWindow.capacity ?? capacityWindow.bookable_places ?? 1,
             public_booking_type: capacityWindow.service?.public_booking_type ?? 'immediate_booking',
             group_patients: getGroupPatientsFromCapacityWindow(capacityWindow),
-            recurrence: inferRecurrenceFromSeries(capacityWindow),
+            recurrence,
         });
 
         groupEventOccurrenceDialogVisible.value = false;
@@ -906,6 +903,9 @@ export function useCapacityWindowActions({
                 patient_name: payload.patient_name,
                 patient_email: payload.patient_email,
                 patient_phone: payload.patient_phone,
+                occurrence_starts_at: payload.starts_at ?? null,
+                occurrence_ends_at: payload.ends_at ?? null,
+                occurrence_date: payload.date ?? null,
                 notify_patient: true,
             },
             {

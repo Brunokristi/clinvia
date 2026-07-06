@@ -49,14 +49,14 @@ const dialogVisible = computed({
 
 const title = computed(() => {
     if (props.mode === 'delete') {
-        return 'Vymazať opakovanie';
+        return 'Táto udalosť sa opakuje. Čo chcete vymazať?';
     }
 
     if (props.mode === 'update') {
-        return 'Upraviť opakovanie';
+        return 'Táto udalosť sa opakuje. Čo chcete upraviť?';
     }
 
-    return 'Presunúť opakovanie';
+    return 'Táto udalosť sa opakuje. Čo chcete presunúť?';
 });
 
 const actionVerb = computed(() => {
@@ -113,21 +113,21 @@ const scopeOptions = computed(() => [
     {
         scope: 'occurrence',
         icon: 'pi pi-calendar',
-        title: `${actionVerb.value} iba tento výskyt`,
+        title: 'Iba tento termín',
         countLabel: occurrenceCountLabel.value,
         danger: false,
     },
     {
         scope: 'from_date',
         icon: 'pi pi-forward',
-        title: `${actionVerb.value} tento a ďalšie výskyty`,
+        title: 'Tento a nasledujúce termíny',
         countLabel: fromDateCountLabel.value,
         danger: false,
     },
     {
         scope: 'series',
         icon: props.mode === 'delete' ? 'pi pi-trash' : 'pi pi-refresh',
-        title: `${actionVerb.value} celú sériu`,
+        title: 'Celú sériu',
         countLabel: seriesCountLabel.value,
         danger: props.mode === 'delete',
     },

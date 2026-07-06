@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\CreateBookingAction;
 use App\Events\BranchCalendarUpdated;
 use App\Models\AppointmentRequest;
-use App\Models\Booking;
-use App\Models\BookingAvailabilityRule;
 use App\Models\Branch;
-use App\Models\CapacityWindow;
 use App\Models\Service;
+use App\Modules\Calendar\Actions\AddGroupEventParticipantAction;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
 use App\Notifications\ContactFormSubmittedNotification;
 use App\Notifications\RequestCreatedNotification;
 use App\Services\BookingAvailabilityService;
@@ -180,18 +179,18 @@ class PublicBranchSiteController extends Controller
             'canBookExactSlots' => $canBookExactSlots,
             'canSubmitGeneralRequest' => $canSubmitGeneralRequest,
             'availableSlots' => $availableSlots
-                ->map(fn (CapacityWindow $capacityWindow) => [
-                    'id' => $capacityWindow->id,
-                    'capacity_window_id' => $capacityWindow->id,
-                    'service_id' => $capacityWindow->service_id,
-                    'service_name' => $capacityWindow->service?->name,
-                    'starts_at' => $capacityWindow->starts_at->toDateTimeString(),
-                    'ends_at' => $capacityWindow->ends_at->toDateTimeString(),
-                    'capacity' => (int) $capacityWindow->capacity,
-                    'confirmed_bookings_count' => (int) $capacityWindow->confirmed_bookings_count,
+                ->map(fn (Event $event) => [
+                    'id' => $event->id,
+                    'capacity_window_id' => $event->id,
+                    'service_id' => $event->groupDetail?->service_id,
+                    'service_name' => $event->groupDetail?->service_name,
+                    'starts_at' => $event->starts_at?->toDateTimeString(),
+                    'ends_at' => $event->ends_at?->toDateTimeString(),
+                    'capacity' => (int) ($event->groupDetail?->capacity ?? 0),
+                    'confirmed_bookings_count' => (int) ($event->groupDetail?->reserved_places ?? 0),
                     'free_capacity' => max(
                         0,
-                        (int) $capacityWindow->capacity - (int) $capacityWindow->confirmed_bookings_count,
+                        (int) ($event->groupDetail?->capacity ?? 0) - (int) ($event->groupDetail?->reserved_places ?? 0),
                     ),
                 ])
                 ->values(),
@@ -204,7 +203,7 @@ class PublicBranchSiteController extends Controller
     public function storeBooking(
         Request $request,
         Branch $branch,
-        CreateBookingAction $createBookingAction,
+        AddGroupEventParticipantAction $addGroupEventParticipantAction,
         BranchInboxMessageService $inboxMessageService,
     ): RedirectResponse {
         $this->ensurePublicSiteIsEnabled($branch);
@@ -217,7 +216,7 @@ class PublicBranchSiteController extends Controller
             'request_type' => ['nullable', 'string', 'in:preferred_period,general'],
             'service_ids' => ['required', 'array', 'min:1'],
             'service_ids.*' => ['integer', 'exists:services,id'],
-            'capacity_window_id' => ['nullable', 'integer', 'exists:capacity_windows,id'],
+            'capacity_window_id' => ['nullable', 'integer', 'exists:events,id'],
             'preferred_option_id' => ['nullable', 'string'],
             'preferred_date' => ['nullable', 'date'],
             'preferred_period' => ['nullable', 'string', 'in:morning,forenoon,afternoon,evening'],
@@ -250,8 +249,7 @@ class PublicBranchSiteController extends Controller
             return $this->storeExactCapacityWindowBooking(
                 branch: $branch,
                 validated: $validated,
-                createBookingAction: $createBookingAction,
-                inboxMessageService: $inboxMessageService,
+                addGroupEventParticipantAction: $addGroupEventParticipantAction,
             );
         }
 
@@ -339,13 +337,13 @@ class PublicBranchSiteController extends Controller
             ->unique()
             ->values();
 
-        $rules = BookingAvailabilityRule::query()
+        $rules = Event::query()
             ->where('branch_id', $branch->id)
-            ->where('is_enabled', true)
-            ->where('slot_mode', 'free_bookable_time')
+            ->where('type', EventType::AvailabilityRule)
+            ->whereNotIn('status', ['cancelled'])
             ->with('services')
             ->get()
-            ->filter(function (BookingAvailabilityRule $rule) use ($selectedServiceIds) {
+            ->filter(function (Event $rule) use ($selectedServiceIds) {
                 return $this->ruleAllowsAllSelectedServices($rule, $selectedServiceIds);
             })
             ->values();
@@ -444,7 +442,7 @@ class PublicBranchSiteController extends Controller
 
     private function availableRuleMinutesForPeriod(
         Branch $branch,
-        BookingAvailabilityRule $rule,
+        Event $rule,
         Carbon $date,
         Carbon $periodStartsAt,
         Carbon $periodEndsAt,
@@ -527,7 +525,7 @@ class PublicBranchSiteController extends Controller
     }
 
     private function ruleAllowsAllSelectedServices(
-        BookingAvailabilityRule $rule,
+        Event $rule,
         Collection $selectedServiceIds,
     ): bool {
         $selectedServiceIds = $selectedServiceIds
@@ -541,17 +539,6 @@ class PublicBranchSiteController extends Controller
             ->unique()
             ->values();
 
-        if ($ruleServiceIds->isEmpty()) {
-            $ruleServiceIds = collect($rule->service_ids ?? [])
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values();
-        }
-
-        if ($ruleServiceIds->isEmpty() && $rule->service_id) {
-            $ruleServiceIds = collect([(int) $rule->service_id]);
-        }
-
         return $selectedServiceIds
             ->diff($ruleServiceIds)
             ->isEmpty();
@@ -562,13 +549,14 @@ class PublicBranchSiteController extends Controller
         Carbon $startsAt,
         Carbon $endsAt,
     ): int {
-        return Booking::query()
+        return Event::query()
             ->where('branch_id', $branch->id)
+            ->where('type', EventType::Booking)
             ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
             ->where('starts_at', '<', $endsAt)
             ->where('ends_at', '>', $startsAt)
             ->get()
-            ->sum(function (Booking $booking) use ($startsAt, $endsAt) {
+            ->sum(function (Event $booking) use ($startsAt, $endsAt) {
                 $bookingStartsAt = $booking->starts_at;
                 $bookingEndsAt = $booking->ends_at;
 
@@ -655,9 +643,9 @@ class PublicBranchSiteController extends Controller
         };
     }
 
-    private function ruleAppliesOnDate(BookingAvailabilityRule $rule, Carbon $date): bool
+    private function ruleAppliesOnDate(Event $rule, Carbon $date): bool
     {
-        $rawDate = $rule->date ?? $rule->starts_on ?? $rule->start_date;
+        $rawDate = $rule->starts_at?->toDateString();
 
         if (app(\App\Services\DisabledDayService::class)->isDisabled($rule->branch, $date)) {
             return false;
@@ -674,7 +662,7 @@ class PublicBranchSiteController extends Controller
             return false;
         }
 
-        $excludedDates = collect($rule->excluded_dates ?? [])
+        $excludedDates = collect(data_get($rule->metadata, 'recurrence_excluded_dates', []))
             ->map(fn ($excludedDate) => Carbon::parse($excludedDate)->toDateString())
             ->all();
 
@@ -682,31 +670,51 @@ class PublicBranchSiteController extends Controller
             return false;
         }
 
-        if ($rule->repeat_ends_on && $targetDate->gt(Carbon::parse($rule->repeat_ends_on)->startOfDay())) {
+        $recurrenceEndsOn = data_get($rule->recurrence_rule, 'ends.until');
+
+        if ($recurrenceEndsOn && $targetDate->gt(Carbon::parse($recurrenceEndsOn)->startOfDay())) {
             return false;
         }
 
-        if (! $rule->repeats) {
+        if (! $rule->is_recurring || empty($rule->recurrence_rule)) {
             return $targetDate->isSameDay($ruleDate);
         }
 
-        $repeatEvery = max(1, (int) ($rule->repeat_every ?? $rule->repeat_interval ?? 1));
-        $repeatUnit = $rule->repeat_unit ?? 'weeks';
+        $repeatEvery = max(1, (int) data_get($rule->recurrence_rule, 'interval', 1));
+        $frequency = data_get($rule->recurrence_rule, 'frequency', 'weekly');
+        $weekdays = collect(data_get($rule->recurrence_rule, 'weekdays', []))
+            ->map(fn ($day) => strtoupper((string) $day))
+            ->values()
+            ->all();
 
-        return match ($repeatUnit) {
-            'days' => $ruleDate->diffInDays($targetDate) % $repeatEvery === 0,
-            'months' => $ruleDate->diffInMonths($targetDate) % $repeatEvery === 0
+        $isoDayCode = $this->isoWeekdayCode($targetDate);
+
+        return match ($frequency) {
+            'daily' => $ruleDate->diffInDays($targetDate) % $repeatEvery === 0,
+            'monthly' => $ruleDate->diffInMonths($targetDate) % $repeatEvery === 0
                 && (int) $ruleDate->day === (int) $targetDate->day,
-            default => $ruleDate->dayOfWeekIso === $targetDate->dayOfWeekIso
+            default => (empty($weekdays) || in_array($isoDayCode, $weekdays, true))
                 && $ruleDate->diffInWeeks($targetDate) % $repeatEvery === 0,
+        };
+    }
+
+    private function isoWeekdayCode(Carbon $date): string
+    {
+        return match ((int) $date->dayOfWeekIso) {
+            1 => 'MO',
+            2 => 'TU',
+            3 => 'WE',
+            4 => 'TH',
+            5 => 'FR',
+            6 => 'SA',
+            default => 'SU',
         };
     }
 
     private function storeExactCapacityWindowBooking(
         Branch $branch,
         array $validated,
-        CreateBookingAction $createBookingAction,
-        BranchInboxMessageService $inboxMessageService,
+        AddGroupEventParticipantAction $addGroupEventParticipantAction,
     ): RedirectResponse {
         if (empty($validated['capacity_window_id'])) {
             throw ValidationException::withMessages([
@@ -725,77 +733,75 @@ class PublicBranchSiteController extends Controller
             ]);
         }
 
-        $booking = DB::transaction(function () use (
+        $event = DB::transaction(function () use (
             $branch,
             $validated,
             $selectedServiceIds,
-            $createBookingAction,
-        ): Booking {
-            $capacityWindow = CapacityWindow::query()
-                ->with('service')
+            $addGroupEventParticipantAction,
+        ): Event {
+            $groupEvent = Event::query()
+                ->with(['services', 'groupDetail', 'participants'])
                 ->where('branch_id', $branch->id)
+                ->where('type', EventType::GroupEvent)
                 ->whereKey($validated['capacity_window_id'])
-                ->where('status', 'active')
+                ->whereNotIn('status', ['cancelled'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! $capacityWindow->service || ! $capacityWindow->service->is_active || ! $capacityWindow->service->is_bookable) {
+            $service = $groupEvent->services
+                ->firstWhere('id', (int) ($groupEvent->groupDetail?->service_id ?? 0))
+                ?? $groupEvent->services->first();
+
+            if (! $service || ! $service->is_active || ! $service->is_bookable) {
                 throw ValidationException::withMessages([
                     'capacity_window_id' => 'Tento termín nie je dostupný na priamu rezerváciu.',
                 ]);
             }
 
-            if ($capacityWindow->starts_at->isPast()) {
+            if ($groupEvent->starts_at?->isPast()) {
                 throw ValidationException::withMessages([
                     'capacity_window_id' => 'Tento termín už nie je dostupný.',
                 ]);
             }
 
-            if (app(\App\Services\DisabledDayService::class)->isDisabled($branch, $capacityWindow->starts_at)) {
+            if (app(\App\Services\DisabledDayService::class)->isDisabled($branch, $groupEvent->starts_at)) {
                 throw ValidationException::withMessages([
                     'capacity_window_id' => 'Tento deň je v kalendári zakázaný.',
                 ]);
             }
 
-            if ((int) $capacityWindow->service_id !== (int) $selectedServiceIds->first()) {
+            $groupServiceId = (int) ($groupEvent->groupDetail?->service_id ?? $service->id);
+
+            if ($groupServiceId !== (int) $selectedServiceIds->first()) {
                 throw ValidationException::withMessages([
                     'service_ids' => 'Vybraný termín nepatrí k vybranej službe.',
                 ]);
             }
 
-            $confirmedBookingsCount = $capacityWindow
-                ->bookings()
-                ->whereNotIn('status', ['cancelled', 'rejected', 'no_show'])
-                ->count();
+            $capacity = (int) ($groupEvent->groupDetail?->capacity ?? 0);
+            $reservedPlaces = (int) ($groupEvent->groupDetail?->reserved_places ?? 0);
 
-            if ($confirmedBookingsCount >= (int) $capacityWindow->capacity) {
+            if ($reservedPlaces >= $capacity) {
                 throw ValidationException::withMessages([
                     'capacity_window_id' => 'Tento termín je už obsadený.',
                 ]);
             }
 
-            return $createBookingAction->execute($branch, [
-                'capacity_window_id' => $capacityWindow->id,
-                'service_id' => $capacityWindow->service_id,
-                'service_ids' => [$capacityWindow->service_id],
-                'starts_at' => $capacityWindow->starts_at,
-                'ends_at' => $capacityWindow->ends_at,
-                'patient_name' => $validated['patient_name'],
-                'patient_email' => $validated['patient_email'],
-                'patient_phone' => $validated['patient_phone'] ?? null,
-                'patient_birth_number' => $validated['patient_birth_number'] ?? null,
-                'patient_note' => $validated['patient_note'] ?? null,
+            $addGroupEventParticipantAction->execute($groupEvent, [
+                'participant_name' => $validated['patient_name'],
+                'participant_email' => $validated['patient_email'] ?? null,
+                'participant_phone' => $validated['patient_phone'] ?? null,
+                'notes' => $validated['patient_note'] ?? null,
                 'status' => 'confirmed',
-                'notify_patient' => true,
             ]);
+
+            return $groupEvent;
         });
 
-        $inboxMessageService->createForBooking($booking);
-
         BranchCalendarUpdated::dispatch(
-            branchId: $booking->branch_id,
-            action: 'booking_created',
-            bookingId: $booking->id,
+            branchId: $event->branch_id,
+            action: 'capacity_window_booking_created',
+            capacityWindowId: $event->id,
         );
 
         return redirect()
