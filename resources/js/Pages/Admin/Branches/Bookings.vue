@@ -270,6 +270,7 @@ const {
 
     closeRuleDialogSafely,
     cancelPendingRuleReschedule,
+    ruleRescheduleImpactPreview,
     saveRules,
     deleteCurrentRuleByScope,
     duplicateCurrentRule,
@@ -279,11 +280,13 @@ const {
 
     cancelBooking,
     duplicateBooking,
+    bookingRescheduleImpactPreview,
     submitPendingBookingRescheduleScope,
     cancelPendingBookingReschedule,
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
+    capacityWindowRescheduleImpactPreview,
     submitPendingCapacityWindowRescheduleScope,
     cancelPendingCapacityWindowReschedule,
     duplicateCapacityWindow,
@@ -1312,6 +1315,29 @@ const calendarOptionsWithReservationHighlight = computed(() => {
     };
 });
 
+const calendarRenderKey = computed(() => {
+    const resolvedCalendarOptions = unref(calendarOptionsWithReservationHighlight) ?? {};
+    const events = Array.isArray(resolvedCalendarOptions.events)
+        ? resolvedCalendarOptions.events
+        : [];
+
+    const eventSignature = events
+        .map((event) => {
+            const start = event?.start instanceof Date
+                ? event.start.toISOString()
+                : String(event?.start ?? '');
+            const end = event?.end instanceof Date
+                ? event.end.toISOString()
+                : String(event?.end ?? '');
+
+            return `${String(event?.id ?? '')}:${start}:${end}`;
+        })
+        .sort()
+        .join('|');
+
+    return eventSignature;
+});
+
 onMounted(() => {
     if (requestSidebar.value) {
         requestDraggable = new Draggable(requestSidebar.value, {
@@ -1404,6 +1430,7 @@ onBeforeUnmount(() => {
                 >
                     <FullCalendar
                         ref="fullCalendar"
+                        :key="calendarRenderKey"
                         :options="calendarOptionsWithReservationHighlight"
                     />
 
@@ -1729,6 +1756,12 @@ onBeforeUnmount(() => {
             v-model:visible="ruleRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="voľný čas"
+            :count-occurrence="ruleRescheduleImpactPreview?.occurrence?.count"
+            :count-from-date="ruleRescheduleImpactPreview?.from_date?.count"
+            :count-series="ruleRescheduleImpactPreview?.series?.count"
+            :message-occurrence="ruleRescheduleImpactPreview?.occurrence?.message"
+            :message-from-date="ruleRescheduleImpactPreview?.from_date?.message"
+            :message-series="ruleRescheduleImpactPreview?.series?.message"
             @select="saveRules"
             @cancel="cancelPendingRuleReschedule"
         />
@@ -1737,6 +1770,12 @@ onBeforeUnmount(() => {
             v-model:visible="bookingRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="rezervácia"
+            :count-occurrence="bookingRescheduleImpactPreview?.occurrence?.count"
+            :count-from-date="bookingRescheduleImpactPreview?.from_date?.count"
+            :count-series="bookingRescheduleImpactPreview?.series?.count"
+            :message-occurrence="bookingRescheduleImpactPreview?.occurrence?.message"
+            :message-from-date="bookingRescheduleImpactPreview?.from_date?.message"
+            :message-series="bookingRescheduleImpactPreview?.series?.message"
             @select="submitPendingBookingRescheduleScope"
             @cancel="cancelPendingBookingReschedule"
         />
@@ -1745,6 +1784,12 @@ onBeforeUnmount(() => {
             v-model:visible="capacityWindowRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="skupinový termín"
+            :count-occurrence="capacityWindowRescheduleImpactPreview?.occurrence?.count"
+            :count-from-date="capacityWindowRescheduleImpactPreview?.from_date?.count"
+            :count-series="capacityWindowRescheduleImpactPreview?.series?.count"
+            :message-occurrence="capacityWindowRescheduleImpactPreview?.occurrence?.message"
+            :message-from-date="capacityWindowRescheduleImpactPreview?.from_date?.message"
+            :message-series="capacityWindowRescheduleImpactPreview?.series?.message"
             @select="submitPendingCapacityWindowRescheduleScope"
             @cancel="cancelPendingCapacityWindowReschedule"
         />

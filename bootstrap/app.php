@@ -20,7 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('bookings:send-reminders')->dailyAt('08:00');
+        $schedule->command('bookings:send-reminders')->dailyAt(config('notifications.reminder_hour', '18:00'));
+        $schedule->command('requests:send-pending-digest')->dailyAt(config('notifications.pending_digest_hour', '18:15'));
     })
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [

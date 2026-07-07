@@ -245,10 +245,13 @@ class EventFrontendMapper
         }
 
         $payload['id'] = $event->id;
-        $payload['root_event_id'] = $rootEvent->id;
+        $payload['root_event_id'] = $occurrence['root_event_id'] ?? $rootEvent->root_event_id ?? $rootEvent->id;
+        $payload['logical_root_event_id'] = $payload['root_event_id'];
+        $payload['recurring_master_id'] = $occurrence['recurring_master_id'] ?? $rootEvent->id;
         $payload['occurrence_id'] = $occurrence['occurrence_id'];
         $payload['occurrence_starts_at'] = $startsAt?->toIso8601String();
         $payload['occurrence_ends_at'] = $endsAt?->toIso8601String();
+        $payload['display_key'] = $occurrence['display_key'] ?? null;
         $payload['date'] = $startsAt?->toDateString();
         $payload['starts_at'] = $this->formatCalendarDateTime($startsAt);
         $payload['ends_at'] = $this->formatCalendarDateTime($endsAt);

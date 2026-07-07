@@ -33,6 +33,7 @@ class RecurrenceService
             'frequency' => $frequency,
             'interval' => $interval,
             'weekdays' => $weekdays,
+            'bysetpos' => isset($recurrence['bysetpos']) ? (int) $recurrence['bysetpos'] : null,
             'ends' => [
                 'type' => $endsType,
                 'count' => $endsType === 'after' ? max(1, (int) ($ends['count'] ?? 1)) : null,
@@ -104,13 +105,45 @@ class RecurrenceService
 
         return match ($recurrence['frequency'] ?? 'weekly') {
             'daily' => $seriesDay->diffInDays($candidate) % $interval === 0,
-            'monthly' => $seriesDay->diffInMonths($candidate) % $interval === 0
-                && (int) $seriesDay->day === (int) $candidate->day,
+            'monthly' => $this->matchesMonthlyOccurrence($seriesDay, $candidate, $recurrence, $interval),
             'yearly' => $seriesDay->diffInYears($candidate) % $interval === 0
                 && (int) $seriesDay->format('m') === (int) $candidate->format('m')
                 && (int) $seriesDay->day === (int) $candidate->day,
             default => $this->matchesWeeklyOccurrence($seriesDay, $candidate, $recurrence, $interval),
         };
+    }
+
+    private function matchesMonthlyOccurrence(Carbon $seriesDay, Carbon $candidate, array $recurrence, int $interval): bool
+    {
+        if ($seriesDay->diffInMonths($candidate) % $interval !== 0) {
+            return false;
+        }
+
+        $bySetPos = (int) ($recurrence['bysetpos'] ?? 0);
+        $weekdays = $recurrence['weekdays'] ?? [];
+
+        if ($bySetPos !== 0 && $weekdays !== []) {
+            if (! in_array($this->weekdayCode($candidate), $weekdays, true)) {
+                return false;
+            }
+
+            return $this->weekdayPositionInMonth($candidate) === $bySetPos;
+        }
+
+        return (int) $seriesDay->day === (int) $candidate->day;
+    }
+
+    private function weekdayPositionInMonth(Carbon $candidate): int
+    {
+        $day = (int) $candidate->day;
+        $daysInMonth = (int) $candidate->daysInMonth;
+        $forwardPosition = (int) floor(($day - 1) / 7) + 1;
+
+        if ($day + 7 > $daysInMonth) {
+            return -1;
+        }
+
+        return $forwardPosition;
     }
 
     private function matchesWeeklyOccurrence(Carbon $seriesDay, Carbon $candidate, array $recurrence, int $interval): bool

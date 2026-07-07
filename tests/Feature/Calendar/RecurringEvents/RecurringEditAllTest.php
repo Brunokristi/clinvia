@@ -31,7 +31,7 @@ class RecurringEditAllTest extends RecurringEventsTestCase
         $this->assertNoDuplicateRenderedEvents($snapshot);
     }
 
-    public function test_edit_all_keeps_existing_exception_priority(): void
+    public function test_edit_all_normalizes_existing_time_exception_to_new_series_time(): void
     {
         $fixture = $this->createCalendarFixture();
         $master = $this->createBaseRecurringMaster($fixture, EventType::Booking);
@@ -50,7 +50,7 @@ class RecurringEditAllTest extends RecurringEventsTestCase
 
         $snapshot = $this->calendarSnapshot($this->renderRange($fixture['branch']));
 
-        $this->assertOccurrenceExists($snapshot, '2026-07-13 16:00');
+        $this->assertOccurrenceExists($snapshot, '2026-07-13 14:00');
         $this->assertNoDuplicateRenderedEvents($snapshot);
     }
 }

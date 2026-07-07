@@ -29,25 +29,39 @@ class RecurrenceExpansionService
                 $query
                     ->where(function ($subQuery) use ($rangeStart, $rangeEnd) {
                         $subQuery
-                            ->where('starts_at', '<=', $rangeEnd)
-                            ->where('ends_at', '>=', $rangeStart);
+                            ->where('starts_at', '<', $rangeEnd)
+                            ->where('ends_at', '>', $rangeStart);
                     })
                     ->orWhere(function ($subQuery) use ($rangeEnd) {
                         $subQuery
                             ->where('is_recurring', true)
                             ->whereNull('recurrence_parent_id')
-                            ->where('starts_at', '<=', $rangeEnd);
+                            ->where('starts_at', '<', $rangeEnd);
                     })
                     ->orWhere(function ($subQuery) use ($rangeStart, $rangeEnd) {
                         $subQuery
                             ->whereNotNull('recurrence_parent_id')
                             ->whereNotNull('recurrence_original_starts_at')
-                            ->where('recurrence_original_starts_at', '<=', $rangeEnd)
+                            ->where('recurrence_original_starts_at', '<', $rangeEnd)
                             ->where('recurrence_original_starts_at', '>=', $rangeStart);
                     });
             })
             ->orderBy('starts_at')
             ->get();
+
+        return $this->forEvents($events, $rangeStart, $rangeEnd, $includeCancelled, $branch);
+    }
+
+    public function forEvents(
+        Collection $events,
+        Carbon $rangeStart,
+        Carbon $rangeEnd,
+        bool $includeCancelled = false,
+        ?Branch $branch = null,
+    ): Collection {
+        if ($events->isEmpty()) {
+            return collect();
+        }
 
         $disabledDateContext = $this->buildDisabledDateContext($branch, $rangeStart, $rangeEnd);
 
@@ -239,17 +253,23 @@ class RecurrenceExpansionService
         $rootEvent ??= $event->recurrenceParent ?? $event;
         $occurrenceOriginalStartsAt ??= $event->recurrence_original_starts_at ?? $startsAt;
         $occurrenceOriginalEndsAt ??= $event->recurrence_original_ends_at ?? $endsAt;
+        $logicalRootEventId = (int) ($rootEvent->root_event_id ?? $rootEvent->id);
+        $displayKey = $occurrenceOriginalStartsAt
+            ? sprintf('%d:%s', $logicalRootEventId, $occurrenceOriginalStartsAt->copy()->utc()->format('Y-m-d\TH:i:s'))
+            : sprintf('single:%d', (int) $event->id);
 
         return [
             'event' => $event,
             'root_event' => $rootEvent,
             'event_id' => $event->id,
-            'root_event_id' => $rootEvent->id,
-            'occurrence_id' => sprintf('%d:%s', $rootEvent->id, $occurrenceOriginalStartsAt?->copy()->utc()->format('Y-m-d\TH:i:s') ?? 'unknown'),
+            'root_event_id' => $logicalRootEventId,
+            'recurring_master_id' => (int) $rootEvent->id,
+            'occurrence_id' => sprintf('%d:%s', $logicalRootEventId, $occurrenceOriginalStartsAt?->copy()->utc()->format('Y-m-d\TH:i:s') ?? 'unknown'),
             'occurrence_starts_at' => $startsAt,
             'occurrence_ends_at' => $endsAt,
             'occurrence_original_starts_at' => $occurrenceOriginalStartsAt,
             'occurrence_original_ends_at' => $occurrenceOriginalEndsAt,
+            'display_key' => $displayKey,
             'is_recurring' => (bool) ($rootEvent->is_recurring || $isOccurrence),
             'is_occurrence' => $isOccurrence,
             'is_override' => $isOverride,
@@ -273,7 +293,7 @@ class RecurrenceExpansionService
             return false;
         }
 
-        return $event->starts_at->lte($rangeEnd) && $event->ends_at->gte($rangeStart);
+        return $event->starts_at->lt($rangeEnd) && $event->ends_at->gt($rangeStart);
     }
 
     private function windowOverlapsRange(?Carbon $startsAt, ?Carbon $endsAt, Carbon $rangeStart, Carbon $rangeEnd): bool
@@ -282,7 +302,7 @@ class RecurrenceExpansionService
             return false;
         }
 
-        return $startsAt->lte($rangeEnd) && $endsAt->gte($rangeStart);
+        return $startsAt->lt($rangeEnd) && $endsAt->gt($rangeStart);
     }
 
     private function occurrenceWindowIsAllowed(Branch $branch, ?Carbon $startsAt, ?Carbon $endsAt, array $disabledDateContext): bool
@@ -298,12 +318,12 @@ class RecurrenceExpansionService
         return $this->openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt);
     }
 
-    private function buildDisabledDateContext(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): array
+    private function buildDisabledDateContext(?Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): array
     {
         $manualClosedDates = [];
         $holidayOpenDates = [];
 
-        if (Schema::hasTable('branch_disabled_days')) {
+        if ($branch && Schema::hasTable('branch_disabled_days')) {
             $rows = BranchDisabledDay::query()
                 ->where('branch_id', $branch->id)
                 ->whereBetween('date', [

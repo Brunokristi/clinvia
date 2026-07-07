@@ -77,6 +77,7 @@ class BranchCapacityEventBridgeController extends Controller
                 'status' => 'confirmed',
                 'starts_at' => Carbon::parse($validated['starts_at']),
                 'ends_at' => Carbon::parse($validated['ends_at']),
+                'timezone' => config('app.timezone'),
                 'recurrence_rule' => $this->extractRecurrence($validated),
                 'services' => [[
                     'service_id' => (int) $service->id,

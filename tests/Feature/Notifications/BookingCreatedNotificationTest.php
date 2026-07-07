@@ -3,6 +3,7 @@
 namespace Tests\Feature\Notifications;
 
 use App\Models\Branch;
+use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
@@ -20,7 +21,7 @@ class BookingCreatedNotificationTest extends TestCase
     {
         $fixture = $this->createFixture();
 
-        $booking = $fixture['branch']->bookings()->create([
+        $booking = new Booking([
             'service_id' => $fixture['service']->id,
             'starts_at' => Carbon::parse('2026-07-10 10:00:00'),
             'ends_at' => Carbon::parse('2026-07-10 10:30:00'),
@@ -40,13 +41,10 @@ class BookingCreatedNotificationTest extends TestCase
             ],
             'recurrence_excluded_dates' => [],
         ]);
-
-        $booking->services()->sync([
-            $fixture['service']->id => [
-                'duration_minutes_snapshot' => 30,
-                'price_snapshot' => null,
-            ],
-        ]);
+        $booking->id = 1;
+        $booking->setRelation('branch', $fixture['branch']);
+        $booking->setRelation('service', $fixture['service']);
+        $booking->setRelation('services', collect([$fixture['service']]));
 
         $mailMessage = (new BookingCreatedNotification($booking))->toMail($fixture['user']);
 
@@ -60,7 +58,7 @@ class BookingCreatedNotificationTest extends TestCase
     {
         $fixture = $this->createFixture();
 
-        $booking = $fixture['branch']->bookings()->create([
+        $booking = new Booking([
             'service_id' => $fixture['service']->id,
             'starts_at' => Carbon::parse('2026-07-10 10:00:00'),
             'ends_at' => Carbon::parse('2026-07-10 10:30:00'),
@@ -71,13 +69,10 @@ class BookingCreatedNotificationTest extends TestCase
             'recurrence' => null,
             'recurrence_excluded_dates' => [],
         ]);
-
-        $booking->services()->sync([
-            $fixture['service']->id => [
-                'duration_minutes_snapshot' => 30,
-                'price_snapshot' => null,
-            ],
-        ]);
+        $booking->id = 2;
+        $booking->setRelation('branch', $fixture['branch']);
+        $booking->setRelation('service', $fixture['service']);
+        $booking->setRelation('services', collect([$fixture['service']]));
 
         $mailMessage = (new BookingCreatedNotification($booking))->toMail($fixture['user']);
 

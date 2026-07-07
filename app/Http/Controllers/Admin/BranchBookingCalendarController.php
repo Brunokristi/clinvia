@@ -8,22 +8,57 @@ use App\Models\AppointmentRequest;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Service;
-use App\Notifications\RequestCancelledNotification;
 use App\Modules\Calendar\Actions\ConvertAppointmentRequestToEventAction;
 use App\Modules\Calendar\Services\EventReadAdapterService;
+use App\Modules\Calendar\Services\RecurringImpactService;
 use App\Services\DisabledDayService;
+use App\Services\EmailNotificationService;
 use App\Services\PatientDirectoryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class BranchBookingCalendarController extends Controller
 {
+    public function recurringImpactPreview(
+        Request $request,
+        Branch $branch,
+        RecurringImpactService $recurringImpactService,
+    ): JsonResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:delete,edit,reschedule,resize,change_recurrence'],
+            'scope' => ['required', 'in:this,this_and_following,all,occurrence,from_date,series'],
+            'changes' => ['nullable', 'array'],
+            'selected_occurrence' => ['required', 'array'],
+            'selected_occurrence.event_id' => ['required', 'integer'],
+            'selected_occurrence.root_event_id' => ['nullable', 'integer'],
+            'selected_occurrence.occurrence_starts_at' => ['nullable', 'date'],
+            'selected_occurrence.occurrence_ends_at' => ['nullable', 'date'],
+            'selected_occurrence.occurrence_original_starts_at' => ['nullable', 'date'],
+            'selected_occurrence.starts_at' => ['nullable', 'date'],
+            'selected_occurrence.ends_at' => ['nullable', 'date'],
+            'selected_occurrence.display_key' => ['nullable', 'string'],
+        ]);
+
+        $preview = $recurringImpactService->preview(
+            branch: $branch,
+            selectedOccurrence: $validated['selected_occurrence'],
+            action: $validated['action'],
+            scope: $validated['scope'],
+            changes: $validated['changes'] ?? [],
+        );
+
+        return response()->json([
+            'data' => $preview,
+        ]);
+    }
+
     public function events(
         Request $request,
         Branch $branch,
@@ -255,6 +290,7 @@ class BranchBookingCalendarController extends Controller
         Branch $branch,
         AppointmentRequest $appointmentRequest,
         ConvertAppointmentRequestToEventAction $convertAppointmentRequestToEventAction,
+        EmailNotificationService $emailNotificationService,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
@@ -288,6 +324,11 @@ class BranchBookingCalendarController extends Controller
             appointmentRequestId: $appointmentRequest->id,
         );
 
+        $emailNotificationService->dispatch('request.accepted_as_booking', [
+            'appointment_request' => $appointmentRequest,
+            'event' => $event,
+        ]);
+
         return back()->with('success', 'Ziadost bola presunuta do kalendara.');
     }
 
@@ -295,6 +336,7 @@ class BranchBookingCalendarController extends Controller
         Request $request,
         Branch $branch,
         AppointmentRequest $appointmentRequest,
+        EmailNotificationService $emailNotificationService,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
@@ -308,12 +350,11 @@ class BranchBookingCalendarController extends Controller
             'status' => 'cancelled',
         ]);
 
-        if ($request->boolean('notify_patient', true) && $appointmentRequest->patient_email) {
-            Notification::route('mail', $appointmentRequest->patient_email)
-                ->notify(new RequestCancelledNotification(
-                    appointmentRequest: $appointmentRequest,
-                    reason: $validated['notification_reason'] ?? null,
-                ));
+        if ($request->boolean('notify_patient', true)) {
+            $emailNotificationService->dispatch('request.rejected', [
+                'appointment_request' => $appointmentRequest,
+                'reason' => $validated['notification_reason'] ?? null,
+            ]);
         }
 
         BranchCalendarUpdated::dispatch(

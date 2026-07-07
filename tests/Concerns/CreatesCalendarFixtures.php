@@ -155,6 +155,7 @@ trait CreatesCalendarFixtures
             'title' => $rootEvent->title,
             'description' => $rootEvent->description,
             'recurrence_parent_id' => $rootEvent->id,
+            'root_event_id' => $rootEvent->root_event_id ?? $rootEvent->id,
             'recurrence_original_starts_at' => $occurrenceStartsAt,
             'recurrence_original_ends_at' => $occurrenceEndsAt,
             'recurrence_rule' => null,
@@ -266,7 +267,14 @@ trait CreatesCalendarFixtures
 
     private function createEventRecord(array $fixture, array $attributes): Event
     {
-        return Event::query()->create($attributes);
+        $event = Event::query()->create($attributes);
+
+        if ($event->recurrence_parent_id === null && $event->root_event_id === null) {
+            $event->root_event_id = $event->id;
+            $event->save();
+        }
+
+        return $event;
     }
 
     private function bookingDetailDefaults(): array

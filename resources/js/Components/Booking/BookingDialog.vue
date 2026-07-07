@@ -1,8 +1,9 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 import EventDetailDialog from '@/Components/Booking/Common/EventDetailDialog.vue';
 import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceActions.vue';
+import { useRecurringImpactPreview } from '@/Composables/Bookings/useRecurringImpactPreview';
 
 const props = defineProps({
     detailVisible: {
@@ -170,6 +171,66 @@ const bookingOccurrenceDate = computed(() => {
         ?? null;
 });
 
+const bookingOccurrenceOriginalStartsAt = computed(() => {
+    if (props.booking?.occurrence_original_starts_at) {
+        return props.booking.occurrence_original_starts_at;
+    }
+
+    const date = String(bookingOccurrenceDate.value ?? '').slice(0, 10);
+    const time = String(props.booking?.starts_at ?? '').slice(11, 19);
+
+    if (!date || !time) {
+        return null;
+    }
+
+    return `${date}T${time}`;
+});
+
+const bookingImpactBranchId = computed(() => {
+    return Number(props.booking?.branch_id ?? props.booking?.branch?.id ?? 0) || null;
+});
+
+const {
+    impactPreview: bookingDeleteImpactPreview,
+    fetchImpactPreview: fetchBookingDeleteImpactPreview,
+    clearImpactPreview: clearBookingDeleteImpactPreview,
+} = useRecurringImpactPreview(bookingImpactBranchId);
+
+const bookingDeleteSelectedOccurrence = computed(() => {
+    if (!props.booking?.id) {
+        return null;
+    }
+
+    return {
+        id: props.booking.id,
+        event_id: props.booking.id,
+        root_event_id: props.booking.root_event_id ?? null,
+        occurrence_starts_at: props.booking.occurrence_starts_at ?? props.booking.starts_at ?? null,
+        occurrence_ends_at: props.booking.occurrence_ends_at ?? props.booking.ends_at ?? null,
+        occurrence_original_starts_at: bookingOccurrenceOriginalStartsAt.value,
+        starts_at: props.booking.occurrence_starts_at ?? props.booking.starts_at ?? null,
+        ends_at: props.booking.occurrence_ends_at ?? props.booking.ends_at ?? null,
+        display_key: props.booking.display_key ?? null,
+    };
+});
+
+watch(
+    () => [props.detailVisible, props.booking?.id, bookingOccurrenceOriginalStartsAt.value],
+    async ([visible]) => {
+        if (!visible || !props.booking || !(props.booking.series_uuid || props.booking.recurrence)) {
+            clearBookingDeleteImpactPreview();
+
+            return;
+        }
+
+        await fetchBookingDeleteImpactPreview({
+            action: 'delete',
+            selectedOccurrence: bookingDeleteSelectedOccurrence.value,
+        });
+    },
+    { immediate: true },
+);
+
 const seriesOccurrenceDates = computed(() => {
     if (!props.booking) {
         return [];
@@ -207,7 +268,7 @@ const seriesOccurrenceDates = computed(() => {
     return [...new Set(occurrences)].sort();
 });
 
-const deleteCountOccurrence = computed(() => 1);
+const deleteCountOccurrence = computed(() => bookingDeleteImpactPreview.value?.occurrence?.count ?? 1);
 
 const getFallbackSeriesEndDate = (fromDate) => {
     if (!fromDate) {
@@ -220,89 +281,12 @@ const getFallbackSeriesEndDate = (fromDate) => {
     return fallback;
 };
 
-const deleteCountSeries = computed(() => {
-    if (seriesOccurrenceDates.value.length > 0) {
-        return seriesOccurrenceDates.value.length;
-    }
+const deleteCountSeries = computed(() => bookingDeleteImpactPreview.value?.series?.count ?? null);
 
-    if (!props.booking?.recurrence) {
-        return 1;
-    }
-
-    const recurrence = props.booking.recurrence;
-
-    if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
-        return Number(recurrence.ends.count);
-    }
-
-    const startDate = parseDateOnly(
-        recurrence?.starts_on
-        ?? recurrence?.start_date
-        ?? props.booking?.series_starts_at
-        ?? props.booking?.starts_at,
-    );
-    const endDate = parseDateOnly(recurrence?.ends?.until)
-        ?? getFallbackSeriesEndDate(startDate);
-
-    return countOccurrencesBetween(startDate, endDate, recurrence);
-});
-
-const deleteCountFromDate = computed(() => {
-    if (seriesOccurrenceDates.value.length > 0) {
-        const fromDate = String(bookingOccurrenceDate.value ?? '').slice(0, 10);
-
-        if (!fromDate) {
-            return seriesOccurrenceDates.value.length;
-        }
-
-        const count = seriesOccurrenceDates.value.filter((dateOnly) => dateOnly >= fromDate).length;
-
-        return count > 0 ? count : null;
-    }
-
-    if (!props.booking?.recurrence) {
-        return 1;
-    }
-
-    const recurrence = props.booking.recurrence;
-
-    if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
-        const total = Number(recurrence.ends.count);
-        const frequency = getRecurrenceFrequency(recurrence);
-        const interval = Math.max(1, Number(recurrence?.interval ?? recurrence?.repeat_every ?? 1));
-        const startDate = parseDateOnly(
-            recurrence?.starts_on
-            ?? recurrence?.start_date
-            ?? props.booking?.series_starts_at
-            ?? props.booking?.starts_at,
-        );
-        const fromDate = parseDateOnly(bookingOccurrenceDate.value);
-
-        if (!startDate || !fromDate || fromDate < startDate) {
-            return total;
-        }
-
-        let index = 1;
-        let cursor = new Date(startDate);
-
-        while (cursor < fromDate && index < 2000) {
-            cursor = addRecurrenceInterval(cursor, frequency, interval);
-            index += 1;
-        }
-
-        if (cursor > fromDate) {
-            return null;
-        }
-
-        return Math.max(1, total - index + 1);
-    }
-
-    const fromDate = parseDateOnly(bookingOccurrenceDate.value);
-    const endDate = parseDateOnly(recurrence?.ends?.until)
-        ?? getFallbackSeriesEndDate(fromDate);
-
-    return countOccurrencesBetween(fromDate, endDate, recurrence);
-});
+const deleteCountFromDate = computed(() => bookingDeleteImpactPreview.value?.from_date?.count ?? null);
+const deleteMessageOccurrence = computed(() => bookingDeleteImpactPreview.value?.occurrence?.message ?? null);
+const deleteMessageFromDate = computed(() => bookingDeleteImpactPreview.value?.from_date?.message ?? null);
+const deleteMessageSeries = computed(() => bookingDeleteImpactPreview.value?.series?.message ?? null);
 
 const bookingInfoItems = computed(() => {
     if (!props.booking) {
@@ -437,6 +421,9 @@ const duplicateBooking = () => {
         :delete-count-occurrence="deleteCountOccurrence"
         :delete-count-from-date="deleteCountFromDate"
         :delete-count-series="deleteCountSeries"
+        :delete-message-occurrence="deleteMessageOccurrence"
+        :delete-message-from-date="deleteMessageFromDate"
+        :delete-message-series="deleteMessageSeries"
         :show-duplicate="false"
         :show-date-time-fields="false"
         scope-mode="delete"

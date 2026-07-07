@@ -75,6 +75,9 @@ class EventMutationService
                 'updated_by' => $actorId,
             ]);
 
+            $event->root_event_id = $event->id;
+            $event->save();
+
             $this->persistTypeDetails($event, $payload);
             $this->syncServices($event, $payload['services'] ?? []);
 
@@ -100,15 +103,29 @@ class EventMutationService
     public function update(Event $event, array $payload, ?int $actorId = null, ?string $scope = null): Event
     {
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
-        $event = $this->resolveScopedMutationEvent($event, $scope);
+        $event = $this->resolveScopedMutationEvent($event, $scope, $payload);
+        $event->loadMissing($this->relations());
+        $beforeSnapshot = $this->notificationSnapshot($event);
         $this->validateRecurringMutation($event, $payload, $scope);
 
-        $updatedEvent = DB::transaction(function () use ($event, $payload, $actorId, $scope): Event {
+        $affectedEventIds = [];
+
+        $updatedEvent = DB::transaction(function () use ($event, $payload, $actorId, $scope, &$affectedEventIds): Event {
+            if ($scope === 'series' && $event->is_recurring && $event->recurrence_parent_id === null) {
+                $result = $this->updateLogicalSeries($event, $payload, $actorId);
+                $affectedEventIds = $result['affected_event_ids'];
+
+                return $result['event'];
+            }
+
             if ($scope !== 'series' && $event->is_recurring && $this->resolveOccurrenceStartsAt($event, $payload)) {
                 $event = $this->updateRecurringOccurrence($event, $payload, $actorId, $scope);
+                $affectedEventIds = [$event->id];
 
                 return $event->fresh($this->relations());
             }
+
+            $affectedEventIds = [$event->id];
 
             return $this->applyPayloadToEvent($event, $payload, $actorId)->fresh($this->relations());
         });
@@ -123,8 +140,20 @@ class EventMutationService
         $this->eventNotificationService->dispatchMutationSignals(
             event: $updatedEvent,
             action: $action,
-            affectedEventIds: [$updatedEvent->id],
+            affectedEventIds: $affectedEventIds !== [] ? $affectedEventIds : [$updatedEvent->id],
             recurrenceScope: $scope,
+            occurrenceStartsAt: $this->resolveOccurrenceStartsAt($event, $payload)?->toIso8601String(),
+            context: [
+                'old_snapshot' => $beforeSnapshot,
+                'new_snapshot' => $this->notificationSnapshot($updatedEvent),
+                'occurrence_ends_at' => $this->resolveOccurrenceEndsAt(
+                    $event,
+                    $payload,
+                    $this->resolveOccurrenceStartsAt($event, $payload),
+                )?->toIso8601String(),
+                'occurrence_original_starts_at' => $event->recurrence_original_starts_at?->toIso8601String(),
+                'occurrence_display_key' => $this->resolveOccurrenceDisplayKey($event, $payload),
+            ],
         );
 
         return $updatedEvent;
@@ -169,7 +198,10 @@ class EventMutationService
     public function cancel(Event $event, ?int $actorId = null, ?string $scope = null): Event
     {
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
-        $event = $this->resolveScopedMutationEvent($event, $scope);
+        $event = $this->resolveScopedMutationEvent($event, $scope, [
+            'occurrence_starts_at' => request('occurrence_starts_at'),
+            'occurrence_date' => request('occurrence_date'),
+        ]);
 
         $updated = $this->update($event, [
             'status' => 'cancelled',
@@ -201,7 +233,10 @@ class EventMutationService
     public function delete(Event $event, ?string $scope = null): void
     {
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
-        $event = $this->resolveScopedMutationEvent($event, $scope);
+        $event = $this->resolveScopedMutationEvent($event, $scope, [
+            'occurrence_starts_at' => request('occurrence_starts_at'),
+            'occurrence_date' => request('occurrence_date'),
+        ]);
 
         DB::transaction(function () use ($event, $scope): void {
             $occurrenceStartsAt = $this->resolveOccurrenceStartsAt($event, [
@@ -227,16 +262,7 @@ class EventMutationService
                 }
 
                 if ($scope === 'this_and_following') {
-                    $oldRoot = $this->recurringEventSplitService->split($event, $occurrenceStartsAt, $occurrenceEndsAt, [
-                        'recurrence_rule' => null,
-                        'starts_at' => $occurrenceStartsAt,
-                        'ends_at' => $occurrenceEndsAt,
-                    ])['old_root'];
-
-                    Event::query()
-                        ->where('split_from_event_id', $oldRoot->id)
-                        ->where('starts_at', '>=', $occurrenceStartsAt)
-                        ->delete();
+                    $this->deleteThisAndFollowingAcrossLogicalSeries($event, $occurrenceStartsAt);
 
                     return;
                 }
@@ -245,9 +271,9 @@ class EventMutationService
             }
 
             if ($scope === 'series') {
-                $event->recurrenceChildren()
-                    ->whereNull('deleted_at')
-                    ->delete();
+                $this->deleteLogicalSeries($event);
+
+                return;
             }
 
             $event->delete();
@@ -268,6 +294,10 @@ class EventMutationService
     public function duplicate(Event $event, ?int $actorId = null): Event
     {
         $duplicate = DB::transaction(function () use ($event, $actorId): Event {
+            $isRecurringMaster = $event->is_recurring
+                && $event->recurrence_parent_id === null
+                && ! empty($event->recurrence_rule);
+
             $copy = $event->replicate([
                 'created_at',
                 'updated_at',
@@ -276,19 +306,29 @@ class EventMutationService
             ]);
 
             $copy->status = 'confirmed';
-            $copy->is_recurring = false;
-            $copy->recurrence_rule = null;
+            $copy->is_recurring = $isRecurringMaster;
+            $copy->recurrence_rule = $isRecurringMaster ? $event->recurrence_rule : null;
             $copy->recurrence_parent_id = null;
             $copy->recurrence_exception_date = null;
             $copy->recurrence_original_starts_at = null;
             $copy->recurrence_original_ends_at = null;
+            $copy->split_from_event_id = null;
+            $copy->root_event_id = null;
+            $copy->recurrence_sequence = null;
             $copy->created_by = $actorId;
             $copy->updated_by = $actorId;
 
             $copyMetadata = $copy->metadata ?? [];
             unset($copyMetadata['recurrence_excluded_dates']);
+
+            if ($isRecurringMaster) {
+                $copyMetadata['series_uuid'] = (string) Str::uuid();
+            }
+
             $copy->metadata = $copyMetadata;
 
+            $copy->save();
+            $copy->root_event_id = $copy->id;
             $copy->save();
 
             $this->duplicateDetails($event, $copy);
@@ -387,6 +427,10 @@ class EventMutationService
             $event->fresh($this->relations()),
             EventAction::EventParticipantAdded,
             recipientEmails: [$participant->participant_email],
+            context: [
+                'recipient_emails' => [$participant->participant_email],
+                'occurrence_display_key' => $this->resolveOccurrenceDisplayKey($event, $payload),
+            ],
         );
 
         return $participant;
@@ -440,7 +484,38 @@ class EventMutationService
             $event->fresh($this->relations()),
             EventAction::EventParticipantRemoved,
             recipientEmails: [$participant->participant_email],
+            context: [
+                'recipient_emails' => [$participant->participant_email],
+            ],
         );
+    }
+
+    private function notificationSnapshot(Event $event): array
+    {
+        $event->loadMissing(['services', 'branch', 'groupDetail']);
+
+        return [
+            'starts_at' => $event->starts_at?->toIso8601String(),
+            'ends_at' => $event->ends_at?->toIso8601String(),
+            'service_names' => $event->services->pluck('name')->filter()->values()->all(),
+            'branch_name' => $event->branch?->name,
+            'staff_name' => data_get($event->metadata, 'staff_name'),
+            'group_title' => $event->title ?: $event->groupDetail?->service_name,
+            'capacity' => $event->groupDetail?->capacity,
+        ];
+    }
+
+    private function resolveOccurrenceDisplayKey(Event $event, array $payload): ?string
+    {
+        $occurrenceStartsAt = $this->resolveOccurrenceStartsAt($event, $payload);
+
+        if (! $occurrenceStartsAt) {
+            return null;
+        }
+
+        $rootEventId = (int) ($event->root_event_id ?? $event->id);
+
+        return sprintf('%d:%s', $rootEventId, $occurrenceStartsAt->copy()->utc()->format('Y-m-d\TH:i:s'));
     }
 
     public function convertAppointmentRequest(Branch $branch, AppointmentRequest $request, array $payload, ?int $actorId = null): Event
@@ -466,6 +541,7 @@ class EventMutationService
             'status' => 'confirmed',
             'starts_at' => $payload['starts_at'],
             'ends_at' => $payload['ends_at'] ?? Carbon::parse($payload['starts_at'])->addMinutes(max(15, (int) $request->total_duration_minutes)),
+            'timezone' => $payload['timezone'] ?? config('app.timezone'),
             'title' => 'Rezervacia',
             'services' => $services,
             'booking_detail' => [
@@ -518,6 +594,14 @@ class EventMutationService
         }
 
         if ($scope === 'this_and_following') {
+            $payload = $this->normalizeThisAndFollowingWeekdayMovePayload($seriesEvent, $payload, $occurrenceStartsAt);
+
+            if ($seriesEvent->starts_at?->equalTo($occurrenceStartsAt)) {
+                $this->applyPayloadToEvent($seriesEvent, $payload, $actorId);
+
+                return $seriesEvent;
+            }
+
             $splitResult = $this->recurringEventSplitService->split($seriesEvent, $occurrenceStartsAt, $occurrenceEndsAt, $payload, $actorId);
             $newSeries = $splitResult['new_root'];
 
@@ -544,9 +628,19 @@ class EventMutationService
             ]);
         }
 
-        if (in_array($scope, ['this', 'this_and_following'], true) && ! $this->resolveOccurrenceStartsAt($event, $payload)) {
+        $occurrenceStartsAt = in_array($scope, ['this', 'this_and_following'], true)
+            ? $this->resolveOccurrenceStartsAt($event, $payload)
+            : null;
+
+        if (in_array($scope, ['this', 'this_and_following'], true) && ! $occurrenceStartsAt) {
             throw ValidationException::withMessages([
                 'occurrence_starts_at' => 'Occurrence start is required for this or this_and_following scope.',
+            ]);
+        }
+
+        if ($occurrenceStartsAt && ! $this->occurrenceBelongsToSeries($event, $occurrenceStartsAt)) {
+            throw ValidationException::withMessages([
+                'occurrence_starts_at' => 'Occurrence does not belong to the selected recurring series anymore.',
             ]);
         }
 
@@ -555,6 +649,27 @@ class EventMutationService
                 'recurrence_rule' => 'Recurrence rule cannot be changed for a single occurrence.',
             ]);
         }
+    }
+
+    private function occurrenceBelongsToSeries(Event $event, Carbon $occurrenceStartsAt): bool
+    {
+        if (! $event->is_recurring || empty($event->recurrence_rule) || ! $event->starts_at) {
+            return false;
+        }
+
+        $matchingOccurrence = $this->eventOccurrenceService
+            ->getOccurrenceDates(
+                $event,
+                $occurrenceStartsAt->copy()->startOfDay(),
+                $occurrenceStartsAt->copy()->endOfDay(),
+            )
+            ->first(function (Carbon $occurrenceDate) use ($event, $occurrenceStartsAt): bool {
+                $expectedStart = $this->combineOccurrenceDate($event->starts_at, $occurrenceDate);
+
+                return $expectedStart?->equalTo($occurrenceStartsAt) ?? false;
+            });
+
+        return $matchingOccurrence !== null;
     }
 
     private function applyPayloadToEvent(Event $event, array $payload, ?int $actorId): Event
@@ -925,13 +1040,627 @@ class EventMutationService
             });
     }
 
-    private function resolveScopedMutationEvent(Event $event, string $scope): Event
+    /**
+     * @return array{event: Event, affected_event_ids: array<int>}
+     */
+    private function updateLogicalSeries(Event $event, array $payload, ?int $actorId): array
     {
-        if (! in_array($scope, ['series', 'this_and_following', 'this'], true) || $event->recurrence_parent_id === null) {
+        $masters = $this->resolveLogicalSeriesMasters($event);
+
+        if ($masters->isEmpty()) {
+            $updated = $this->applyPayloadToEvent($event, $payload, $actorId)->fresh($this->relations());
+
+            return [
+                'event' => $updated,
+                'affected_event_ids' => [$updated->id],
+            ];
+        }
+
+        $affectedEventIds = [];
+
+        foreach ($masters as $master) {
+            $masterPayload = $this->normalizeSeriesWeekdayMovePayloadForMaster($event, $master, $payload);
+            $masterPayload = $this->normalizeSeriesTimePayloadForEvent($master, $masterPayload);
+            $this->applyPayloadToEvent($master, $masterPayload, $actorId);
+            $affectedEventIds[] = (int) $master->id;
+
+            $affectedEventIds = [
+                ...$affectedEventIds,
+                ...$this->syncTimeExceptionsForSeriesMaster($master, $payload, $actorId),
+            ];
+        }
+
+        $primary = $masters->firstWhere('id', $event->id) ?? $masters->first();
+        $updatedPrimary = $primary?->fresh($this->relations()) ?? $event->fresh($this->relations());
+
+        return [
+            'event' => $updatedPrimary,
+            'affected_event_ids' => collect($affectedEventIds)
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function hasTimeMutationPayload(array $payload): bool
+    {
+        return Arr::exists($payload, 'starts_at') || Arr::exists($payload, 'ends_at');
+    }
+
+    private function normalizeSeriesWeekdayMovePayloadForMaster(Event $selectedEvent, Event $master, array $payload): array
+    {
+        if (Arr::exists($payload, 'recurrence_rule') || ! filled($payload['starts_at'] ?? null)) {
+            return $payload;
+        }
+
+        if (! $this->isWeeklyRecurrenceRule($master->recurrence_rule)) {
+            return $payload;
+        }
+
+        $selectedOccurrenceStartsAt = $this->resolveOccurrenceStartsAt($selectedEvent, $payload) ?? $selectedEvent->starts_at;
+
+        if (! $selectedOccurrenceStartsAt) {
+            return $payload;
+        }
+
+        $newStartsAt = Carbon::parse($payload['starts_at']);
+
+        if ($this->weekdayCode($selectedOccurrenceStartsAt) === $this->weekdayCode($newStartsAt)) {
+            return $payload;
+        }
+
+        $normalized = $payload;
+        $normalized['recurrence_rule'] = $this->replaceWeekdayInRuleForMove(
+            $master->recurrence_rule ?? [],
+            $this->weekdayCode($selectedOccurrenceStartsAt),
+            $this->weekdayCode($newStartsAt),
+            false,
+        );
+
+        return $normalized;
+    }
+
+    private function normalizeThisAndFollowingWeekdayMovePayload(Event $seriesEvent, array $payload, ?Carbon $occurrenceStartsAt): array
+    {
+        if (! $occurrenceStartsAt || Arr::exists($payload, 'recurrence_rule') || ! filled($payload['starts_at'] ?? null)) {
+            return $payload;
+        }
+
+        if (! $this->isWeeklyRecurrenceRule($seriesEvent->recurrence_rule)) {
+            return $payload;
+        }
+
+        $newStartsAt = Carbon::parse($payload['starts_at']);
+        $selectedWeekday = $this->weekdayCode($occurrenceStartsAt);
+        $newWeekday = $this->weekdayCode($newStartsAt);
+
+        if ($selectedWeekday === $newWeekday) {
+            return $payload;
+        }
+
+        $this->assertThisAndFollowingWeekdayMoveIsAllowed($seriesEvent, $occurrenceStartsAt, $newStartsAt, $selectedWeekday, $newWeekday);
+
+        $normalized = $payload;
+        $normalized['recurrence_rule'] = $this->replaceWeekdayInRuleForMove(
+            $seriesEvent->recurrence_rule ?? [],
+            $selectedWeekday,
+            $newWeekday,
+            true,
+        );
+
+        return $normalized;
+    }
+
+    private function assertThisAndFollowingWeekdayMoveIsAllowed(
+        Event $seriesEvent,
+        Carbon $occurrenceStartsAt,
+        Carbon $newStartsAt,
+        string $selectedWeekday,
+        string $newWeekday,
+    ): void {
+        $weekdays = collect(data_get($seriesEvent->recurrence_rule, 'weekdays', []))
+            ->map(fn ($weekday) => strtoupper((string) $weekday))
+            ->filter(fn (string $weekday) => in_array($weekday, ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'], true))
+            ->unique()
+            ->values();
+
+        if ($weekdays->isEmpty()) {
+            $weekdays = collect([$selectedWeekday]);
+        }
+
+        if ($selectedWeekday !== $newWeekday && $weekdays->contains($newWeekday)) {
+            throw ValidationException::withMessages([
+                'starts_at' => 'Cannot move this_and_following to a weekday that already exists in recurrence weekdays.',
+            ]);
+        }
+
+        $lastRetainedOccurrenceStartAt = $this->lastRetainedOccurrenceStartAt($seriesEvent, $occurrenceStartsAt);
+
+        if ($lastRetainedOccurrenceStartAt && $newStartsAt->lte($lastRetainedOccurrenceStartAt)) {
+            throw ValidationException::withMessages([
+                'starts_at' => 'Cannot move this_and_following occurrence before or overlapping retained occurrences of the old segment.',
+            ]);
+        }
+    }
+
+    private function lastRetainedOccurrenceStartAt(Event $seriesEvent, Carbon $occurrenceStartsAt): ?Carbon
+    {
+        if (! $seriesEvent->starts_at) {
+            return null;
+        }
+
+        $previousOccurrenceDate = $this->eventOccurrenceService
+            ->getOccurrenceDates(
+                $seriesEvent,
+                $seriesEvent->starts_at->copy()->startOfDay(),
+                $occurrenceStartsAt->copy()->subDay()->endOfDay(),
+            )
+            ->last();
+
+        if (! $previousOccurrenceDate) {
+            return null;
+        }
+
+        return $this->combineOccurrenceDate($seriesEvent->starts_at, $previousOccurrenceDate);
+    }
+
+    private function isWeeklyRecurrenceRule(mixed $rule): bool
+    {
+        return is_array($rule) && ((string) data_get($rule, 'frequency', 'weekly')) === 'weekly';
+    }
+
+    private function replaceWeekdayInRuleForMove(array $rule, string $selectedWeekday, string $newWeekday, bool $strictConflict): array
+    {
+        $weekdays = collect(data_get($rule, 'weekdays', []))
+            ->map(fn ($weekday) => strtoupper((string) $weekday))
+            ->filter(fn (string $weekday) => in_array($weekday, ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'], true))
+            ->unique()
+            ->values();
+
+        if ($weekdays->isEmpty()) {
+            $weekdays = collect([$selectedWeekday]);
+        }
+
+        if ($strictConflict && $selectedWeekday !== $newWeekday && $weekdays->contains($newWeekday)) {
+            throw ValidationException::withMessages([
+                'starts_at' => 'Cannot move this_and_following to a weekday that already exists in recurrence weekdays.',
+            ]);
+        }
+
+        $updatedWeekdays = $weekdays
+            ->map(fn (string $weekday): string => $weekday === $selectedWeekday ? $newWeekday : $weekday)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($updatedWeekdays === []) {
+            $updatedWeekdays = [$newWeekday];
+        }
+
+        $updatedRule = $rule;
+        data_set($updatedRule, 'weekdays', $updatedWeekdays);
+
+        return $updatedRule;
+    }
+
+    private function weekdayCode(Carbon $value): string
+    {
+        return match ((int) $value->dayOfWeekIso) {
+            1 => 'MO',
+            2 => 'TU',
+            3 => 'WE',
+            4 => 'TH',
+            5 => 'FR',
+            6 => 'SA',
+            default => 'SU',
+        };
+    }
+
+    private function normalizeSeriesTimePayloadForEvent(Event $event, array $payload): array
+    {
+        if (! $this->hasTimeMutationPayload($payload)) {
+            return $payload;
+        }
+
+        $window = $this->remapWindowToEventDate($event, $payload);
+        $normalized = $payload;
+
+        if (Arr::exists($payload, 'starts_at')) {
+            $normalized['starts_at'] = $window['starts_at'];
+        }
+
+        if (Arr::exists($payload, 'ends_at')) {
+            $normalized['ends_at'] = $window['ends_at'];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array{starts_at: ?Carbon, ends_at: ?Carbon}
+     */
+    private function remapWindowToEventDate(Event $event, array $payload): array
+    {
+        $currentStartsAt = $event->starts_at;
+        $currentEndsAt = $event->ends_at;
+
+        if (! $currentStartsAt || ! $currentEndsAt) {
+            return [
+                'starts_at' => Arr::exists($payload, 'starts_at') && filled($payload['starts_at'])
+                    ? Carbon::parse($payload['starts_at'])
+                    : $currentStartsAt,
+                'ends_at' => Arr::exists($payload, 'ends_at') && filled($payload['ends_at'])
+                    ? Carbon::parse($payload['ends_at'])
+                    : $currentEndsAt,
+            ];
+        }
+
+        $hasStartsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at']);
+        $hasEndsAt = Arr::exists($payload, 'ends_at') && filled($payload['ends_at']);
+
+        $requestedStartsAt = $hasStartsAt ? Carbon::parse($payload['starts_at']) : null;
+        $requestedEndsAt = $hasEndsAt ? Carbon::parse($payload['ends_at']) : null;
+
+        $remappedStartsAt = $currentStartsAt->copy();
+        $remappedEndsAt = $currentEndsAt->copy();
+
+        if ($requestedStartsAt) {
+            $remappedStartsAt = Carbon::parse($currentStartsAt->toDateString() . ' ' . $requestedStartsAt->format('H:i:s'));
+        }
+
+        if ($requestedStartsAt && $requestedEndsAt) {
+            $durationMinutes = max(0, $requestedStartsAt->diffInMinutes($requestedEndsAt, false));
+            $remappedEndsAt = $remappedStartsAt->copy()->addMinutes($durationMinutes);
+        } elseif ($requestedStartsAt) {
+            $durationMinutes = max(0, $currentStartsAt->diffInMinutes($currentEndsAt, false));
+            $remappedEndsAt = $remappedStartsAt->copy()->addMinutes($durationMinutes);
+        } elseif ($requestedEndsAt) {
+            $remappedEndsAt = Carbon::parse($currentEndsAt->toDateString() . ' ' . $requestedEndsAt->format('H:i:s'));
+        }
+
+        return [
+            'starts_at' => $remappedStartsAt,
+            'ends_at' => $remappedEndsAt,
+        ];
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function syncTimeExceptionsForSeriesMaster(Event $master, array $payload, ?int $actorId): array
+    {
+        if (! $this->hasTimeMutationPayload($payload)) {
+            return [];
+        }
+
+        $affectedChildIds = [];
+
+        $master->recurrenceChildren()
+            ->whereNull('deleted_at')
+            ->get()
+            ->each(function (Event $child) use ($payload, $actorId, &$affectedChildIds): void {
+                $window = $this->remapWindowToEventDate($child, $payload);
+
+                $originalStartsAt = $child->recurrence_original_starts_at;
+                $originalEndsAt = $child->recurrence_original_ends_at;
+
+                if ($originalStartsAt && $originalEndsAt) {
+                    $originalWindow = $this->remapWindowFromAnchors($originalStartsAt, $originalEndsAt, $payload);
+                    $child->recurrence_original_starts_at = $originalWindow['starts_at'];
+                    $child->recurrence_original_ends_at = $originalWindow['ends_at'];
+                }
+
+                if ($child->status === 'cancelled') {
+                    $child->updated_by = $actorId;
+                    $child->save();
+                    $affectedChildIds[] = (int) $child->id;
+
+                    return;
+                }
+
+                $child->starts_at = $window['starts_at'];
+                $child->ends_at = $window['ends_at'];
+                $child->updated_by = $actorId;
+                $child->save();
+
+                $affectedChildIds[] = (int) $child->id;
+            });
+
+        return $affectedChildIds;
+    }
+
+    /**
+     * @return array{starts_at: Carbon, ends_at: Carbon}
+     */
+    private function remapWindowFromAnchors(Carbon $currentStartsAt, Carbon $currentEndsAt, array $payload): array
+    {
+        $hasStartsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at']);
+        $hasEndsAt = Arr::exists($payload, 'ends_at') && filled($payload['ends_at']);
+
+        $requestedStartsAt = $hasStartsAt ? Carbon::parse($payload['starts_at']) : null;
+        $requestedEndsAt = $hasEndsAt ? Carbon::parse($payload['ends_at']) : null;
+
+        $remappedStartsAt = $currentStartsAt->copy();
+        $remappedEndsAt = $currentEndsAt->copy();
+
+        if ($requestedStartsAt) {
+            $remappedStartsAt = Carbon::parse($currentStartsAt->toDateString() . ' ' . $requestedStartsAt->format('H:i:s'));
+        }
+
+        if ($requestedStartsAt && $requestedEndsAt) {
+            $durationMinutes = max(0, $requestedStartsAt->diffInMinutes($requestedEndsAt, false));
+            $remappedEndsAt = $remappedStartsAt->copy()->addMinutes($durationMinutes);
+        } elseif ($requestedStartsAt) {
+            $durationMinutes = max(0, $currentStartsAt->diffInMinutes($currentEndsAt, false));
+            $remappedEndsAt = $remappedStartsAt->copy()->addMinutes($durationMinutes);
+        } elseif ($requestedEndsAt) {
+            $remappedEndsAt = Carbon::parse($currentEndsAt->toDateString() . ' ' . $requestedEndsAt->format('H:i:s'));
+        }
+
+        return [
+            'starts_at' => $remappedStartsAt,
+            'ends_at' => $remappedEndsAt,
+        ];
+    }
+
+    private function resolveScopedMutationEvent(Event $event, string $scope, array $payload = []): Event
+    {
+        if (! in_array($scope, ['series', 'this_and_following', 'this'], true)) {
             return $event;
         }
 
-        return $this->resolveSeriesRootEvent($event);
+        $seriesMaster = $event->recurrence_parent_id !== null
+            ? $this->resolveSeriesRootEvent($event)
+            : $event;
+
+        if (! in_array($scope, ['this_and_following', 'this'], true)) {
+            return $seriesMaster;
+        }
+
+        $occurrenceReference = $this->resolveOccurrenceReference($payload);
+
+        if (! $occurrenceReference || ! $seriesMaster->is_recurring || empty($seriesMaster->recurrence_rule)) {
+            return $seriesMaster;
+        }
+
+        return $this->resolveActiveRecurringMaster($seriesMaster, $occurrenceReference, array_key_exists('occurrence_starts_at', $payload) && filled($payload['occurrence_starts_at']))
+            ?? $seriesMaster;
+    }
+
+    private function resolveActiveRecurringMaster(Event $seriesMaster, Carbon $occurrenceReference, bool $hasExactOccurrenceStart = false): ?Event
+    {
+        $familyMasters = $this->resolveSplitFamilyMasters($seriesMaster);
+
+        return $familyMasters
+            ->filter(function (Event $candidate) use ($occurrenceReference, $hasExactOccurrenceStart): bool {
+                return $this->seriesOwnsOccurrenceReference($candidate, $occurrenceReference, $hasExactOccurrenceStart);
+            })
+            ->sortByDesc(function (Event $candidate): string {
+                return sprintf(
+                    '%010d|%s|%010d',
+                    (int) ($candidate->recurrence_sequence ?? 0),
+                    $candidate->starts_at?->format('Y-m-d H:i:s.u') ?? '',
+                    (int) $candidate->id,
+                );
+            })
+            ->first();
+    }
+
+    private function resolveSplitFamilyMasters(Event $seriesMaster): Collection
+    {
+        $baseMaster = $seriesMaster->recurrence_parent_id !== null
+            ? $this->resolveSeriesRootEvent($seriesMaster)
+            : $seriesMaster;
+
+        return $this->resolveLogicalSeriesMasters($baseMaster);
+    }
+
+    private function resolveLogicalSeriesMasters(Event $event): Collection
+    {
+        $seriesRoot = $event->recurrence_parent_id !== null
+            ? $this->resolveSeriesRootEvent($event)
+            : $event;
+        $logicalRootId = $this->logicalRootEventId($seriesRoot);
+
+        $masters = Event::query()
+            ->with($this->relations())
+            ->where('branch_id', $seriesRoot->branch_id)
+            ->where('type', $seriesRoot->type)
+            ->whereNull('recurrence_parent_id')
+            ->whereNull('deleted_at')
+            ->where(function ($query) use ($logicalRootId): void {
+                $query->where('root_event_id', $logicalRootId)
+                    ->orWhere(function ($fallback) use ($logicalRootId): void {
+                        $fallback
+                            ->whereNull('root_event_id')
+                            ->whereKey($logicalRootId);
+                    });
+            })
+            ->get()
+            ->values();
+
+        if ($masters->isNotEmpty()) {
+            return $masters;
+        }
+
+        $seriesUuid = data_get($seriesRoot->metadata, 'series_uuid');
+
+        if (! filled($seriesUuid)) {
+            return collect([$seriesRoot]);
+        }
+
+        return Event::query()
+            ->with($this->relations())
+            ->where('branch_id', $seriesRoot->branch_id)
+            ->where('type', $seriesRoot->type)
+            ->whereNull('recurrence_parent_id')
+            ->whereNull('deleted_at')
+            ->get()
+            ->filter(fn (Event $candidate): bool => data_get($candidate->metadata, 'series_uuid') === $seriesUuid)
+            ->values();
+    }
+
+    private function logicalRootEventId(Event $event): int
+    {
+        return (int) ($event->root_event_id ?? $event->id);
+    }
+
+    private function deleteThisAndFollowingAcrossLogicalSeries(Event $event, Carbon $occurrenceStartsAt): void
+    {
+        $masters = $this->resolveLogicalSeriesMasters($event);
+
+        foreach ($masters as $master) {
+            if (! $master->is_recurring || empty($master->recurrence_rule) || ! $master->starts_at) {
+                if ($master->starts_at?->gte($occurrenceStartsAt)) {
+                    $master->recurrenceChildren()->whereNull('deleted_at')->delete();
+                    $master->delete();
+                }
+
+                continue;
+            }
+
+            if (! $this->seriesHasOccurrenceOnOrAfter($master, $occurrenceStartsAt)) {
+                continue;
+            }
+
+            if ($this->seriesHasOccurrenceBefore($master, $occurrenceStartsAt)) {
+                $this->trimSeriesBeforeOccurrence($master, $occurrenceStartsAt);
+
+                $master->recurrenceChildren()
+                    ->whereNull('deleted_at')
+                    ->where('recurrence_original_starts_at', '>=', $occurrenceStartsAt)
+                    ->delete();
+
+                continue;
+            }
+
+            $master->recurrenceChildren()->whereNull('deleted_at')->delete();
+            $master->delete();
+        }
+    }
+
+    private function deleteLogicalSeries(Event $event): void
+    {
+        $masters = $this->resolveLogicalSeriesMasters($event);
+
+        foreach ($masters as $master) {
+            $master->recurrenceChildren()->whereNull('deleted_at')->delete();
+            $master->delete();
+        }
+    }
+
+    private function seriesHasOccurrenceOnOrAfter(Event $master, Carbon $occurrenceStartsAt): bool
+    {
+        return $this->eventOccurrenceService
+            ->getOccurrenceDates(
+                $master,
+                $occurrenceStartsAt->copy()->startOfDay(),
+                $this->recurrenceSearchEnd($master, $occurrenceStartsAt),
+            )
+            ->isNotEmpty();
+    }
+
+    private function seriesHasOccurrenceBefore(Event $master, Carbon $occurrenceStartsAt): bool
+    {
+        $rangeEnd = $occurrenceStartsAt->copy()->subDay()->endOfDay();
+
+        if ($rangeEnd->lt($master->starts_at->copy()->startOfDay())) {
+            return false;
+        }
+
+        return $this->eventOccurrenceService
+            ->getOccurrenceDates(
+                $master,
+                $master->starts_at->copy()->startOfDay(),
+                $rangeEnd,
+            )
+            ->isNotEmpty();
+    }
+
+    private function trimSeriesBeforeOccurrence(Event $master, Carbon $occurrenceStartsAt): void
+    {
+        $previousOccurrenceDate = $this->eventOccurrenceService
+            ->getOccurrenceDates(
+                $master,
+                $master->starts_at->copy()->startOfDay(),
+                $occurrenceStartsAt->copy()->subDay()->endOfDay(),
+            )
+            ->last();
+
+        $trimmedRule = $master->recurrence_rule ?? [];
+        data_set($trimmedRule, 'ends.type', 'on');
+        data_set($trimmedRule, 'ends.until', $previousOccurrenceDate?->toDateString());
+        data_set($trimmedRule, 'ends.count', null);
+
+        $master->recurrence_rule = $trimmedRule;
+        $master->save();
+    }
+
+    private function recurrenceSearchEnd(Event $master, Carbon $from): Carbon
+    {
+        $rule = $master->recurrence_rule ?? [];
+
+        if (data_get($rule, 'ends.type') === 'on' && filled(data_get($rule, 'ends.until'))) {
+            return Carbon::parse(data_get($rule, 'ends.until'))->endOfDay();
+        }
+
+        if (data_get($rule, 'ends.type') === 'after' && filled(data_get($rule, 'ends.count'))) {
+            $count = max(1, (int) data_get($rule, 'ends.count'));
+            $interval = max(1, (int) data_get($rule, 'interval', 1));
+            $frequency = (string) data_get($rule, 'frequency', 'weekly');
+
+            $daysToAdd = match ($frequency) {
+                'daily' => ($count * $interval) + 7,
+                'monthly' => ($count * $interval * 31) + 31,
+                'yearly' => ($count * $interval * 366) + 366,
+                default => ($count * $interval * 7) + 14,
+            };
+
+            return $from->copy()->addDays($daysToAdd)->endOfDay();
+        }
+
+        return $from->copy()->addYears(5)->endOfDay();
+    }
+
+    private function seriesOwnsOccurrenceReference(Event $seriesMaster, Carbon $occurrenceReference, bool $hasExactOccurrenceStart = false): bool
+    {
+        if (! $seriesMaster->is_recurring || empty($seriesMaster->recurrence_rule) || ! $seriesMaster->starts_at) {
+            return false;
+        }
+
+        $occurrenceDates = $this->eventOccurrenceService->getOccurrenceDates(
+            $seriesMaster,
+            $occurrenceReference->copy()->startOfDay(),
+            $occurrenceReference->copy()->endOfDay(),
+        );
+
+        if ($occurrenceDates->isEmpty()) {
+            return false;
+        }
+
+        if (! $hasExactOccurrenceStart) {
+            return true;
+        }
+
+        return $occurrenceDates->contains(function (Carbon $occurrenceDate) use ($seriesMaster, $occurrenceReference): bool {
+            $candidateStart = $this->combineOccurrenceDate($seriesMaster->starts_at, $occurrenceDate);
+
+            return $candidateStart?->equalTo($occurrenceReference) ?? false;
+        });
+    }
+
+    private function resolveOccurrenceReference(array $payload): ?Carbon
+    {
+        if (filled($payload['occurrence_starts_at'] ?? null)) {
+            return Carbon::parse($payload['occurrence_starts_at']);
+        }
+
+        if (filled($payload['occurrence_date'] ?? null)) {
+            return Carbon::parse($payload['occurrence_date'])->startOfDay();
+        }
+
+        return null;
     }
 
     private function resolveSeriesRootEvent(Event $event): Event

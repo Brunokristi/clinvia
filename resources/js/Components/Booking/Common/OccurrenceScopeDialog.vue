@@ -30,6 +30,18 @@ const props = defineProps({
         type: Number,
         default: null,
     },
+    messageOccurrence: {
+        type: String,
+        default: null,
+    },
+    messageFromDate: {
+        type: String,
+        default: null,
+    },
+    messageSeries: {
+        type: String,
+        default: null,
+    },
 });
 
 const emit = defineEmits([
@@ -102,6 +114,10 @@ const formatCountLabel = (count) => {
         return null;
     }
 
+    if (number > 50) {
+        return '50+';
+    }
+
     return `${number} ${getOccurrenceWord(number)}`;
 };
 
@@ -115,6 +131,7 @@ const scopeOptions = computed(() => [
         icon: 'pi pi-calendar',
         title: 'Iba tento termín',
         countLabel: occurrenceCountLabel.value,
+        message: props.messageOccurrence,
         danger: false,
     },
     {
@@ -122,6 +139,7 @@ const scopeOptions = computed(() => [
         icon: 'pi pi-forward',
         title: 'Tento a nasledujúce termíny',
         countLabel: fromDateCountLabel.value,
+        message: props.messageFromDate,
         danger: false,
     },
     {
@@ -129,6 +147,7 @@ const scopeOptions = computed(() => [
         icon: props.mode === 'delete' ? 'pi pi-trash' : 'pi pi-refresh',
         title: 'Celú sériu',
         countLabel: seriesCountLabel.value,
+        message: props.messageSeries,
         danger: props.mode === 'delete',
     },
 ]);
@@ -207,6 +226,13 @@ const closeDialog = () => {
                             :class="option.danger ? 'text-red-500' : 'text-accent'"
                         >
                             ({{ option.countLabel }})
+                        </span>
+
+                        <span
+                            v-if="option.message"
+                            class="mt-1 block text-xs font-normal text-accent"
+                        >
+                            {{ option.message }}
                         </span>
                     </p>
                 </button>

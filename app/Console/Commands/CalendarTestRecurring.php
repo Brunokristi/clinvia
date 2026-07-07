@@ -75,11 +75,53 @@ class CalendarTestRecurring extends Command
                 $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
             ));
 
+            $mutationService->reschedule(
+                $master->fresh(),
+                Carbon::parse('2026-07-15 14:00:00', 'Europe/Bratislava'),
+                Carbon::parse('2026-07-15 15:00:00', 'Europe/Bratislava'),
+                $actor->id,
+                'this',
+                Carbon::parse('2026-07-13', 'Europe/Bratislava'),
+            );
+
+            $checks[] = $this->runStep('reschedule_this', fn () => $this->assertNoDuplicates(
+                $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
+            ));
+
+            $mutationService->update($master->fresh(), [
+                'starts_at' => '2026-07-06 12:00:00',
+                'ends_at' => '2026-07-06 13:00:00',
+            ], $actor->id, 'series');
+
+            $checks[] = $this->runStep('edit_all', fn () => $this->assertNoDuplicates(
+                $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
+            ));
+
             request()->replace(['occurrence_date' => '2026-07-06']);
             $mutationService->delete($master->fresh(), 'this');
             request()->replace([]);
 
             $checks[] = $this->runStep('delete_this', fn () => $this->assertNoDuplicates(
+                $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
+            ));
+
+            request()->replace(['occurrence_date' => '2026-07-20']);
+            $mutationService->delete($master->fresh(), 'this_and_following');
+            request()->replace([]);
+
+            $checks[] = $this->runStep('delete_this_and_following', fn () => $this->assertNoDuplicates(
+                $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
+            ));
+
+            $exception = $mutationService->update($master->fresh(), [
+                'occurrence_date' => '2026-07-13',
+                'starts_at' => '2026-07-13 12:00:00',
+                'ends_at' => '2026-07-13 13:00:00',
+            ], $actor->id, 'this');
+
+            $mutationService->duplicate($exception, $actor->id);
+
+            $checks[] = $this->runStep('duplicate_occurrence', fn () => $this->assertNoDuplicates(
                 $this->snapshot($expansionService->forBranch($branch, $this->rangeStart(), $this->rangeEnd(), includeCancelled: true))
             ));
 

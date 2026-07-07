@@ -5,21 +5,23 @@ namespace App\Console\Commands;
 use App\Models\Booking;
 use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
-use App\Notifications\BookingReminderNotification;
+use App\Services\EmailNotificationService;
 use App\Services\DisabledDayService;
 use App\Services\RecurrenceService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Notification;
 
 class SendBookingReminders extends Command
 {
     protected $signature = 'bookings:send-reminders {--date= : Target date in Y-m-d format (defaults to tomorrow)}';
 
-    protected $description = 'Send reminder emails to patients one day before their booking';
+    protected $description = 'Send reminder emails to patients/participants one day before their booking or group event';
 
-    public function handle(RecurrenceService $recurrenceService, DisabledDayService $disabledDayService): int
+    public function handle(
+        RecurrenceService $recurrenceService,
+        DisabledDayService $disabledDayService,
+        EmailNotificationService $emailNotificationService,
+    ): int
     {
         $targetDate = $this->resolveTargetDate();
         $rangeStart = $targetDate->copy()->startOfDay();
@@ -54,17 +56,11 @@ class SendBookingReminders extends Command
                 continue;
             }
 
-            if (! $this->shouldSendReminderForOccurrence($event, $bookingPayload->starts_at->copy())) {
-                continue;
-            }
-
-            Notification::route('mail', $bookingPayload->patient_email)
-                ->notify(new BookingReminderNotification(
-                    booking: $bookingPayload,
-                    startsAt: $bookingPayload->starts_at->copy(),
-                    endsAt: $bookingPayload->ends_at?->copy(),
-                    isRecurring: false,
-                ));
+            $emailNotificationService->dispatch('reminder.booking_tomorrow', [
+                'event' => $event,
+                'starts_at' => $bookingPayload->starts_at->copy(),
+                'ends_at' => $bookingPayload->ends_at?->copy(),
+            ]);
 
             $sentCount++;
         }
@@ -105,17 +101,32 @@ class SendBookingReminders extends Command
                     ? Carbon::parse($occurrenceDate->toDateString() . ' ' . $bookingPayload->ends_at->format('H:i:s'))
                     : null;
 
-                if (! $this->shouldSendReminderForOccurrence($event, $occurrenceStartsAt)) {
-                    continue;
-                }
+                $emailNotificationService->dispatch('reminder.booking_tomorrow', [
+                    'event' => $event,
+                    'starts_at' => $occurrenceStartsAt,
+                    'ends_at' => $occurrenceEndsAt,
+                ]);
 
-                Notification::route('mail', $bookingPayload->patient_email)
-                    ->notify(new BookingReminderNotification(
-                        booking: $bookingPayload,
-                        startsAt: $occurrenceStartsAt,
-                        endsAt: $occurrenceEndsAt,
-                        isRecurring: true,
-                    ));
+                $sentCount++;
+            }
+        }
+
+        $groupEvents = Event::query()
+            ->with(['branch', 'groupDetail', 'participants'])
+            ->where('type', EventType::GroupEvent->value)
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->whereBetween('starts_at', [$rangeStart, $rangeEnd])
+            ->orderBy('starts_at')
+            ->get();
+
+        foreach ($groupEvents as $groupEvent) {
+            foreach ($groupEvent->participants->where('status', 'confirmed') as $participant) {
+                $emailNotificationService->dispatch('reminder.group_event_tomorrow', [
+                    'event' => $groupEvent,
+                    'participant' => $participant,
+                    'starts_at' => $groupEvent->starts_at?->copy(),
+                    'ends_at' => $groupEvent->ends_at?->copy(),
+                ]);
 
                 $sentCount++;
             }
@@ -135,17 +146,6 @@ class SendBookingReminders extends Command
         }
 
         return now()->addDay()->startOfDay();
-    }
-
-    private function shouldSendReminderForOccurrence(Event $event, Carbon $occurrenceStartsAt): bool
-    {
-        if (blank($event->bookingDetail?->patient_email)) {
-            return false;
-        }
-
-        $cacheKey = sprintf('booking-reminder:%d:%s', $event->id, $occurrenceStartsAt->toDateString());
-
-        return Cache::add($cacheKey, true, now()->addDays(3));
     }
 
     private function toLegacyBookingPayload(Event $event): ?Booking

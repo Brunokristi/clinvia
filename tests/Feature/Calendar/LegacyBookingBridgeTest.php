@@ -190,6 +190,119 @@ class LegacyBookingBridgeTest extends TestCase
         $this->assertSame('2026-07-20 10:30:00', $newEvent->ends_at?->format('Y-m-d H:i:s'));
     }
 
+    public function test_repeated_this_and_following_reschedule_with_fresh_payload_does_not_duplicate_calendar_bookings(): void
+    {
+        $fixture = $this->createFixture();
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-06 10:00:00',
+            'ends_at' => '2026-07-06 10:30:00',
+            'patient_name' => 'Recurring Patient',
+            'patient_email' => 'recurring@example.com',
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-07-27',
+                    'count' => null,
+                ],
+            ],
+        ])->assertRedirect();
+
+        $seriesEvent = Event::query()->firstOrFail();
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.reschedule', [
+            $fixture['branch']->id,
+            $seriesEvent->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-20 12:00:00',
+            'ends_at' => '2026-07-20 12:30:00',
+            'patient_name' => 'Recurring Patient',
+            'patient_email' => 'recurring@example.com',
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-07-27',
+                    'count' => null,
+                ],
+            ],
+            'reschedule_scope' => 'from_date',
+            'date' => '2026-07-20',
+        ])->assertSessionHasNoErrors();
+
+        $firstPayload = app(EventReadAdapterService::class)->getLegacyCalendarPayload(
+            $fixture['branch'],
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        );
+
+        $freshOccurrence = collect($firstPayload['calendarBookings'])
+            ->first(fn (array $booking): bool => ($booking['date'] ?? null) === '2026-07-27');
+
+        $this->assertNotNull($freshOccurrence);
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.reschedule', [
+            $fixture['branch']->id,
+            $freshOccurrence['id'],
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-27 13:00:00',
+            'ends_at' => '2026-07-27 13:30:00',
+            'patient_name' => 'Recurring Patient',
+            'patient_email' => 'recurring@example.com',
+            'recurrence' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-07-27',
+                    'count' => null,
+                ],
+            ],
+            'reschedule_scope' => 'from_date',
+            'date' => '2026-07-27',
+        ])->assertSessionHasNoErrors();
+
+        $payload = app(EventReadAdapterService::class)->getLegacyCalendarPayload(
+            $fixture['branch'],
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        );
+
+        $calendarBookings = collect($payload['calendarBookings']);
+
+        $this->assertCount(4, $calendarBookings);
+        $this->assertSame(
+            ['2026-07-06', '2026-07-13', '2026-07-20', '2026-07-27'],
+            $calendarBookings->pluck('date')->values()->all(),
+        );
+        $this->assertSame(
+            ['2026-07-06T10:00:00', '2026-07-13T10:00:00', '2026-07-20T12:00:00', '2026-07-27T13:00:00'],
+            $calendarBookings->pluck('starts_at')->values()->all(),
+        );
+        $this->assertCount(
+            $calendarBookings->count(),
+            $calendarBookings->pluck('calendar_event_id')->unique()->values()->all(),
+        );
+        $this->assertSame(
+            [1, 1, 1, 1],
+            $calendarBookings->groupBy('date')->map->count()->values()->all(),
+        );
+    }
+
     public function test_legacy_calendar_payload_preserves_availability_rule_repeat_fields(): void
     {
         $fixture = $this->createFixture();

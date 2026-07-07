@@ -16,6 +16,7 @@ class EventNotificationService
         ?string $recurrenceScope = null,
         ?string $occurrenceStartsAt = null,
         ?array $recipientEmails = null,
+        array $context = [],
     ): void {
         BranchEventUpdated::dispatch(
             branchId: $event->branch_id,
@@ -34,6 +35,9 @@ class EventNotificationService
             action: $action->value,
             eventType: (string) $event->type?->value,
             recipientEmails: $recipientEmails,
+            recurrenceScope: $recurrenceScope,
+            occurrenceStartsAt: $occurrenceStartsAt,
+            context: $context,
         );
     }
 }

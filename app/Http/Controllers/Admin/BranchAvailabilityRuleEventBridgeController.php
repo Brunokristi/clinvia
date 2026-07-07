@@ -102,6 +102,7 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
                     'status' => (bool) $ruleData['is_enabled'] ? 'confirmed' : 'cancelled',
                     'starts_at' => $startsAt,
                     'ends_at' => $endsAt,
+                    'timezone' => config('app.timezone'),
                     'recurrence_rule' => $this->buildRecurrenceRule($ruleData),
                     'services' => $serviceIds
                         ->map(fn (int $serviceId, int $order) => [

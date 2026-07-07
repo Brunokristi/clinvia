@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
 use App\Notifications\BookingReminderNotification;
+use App\Notifications\GroupEventReminderNotification;
 use App\Support\BookingCalendarInvite;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -131,7 +132,7 @@ class BookingReminderCommandTest extends TestCase
 
         Notification::assertNothingSent();
 
-        $this->artisan('bookings:send-reminders', ['--date' => '2026-07-05'])
+        $this->artisan('bookings:send-reminders', ['--date' => '2026-07-06'])
             ->assertSuccessful();
 
         Notification::assertSentOnDemand(
@@ -144,6 +145,48 @@ class BookingReminderCommandTest extends TestCase
                     && ($mail->rawAttachments[0]['name'] ?? null) === 'reservation-reminder.ics';
             }
         );
+    }
+
+    public function test_command_sends_group_event_reminder_once_for_confirmed_participant(): void
+    {
+        Notification::fake();
+
+        $fixture = $this->createFixture();
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::GroupEvent->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-03 14:00:00'),
+            'ends_at' => Carbon::parse('2026-07-03 15:00:00'),
+            'timezone' => config('app.timezone', 'Europe/Bratislava'),
+            'title' => 'Group Session',
+            'is_recurring' => false,
+        ]);
+
+        $event->groupDetail()->create([
+            'service_id' => $fixture['service']->id,
+            'service_name' => 'Consultation Group',
+            'capacity' => 8,
+            'reserved_places' => 1,
+            'group_status' => 'confirmed',
+        ]);
+
+        $event->participants()->create([
+            'participant_name' => 'Participant One',
+            'participant_email' => 'group.participant@example.com',
+            'participant_phone' => '+421900000557',
+            'status' => 'confirmed',
+            'booked_at' => now(),
+        ]);
+
+        $this->artisan('bookings:send-reminders', ['--date' => '2026-07-03'])
+            ->assertSuccessful();
+
+        $this->artisan('bookings:send-reminders', ['--date' => '2026-07-03'])
+            ->assertSuccessful();
+
+        Notification::assertSentOnDemandTimes(GroupEventReminderNotification::class, 1);
     }
 
     private function createFixture(): array

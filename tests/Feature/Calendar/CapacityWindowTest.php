@@ -9,6 +9,10 @@ use App\Models\CapacityWindow;
 use App\Models\Company;
 use App\Models\Service;
 use App\Models\User;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
+use App\Modules\Calendar\Services\RecurrenceExpansionService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -110,33 +114,24 @@ class CapacityWindowTest extends TestCase
     public function test_patient_can_be_added_to_one_recurring_occurrence_without_affecting_series(): void
     {
         $fixture = $this->createFixture();
-        $seriesUuid = (string) Str::uuid();
-
-        $firstWindow = CapacityWindow::query()->create([
-            'branch_id' => $fixture['branch']->id,
-            'service_id' => $fixture['service']->id,
-            'series_uuid' => $seriesUuid,
+        $event = $this->createRecurringGroupEvent($fixture, [
             'starts_at' => '2026-08-03 10:00:00',
             'ends_at' => '2026-08-03 11:00:00',
-            'capacity' => 5,
-            'status' => 'active',
-            'admin_note' => null,
-        ]);
-
-        $secondWindow = CapacityWindow::query()->create([
-            'branch_id' => $fixture['branch']->id,
-            'service_id' => $fixture['service']->id,
-            'series_uuid' => $seriesUuid,
-            'starts_at' => '2026-08-10 10:00:00',
-            'ends_at' => '2026-08-10 11:00:00',
-            'capacity' => 5,
-            'status' => 'active',
-            'admin_note' => null,
+            'recurrence_rule' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-09-01',
+                    'count' => null,
+                ],
+            ],
         ]);
 
         $response = $this->actingAs($fixture['user'])->put(route('branches.booking.capacity-windows.update', [
             $fixture['branch']->id,
-            $firstWindow->id,
+            $event->id,
         ]), [
             'service_id' => $fixture['service']->id,
             'capacity' => 5,
@@ -152,25 +147,18 @@ class CapacityWindowTest extends TestCase
                     'patient_phone' => '+421900000333',
                 ],
             ],
-            'recurrence' => [
-                'frequency' => 'weekly',
-                'interval' => 1,
-                'weekdays' => ['MO'],
-                'ends' => [
-                    'type' => 'on',
-                    'until' => '2026-09-01',
-                    'count' => null,
-                ],
-            ],
         ]);
 
         $response->assertSessionHasNoErrors();
 
-        $firstWindow->refresh();
-        $secondWindow->refresh();
+        $override = Event::query()
+            ->where('recurrence_parent_id', $event->id)
+            ->where('recurrence_original_starts_at', '2026-08-03 10:00:00')
+            ->first();
 
-        $this->assertSame(1, $firstWindow->activeBookings()->count());
-        $this->assertSame(0, $secondWindow->activeBookings()->count());
+        $this->assertNotNull($override);
+        $this->assertSame(1, $override->participants()->where('status', 'confirmed')->count());
+        $this->assertSame(0, $event->fresh()->participants()->where('status', 'confirmed')->count());
     }
 
     public function test_recurring_group_event_weekdays_creates_all_selected_weekdays(): void
@@ -199,11 +187,22 @@ class CapacityWindowTest extends TestCase
 
         $response->assertSessionHasNoErrors();
 
-        $dates = CapacityWindow::query()
+        $master = Event::query()
             ->where('branch_id', $fixture['branch']->id)
-            ->orderBy('starts_at')
-            ->get()
-            ->map(fn (CapacityWindow $window): string => $window->starts_at->toDateString())
+            ->where('type', EventType::GroupEvent)
+            ->whereNull('recurrence_parent_id')
+            ->latest('id')
+            ->firstOrFail();
+
+        $dates = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-08-03')->startOfDay(),
+            Carbon::parse('2026-08-07')->endOfDay(),
+            [EventType::GroupEvent],
+        )
+            ->where('root_event_id', $master->id)
+            ->pluck('occurrence_starts_at')
+            ->map(fn (Carbon $startsAt): string => $startsAt->toDateString())
             ->all();
 
         $this->assertSame(['2026-08-03', '2026-08-05', '2026-08-07'], $dates);
@@ -244,11 +243,22 @@ class CapacityWindowTest extends TestCase
 
         $response->assertSessionHasNoErrors();
 
-        $dates = CapacityWindow::query()
+        $master = Event::query()
             ->where('branch_id', $fixture['branch']->id)
-            ->orderBy('starts_at')
-            ->get()
-            ->map(fn (CapacityWindow $window): string => $window->starts_at->toDateString())
+            ->where('type', EventType::GroupEvent)
+            ->whereNull('recurrence_parent_id')
+            ->latest('id')
+            ->firstOrFail();
+
+        $dates = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-08-03')->startOfDay(),
+            Carbon::parse('2026-08-07')->endOfDay(),
+            [EventType::GroupEvent],
+        )
+            ->where('root_event_id', $master->id)
+            ->pluck('occurrence_starts_at')
+            ->map(fn (Carbon $startsAt): string => $startsAt->toDateString())
             ->all();
 
         $this->assertSame(['2026-08-03', '2026-08-07'], $dates);
@@ -279,11 +289,69 @@ class CapacityWindowTest extends TestCase
 
         $response->assertSessionHasNoErrors();
 
-        $count = CapacityWindow::query()
+        $master = Event::query()
             ->where('branch_id', $fixture['branch']->id)
+            ->where('type', EventType::GroupEvent)
+            ->whereNull('recurrence_parent_id')
+            ->latest('id')
+            ->firstOrFail();
+
+        $count = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-08-03')->startOfDay(),
+            Carbon::parse('2027-08-08')->endOfDay(),
+            [EventType::GroupEvent],
+        )
+            ->where('root_event_id', $master->id)
             ->count();
 
-        $this->assertSame(370, $count);
+        $this->assertGreaterThan(300, $count);
+        $this->assertSame(1, Event::query()->where('branch_id', $fixture['branch']->id)->where('type', EventType::GroupEvent)->count());
+    }
+
+    private function createRecurringGroupEvent(array $fixture, array $overrides = []): Event
+    {
+        $event = Event::query()->create(array_replace([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::GroupEvent->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-08-03 10:00:00'),
+            'ends_at' => Carbon::parse('2026-08-03 11:00:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => true,
+            'recurrence_rule' => [
+                'frequency' => 'weekly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-09-01',
+                    'count' => null,
+                ],
+            ],
+            'metadata' => [
+                'series_uuid' => (string) Str::uuid(),
+            ],
+        ], $overrides));
+
+        $event->groupDetail()->create([
+            'service_id' => $fixture['service']->id,
+            'service_name' => $fixture['service']->name,
+            'capacity' => 5,
+            'reserved_places' => 0,
+            'group_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        return $event->fresh(['groupDetail', 'services', 'participants']);
     }
 
     private function createFixture(): array

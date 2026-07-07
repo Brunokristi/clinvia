@@ -3,6 +3,7 @@ import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
 import { isRecurringEntity } from './recurrencePolicy';
+import { useRecurringImpactPreview } from './useRecurringImpactPreview';
 
 export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
@@ -36,6 +37,11 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
     const bookingNotes = ref({});
     const pendingBookingReschedule = ref(null);
+    const {
+        impactPreview: bookingRescheduleImpactPreview,
+        fetchImpactPreview: fetchBookingRescheduleImpactPreview,
+        clearImpactPreview: clearBookingRescheduleImpactPreview,
+    } = useRecurringImpactPreview(props.branch.id);
 
     const reloadCalendarDataInternal = reloadCalendarData ?? (() => {
         router.reload({
@@ -344,6 +350,26 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                 payload,
             };
 
+            fetchBookingRescheduleImpactPreview({
+                action: 'reschedule',
+                selectedOccurrence: {
+                    event_id: booking.id,
+                    root_event_id: booking.root_event_id ?? booking.logical_root_event_id ?? null,
+                    occurrence_starts_at: booking.occurrence_starts_at ?? booking.starts_at ?? null,
+                    occurrence_original_starts_at: booking.occurrence_original_starts_at
+                        ?? (booking.occurrence_original_date ? `${booking.occurrence_original_date}T${String(booking.starts_at ?? '').slice(11, 19) || '00:00:00'}` : null),
+                    starts_at: booking.starts_at ?? null,
+                    ends_at: booking.ends_at ?? null,
+                    display_key: booking.display_key ?? null,
+                },
+                changes: {
+                    starts_at: payload.starts_at,
+                    ends_at: payload.ends_at,
+                },
+            }).catch(() => {
+                clearBookingRescheduleImpactPreview();
+            });
+
             bookingRescheduleScopeDialogVisible.value = true;
 
             return;
@@ -405,11 +431,13 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
         pendingBookingReschedule.value = null;
         bookingRescheduleScopeDialogVisible.value = false;
+        clearBookingRescheduleImpactPreview();
     };
 
     const cancelPendingBookingReschedule = () => {
         pendingBookingReschedule.value = null;
         bookingRescheduleScopeDialogVisible.value = false;
+        clearBookingRescheduleImpactPreview();
     };
 
     const convertAppointmentRequest = (receiveInfo) => {
@@ -451,6 +479,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
         duplicateBooking,
         rescheduleBooking,
         rescheduleBookingByCalendarChange,
+        bookingRescheduleImpactPreview,
         submitPendingBookingRescheduleScope,
         cancelPendingBookingReschedule,
         updateBooking,

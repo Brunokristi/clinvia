@@ -123,6 +123,18 @@ const props = defineProps({
         type: Number,
         default: null,
     },
+    deleteMessageOccurrence: {
+        type: String,
+        default: null,
+    },
+    deleteMessageFromDate: {
+        type: String,
+        default: null,
+    },
+    deleteMessageSeries: {
+        type: String,
+        default: null,
+    },
     showDateTimeFields: {
         type: Boolean,
         default: true,
@@ -397,6 +409,9 @@ const confirmDelete = () => {
         :count-occurrence="deleteCountOccurrence"
         :count-from-date="deleteCountFromDate"
         :count-series="deleteCountSeries"
+        :message-occurrence="deleteMessageOccurrence"
+        :message-from-date="deleteMessageFromDate"
+        :message-series="deleteMessageSeries"
         @select="chooseDeleteScope"
         @cancel="closeDeleteScopeDialog"
     />

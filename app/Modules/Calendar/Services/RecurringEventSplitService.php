@@ -36,9 +36,16 @@ class RecurringEventSplitService
 
         $newRoot->recurrence_parent_id = null;
         $newRoot->split_from_event_id = $rootEvent->id;
+        $newRoot->root_event_id = $rootEvent->root_event_id ?? $rootEvent->id;
         $newRoot->starts_at = isset($payload['starts_at']) ? Carbon::parse($payload['starts_at']) : $occurrenceStartsAt;
         $newRoot->ends_at = isset($payload['ends_at']) ? Carbon::parse($payload['ends_at']) : $occurrenceEndsAt;
-        $newRoot->recurrence_rule = Arr::exists($payload, 'recurrence_rule') ? $payload['recurrence_rule'] : $originalRule;
+        $newRule = Arr::exists($payload, 'recurrence_rule') ? $payload['recurrence_rule'] : $originalRule;
+
+        if (! Arr::exists($payload, 'recurrence_rule')) {
+            $newRule = $this->adjustSplitCountForRemainingOccurrences($rootEvent, $occurrenceStartsAt, $newRule, $originalRule);
+        }
+
+        $newRoot->recurrence_rule = $newRule;
         $newRoot->is_recurring = ! empty($newRoot->recurrence_rule);
         $newRoot->recurrence_sequence = ((int) ($rootEvent->recurrence_sequence ?? 0)) + 1;
         $newRoot->created_by = $actorId;
@@ -91,5 +98,46 @@ class RecurringEventSplitService
         }
 
         return $affectedIds;
+    }
+
+    private function adjustSplitCountForRemainingOccurrences(Event $rootEvent, Carbon $occurrenceStartsAt, array $rule, array $originalRule): array
+    {
+        if (data_get($rule, 'ends.type') !== 'after' || blank(data_get($rule, 'ends.count'))) {
+            return $rule;
+        }
+
+        $remainingCount = $this->remainingOccurrenceCount($rootEvent, $occurrenceStartsAt, $originalRule);
+
+        data_set($rule, 'ends.count', max(1, $remainingCount));
+
+        return $rule;
+    }
+
+    private function remainingOccurrenceCount(Event $rootEvent, Carbon $occurrenceStartsAt, array $originalRule): int
+    {
+        $rangeEnd = $this->countSearchEnd($occurrenceStartsAt, $originalRule);
+
+        $sourceEvent = clone $rootEvent;
+        $sourceEvent->recurrence_rule = $originalRule;
+
+        return $this->eventOccurrenceService
+            ->getOccurrenceDates($sourceEvent, $occurrenceStartsAt->copy()->startOfDay(), $rangeEnd)
+            ->count();
+    }
+
+    private function countSearchEnd(Carbon $occurrenceStartsAt, array $rule): Carbon
+    {
+        $count = max(1, (int) data_get($rule, 'ends.count', 1));
+        $interval = max(1, (int) data_get($rule, 'interval', 1));
+        $frequency = (string) data_get($rule, 'frequency', 'weekly');
+
+        $daysToAdd = match ($frequency) {
+            'daily' => ($count * $interval) + 7,
+            'monthly' => ($count * $interval * 31) + 31,
+            'yearly' => ($count * $interval * 366) + 366,
+            default => ($count * $interval * 7) + 14,
+        };
+
+        return $occurrenceStartsAt->copy()->addDays($daysToAdd)->endOfDay();
     }
 }

@@ -23,6 +23,7 @@ class RecurrenceOverrideService
             'type' => $rootEvent->type,
             'timezone' => $rootEvent->timezone,
             'recurrence_parent_id' => $rootEvent->id,
+            'root_event_id' => $rootEvent->root_event_id ?? $rootEvent->id,
             'recurrence_original_starts_at' => $occurrenceStartsAt,
             'recurrence_original_ends_at' => $occurrenceEndsAt,
             'split_from_event_id' => null,
@@ -36,6 +37,7 @@ class RecurrenceOverrideService
             $override->type = $rootEvent->type;
             $override->timezone = $rootEvent->timezone;
             $override->recurrence_parent_id = $rootEvent->id;
+            $override->root_event_id = $rootEvent->root_event_id ?? $rootEvent->id;
             $override->recurrence_original_starts_at = $occurrenceStartsAt;
             $override->recurrence_original_ends_at = $occurrenceEndsAt;
             $override->metadata = $rootEvent->metadata ?? [];

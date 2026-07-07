@@ -223,6 +223,20 @@ abstract class RecurringEventsTestCase extends TestCase
         $this->assertSame(1, $count);
     }
 
+    protected function assertNoPersistedGeneratedInstances(): void
+    {
+        $count = Event::query()
+            ->whereNotNull('recurrence_parent_id')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('recurrence_original_starts_at')
+                    ->orWhereNotNull('recurrence_rule');
+            })
+            ->count();
+
+        $this->assertSame(0, $count, 'Persisted recurring child rows must only be exception rows, not generated instances.');
+    }
+
     protected function assertSeriesWasSplit(Event $oldMaster, Event $newMaster, string $splitOriginalStart): void
     {
         $oldUntil = data_get($oldMaster->fresh()->recurrence_rule, 'ends.until');

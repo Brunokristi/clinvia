@@ -1589,6 +1589,7 @@ export function useBookingCalendar(props, options = {}) {
         closeRuleDialog: dialogs.closeRuleDialog,
         closeRuleDialogSafely: rules.closeRuleDialogSafely,
         cancelPendingRuleReschedule: rules.cancelPendingRuleReschedule,
+        ruleRescheduleImpactPreview: rules.ruleRescheduleImpactPreview,
         closeGroupEventDialog: dialogs.closeGroupEventDialog,
         deleteCurrentRule: rules.deleteCurrentRule,
         deleteCurrentRuleByScope: rules.deleteCurrentRuleByScope,
@@ -1600,6 +1601,7 @@ export function useBookingCalendar(props, options = {}) {
         updateBooking: bookingActions.updateBooking,
         cancelBooking: bookingActions.cancelBooking,
         rescheduleBooking: bookingActions.rescheduleBooking,
+        bookingRescheduleImpactPreview: bookingActions.bookingRescheduleImpactPreview,
         submitPendingBookingRescheduleScope: bookingActions.submitPendingBookingRescheduleScope,
         cancelPendingBookingReschedule: bookingActions.cancelPendingBookingReschedule,
 
@@ -1607,6 +1609,7 @@ export function useBookingCalendar(props, options = {}) {
         rescheduleCapacityWindow: capacityWindowActions.rescheduleCapacityWindow,
         saveCapacityWindow: capacityWindowActions.saveCapacityWindow,
         duplicateCapacityWindow: capacityWindowActions.duplicateCapacityWindow,
+        capacityWindowRescheduleImpactPreview: capacityWindowActions.capacityWindowRescheduleImpactPreview,
         submitPendingCapacityWindowRescheduleScope: capacityWindowActions.submitPendingCapacityWindowRescheduleScope,
         cancelPendingCapacityWindowReschedule: capacityWindowActions.cancelPendingCapacityWindowReschedule,
 

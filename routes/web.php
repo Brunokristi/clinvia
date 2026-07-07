@@ -208,6 +208,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::get('/booking/events', [BranchBookingCalendarController::class, 'events'])
                     ->name('booking.events.index');
 
+                Route::post('/booking/impact-preview', [BranchBookingCalendarController::class, 'recurringImpactPreview'])
+                    ->name('booking.impact-preview');
+
                 /*
                 |--------------------------------------------------------------------------
                 | Availability rules

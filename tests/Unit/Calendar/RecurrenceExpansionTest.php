@@ -41,20 +41,20 @@ class RecurrenceExpansionTest extends TestCase
         $fixture = $this->createCalendarFixture();
 
         $this->createBookingEvent($fixture, [
-            'starts_at' => Carbon::parse('2026-07-01 09:00:00'),
-            'ends_at' => Carbon::parse('2026-07-01 09:30:00'),
+            'starts_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:30:00'),
             'is_recurring' => true,
-            'recurrence_rule' => $this->dailyRecurrence(2, ['type' => 'on', 'count' => null, 'until' => '2026-07-09']),
+            'recurrence_rule' => $this->dailyRecurrence(2, ['type' => 'on', 'count' => null, 'until' => '2026-07-14']),
         ]);
 
         $occurrences = app(RecurrenceExpansionService::class)->forBranch(
             $fixture['branch'],
-            Carbon::parse('2026-07-01')->startOfDay(),
-            Carbon::parse('2026-07-09')->endOfDay(),
+            Carbon::parse('2026-07-06')->startOfDay(),
+            Carbon::parse('2026-07-14')->endOfDay(),
         );
 
         $this->assertSame(
-            ['2026-07-01', '2026-07-03', '2026-07-05', '2026-07-07', '2026-07-09'],
+            ['2026-07-06', '2026-07-08', '2026-07-10', '2026-07-12', '2026-07-14'],
             $occurrences->pluck('occurrence_starts_at')->map(fn (Carbon $value) => $value->toDateString())->all(),
         );
     }
@@ -78,6 +78,89 @@ class RecurrenceExpansionTest extends TestCase
 
         $this->assertSame(
             ['2026-01-15', '2026-02-15', '2026-03-15', '2026-04-15'],
+            $occurrences->pluck('occurrence_starts_at')->map(fn (Carbon $value) => $value->toDateString())->all(),
+        );
+    }
+
+    public function test_monthly_by_weekday_position_generates_expected_occurrences(): void
+    {
+        $fixture = $this->createCalendarFixture();
+
+        $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-01-12 09:00:00'),
+            'ends_at' => Carbon::parse('2026-01-12 09:30:00'),
+            'timezone' => 'Europe/Bratislava',
+            'is_recurring' => true,
+            'recurrence_rule' => [
+                'frequency' => 'monthly',
+                'interval' => 1,
+                'weekdays' => ['MO'],
+                'bysetpos' => 2,
+                'ends' => ['type' => 'on', 'count' => null, 'until' => '2026-04-30'],
+            ],
+        ]);
+
+        $occurrences = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-01-01')->startOfDay(),
+            Carbon::parse('2026-04-30')->endOfDay(),
+        );
+
+        $this->assertSame(
+            ['2026-01-12', '2026-02-09', '2026-03-09', '2026-04-13'],
+            $occurrences->pluck('occurrence_starts_at')->map(fn (Carbon $value) => $value->toDateString())->all(),
+        );
+    }
+
+    public function test_monthly_day_31_skips_short_months(): void
+    {
+        $fixture = $this->createCalendarFixture();
+
+        $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-01-31 09:00:00'),
+            'ends_at' => Carbon::parse('2026-01-31 09:30:00'),
+            'timezone' => 'Europe/Bratislava',
+            'is_recurring' => true,
+            'recurrence_rule' => $this->monthlyRecurrence(1, ['type' => 'on', 'count' => null, 'until' => '2026-05-31']),
+        ]);
+
+        $occurrences = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-01-01')->startOfDay(),
+            Carbon::parse('2026-05-31')->endOfDay(),
+        );
+
+        $this->assertSame(
+            ['2026-01-31', '2026-03-31', '2026-05-31'],
+            $occurrences->pluck('occurrence_starts_at')->map(fn (Carbon $value) => $value->toDateString())->all(),
+        );
+    }
+
+    public function test_yearly_recurring_event_generates_expected_occurrences(): void
+    {
+        $fixture = $this->createCalendarFixture();
+
+        $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:30:00'),
+            'timezone' => 'Europe/Bratislava',
+            'is_recurring' => true,
+            'recurrence_rule' => [
+                'frequency' => 'yearly',
+                'interval' => 1,
+                'weekdays' => [],
+                'ends' => ['type' => 'on', 'count' => null, 'until' => '2028-12-31'],
+            ],
+        ]);
+
+        $occurrences = app(RecurrenceExpansionService::class)->forBranch(
+            $fixture['branch'],
+            Carbon::parse('2026-01-01')->startOfDay(),
+            Carbon::parse('2028-12-31')->endOfDay(),
+        );
+
+        $this->assertSame(
+            ['2026-07-06', '2027-07-06', '2028-07-06'],
             $occurrences->pluck('occurrence_starts_at')->map(fn (Carbon $value) => $value->toDateString())->all(),
         );
     }

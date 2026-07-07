@@ -74,6 +74,7 @@ class BranchBookingEventBridgeController extends Controller
             'status' => 'confirmed',
             'starts_at' => $validated['starts_at'],
             'ends_at' => $validated['ends_at'] ?? Carbon::parse($validated['starts_at'])->addMinutes(30),
+            'timezone' => config('app.timezone'),
             'recurrence_rule' => $normalizedRecurrence,
             'title' => null,
             'services' => $serviceIds

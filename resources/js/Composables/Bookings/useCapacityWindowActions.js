@@ -8,6 +8,7 @@ import {
     isRecurrenceRemoved,
     isRecurringEntity,
 } from './recurrencePolicy';
+import { useRecurringImpactPreview } from './useRecurringImpactPreview';
 
 export function useCapacityWindowActions({
     props,
@@ -32,6 +33,11 @@ export function useCapacityWindowActions({
     } = dialogs;
 
     const pendingCapacityWindowReschedule = ref(null);
+    const {
+        impactPreview: capacityWindowRescheduleImpactPreview,
+        fetchImpactPreview: fetchCapacityWindowRescheduleImpactPreview,
+        clearImpactPreview: clearCapacityWindowRescheduleImpactPreview,
+    } = useRecurringImpactPreview(props.branch.id);
 
     // Success notifications are shown centrally from flash messages in AdminLayout.
     const showSuccess = () => { };
@@ -743,6 +749,28 @@ export function useCapacityWindowActions({
                 payload: pendingReschedule,
             };
 
+            fetchCapacityWindowRescheduleImpactPreview({
+                action: 'reschedule',
+                selectedOccurrence: {
+                    event_id: capacityWindow.id,
+                    root_event_id: capacityWindow.root_event_id ?? capacityWindow.logical_root_event_id ?? null,
+                    occurrence_starts_at: capacityWindow.occurrence_starts_at ?? getExistingStart(capacityWindow),
+                    occurrence_original_starts_at: capacityWindow.occurrence_original_starts_at
+                        ?? (capacityWindow.occurrence_original_date
+                            ? `${String(capacityWindow.occurrence_original_date).slice(0, 10)}T${String(getExistingStart(capacityWindow) ?? '').slice(11, 19) || '00:00:00'}`
+                            : null),
+                    starts_at: getExistingStart(capacityWindow),
+                    ends_at: getExistingEnd(capacityWindow),
+                    display_key: capacityWindow.display_key ?? null,
+                },
+                changes: {
+                    starts_at: pendingReschedule.starts_at,
+                    ends_at: pendingReschedule.ends_at,
+                },
+            }).catch(() => {
+                clearCapacityWindowRescheduleImpactPreview();
+            });
+
             capacityWindowRescheduleScopeDialogVisible.value = true;
 
             return;
@@ -791,11 +819,13 @@ export function useCapacityWindowActions({
 
         pendingCapacityWindowReschedule.value = null;
         capacityWindowRescheduleScopeDialogVisible.value = false;
+        clearCapacityWindowRescheduleImpactPreview();
     };
 
     const cancelPendingCapacityWindowReschedule = () => {
         pendingCapacityWindowReschedule.value = null;
         capacityWindowRescheduleScopeDialogVisible.value = false;
+        clearCapacityWindowRescheduleImpactPreview();
     };
 
     const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
@@ -1002,6 +1032,7 @@ export function useCapacityWindowActions({
         rescheduleCapacityWindowByCalendarChange,
         submitPendingCapacityWindowRescheduleScope,
         cancelPendingCapacityWindowReschedule,
+        capacityWindowRescheduleImpactPreview,
         addPatientToCapacityWindow,
         openCapacityWindowEditor,
         saveCapacityWindow,

@@ -110,6 +110,18 @@ const props = defineProps({
         type: Number,
         default: null,
     },
+    deleteMessageOccurrence: {
+        type: String,
+        default: null,
+    },
+    deleteMessageFromDate: {
+        type: String,
+        default: null,
+    },
+    deleteMessageSeries: {
+        type: String,
+        default: null,
+    },
     showDuplicate: {
         type: Boolean,
         default: false,
@@ -232,6 +244,9 @@ const duplicate = () => {
         :delete-count-occurrence="deleteCountOccurrence"
         :delete-count-from-date="deleteCountFromDate"
         :delete-count-series="deleteCountSeries"
+        :delete-message-occurrence="deleteMessageOccurrence"
+        :delete-message-from-date="deleteMessageFromDate"
+        :delete-message-series="deleteMessageSeries"
         @close="closeDialog"
         @save="handleSave"
         @delete-occurrence="emit('delete-occurrence')"

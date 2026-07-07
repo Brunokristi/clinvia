@@ -13,6 +13,7 @@ import EventDialog from '@/Components/Calendar/EventDialog.vue';
 import RepeatingSection from '@/Components/Calendar/RepeatingSection.vue';
 import PatientCard from '@/Components/Calendar/PatientCard.vue';
 import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
+import { useRecurringImpactPreview } from '@/Composables/Bookings/useRecurringImpactPreview';
 import FormField from '@/Components/Forms/FormField.vue';
 import FormPage from '@/Components/Forms/FormPage.vue';
 import FormSection from '@/Components/Forms/FormSection.vue';
@@ -758,94 +759,79 @@ const currentCapacityWindowRecurrence = computed(() => {
         ?? null;
 });
 
-const deleteCountOccurrence = computed(() => 1);
-
-const deleteCountSeries = computed(() => {
-    if (!isCapacityWindowRepeatable.value) {
-        return 1;
-    }
-
-    const recurrence = currentCapacityWindowRecurrence.value;
-
-    if (recurrence) {
-        if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
-            return Number(recurrence.ends.count);
-        }
-
-        const startDate = parseDateOnly(
-            recurrence?.starts_on
-            ?? recurrence?.start_date
-            ?? props.capacityWindow?.series_starts_at
-            ?? props.capacityWindow?.starts_at,
-        );
-        const endDate = parseDateOnly(recurrence?.ends?.until)
-            ?? getFallbackSeriesEndDate(startDate);
-
-        return countOccurrencesBetween(startDate, endDate, recurrence);
-    }
-
-    return currentSeriesWindows.value.length || null;
+const groupEventDeleteOccurrenceDate = computed(() => {
+    return String(
+        props.capacityWindow?.occurrence_original_date
+        ?? props.capacityWindow?.occurrence_date
+        ?? props.capacityWindow?.date
+        ?? props.capacityWindow?.starts_at
+        ?? '',
+    ).slice(0, 10) || null;
 });
 
-const deleteCountFromDate = computed(() => {
-    if (!isCapacityWindowRepeatable.value) {
-        return 1;
+const groupEventDeleteBranchId = computed(() => Number(
+    props.branchId
+    ?? props.capacityWindow?.branch_id
+    ?? props.capacityWindow?.branch?.id
+    ?? 0,
+) || null);
+
+const {
+    impactPreview: groupEventDeleteImpactPreview,
+    fetchImpactPreview: fetchGroupEventDeleteImpactPreview,
+    clearImpactPreview: clearGroupEventDeleteImpactPreview,
+} = useRecurringImpactPreview(groupEventDeleteBranchId);
+
+const groupEventDeleteSelectedOccurrence = computed(() => {
+    if (!props.capacityWindow?.id) {
+        return null;
     }
 
-    const selectedDate = selectedDateForBackend.value;
-    const recurrence = currentCapacityWindowRecurrence.value;
+    const timeStart = String(props.capacityWindow?.starts_datetime ?? props.capacityWindow?.starts_at ?? '').slice(11, 19);
+    const timeEnd = String(props.capacityWindow?.ends_datetime ?? props.capacityWindow?.ends_at ?? '').slice(11, 19);
+    const datePart = String(groupEventDeleteOccurrenceDate.value ?? '').slice(0, 10);
 
-    if (recurrence) {
-        if (recurrence?.ends?.type === 'after' && Number(recurrence?.ends?.count) > 0) {
-            const total = Number(recurrence.ends.count);
-            const frequency = getRecurrenceFrequency(recurrence);
-            const interval = Math.max(1, Number(recurrence?.interval ?? recurrence?.repeat_every ?? 1));
-            const startDate = parseDateOnly(
-                recurrence?.starts_on
-                ?? recurrence?.start_date
-                ?? props.capacityWindow?.series_starts_at
-                ?? props.capacityWindow?.starts_at,
-            );
-            const fromDate = parseDateOnly(selectedDate);
+    const occurrenceStartsAt = datePart && timeStart ? `${datePart}T${timeStart}` : null;
+    const occurrenceEndsAt = datePart && timeEnd ? `${datePart}T${timeEnd}` : null;
 
-            if (!startDate || !fromDate || fromDate < startDate) {
-                return total;
-            }
+    return {
+        capacity_window_id: props.capacityWindow.id,
+        event_id: props.capacityWindow.id,
+        root_event_id: props.capacityWindow.root_event_id ?? null,
+        occurrence_starts_at: occurrenceStartsAt,
+        occurrence_ends_at: occurrenceEndsAt,
+        occurrence_original_starts_at: occurrenceStartsAt,
+        starts_at: occurrenceStartsAt,
+        ends_at: occurrenceEndsAt,
+        display_key: props.capacityWindow.display_key ?? null,
+    };
+});
 
-            let index = 1;
-            let cursor = new Date(startDate);
+watch(
+    () => [props.occurrenceVisible, props.capacityWindow?.id, groupEventDeleteOccurrenceDate.value],
+    async ([visible]) => {
+        if (!visible || !props.capacityWindow || !isCapacityWindowRepeatable.value) {
+            clearGroupEventDeleteImpactPreview();
 
-            while (cursor < fromDate && index < 2000) {
-                cursor = addRecurrenceInterval(cursor, frequency, interval);
-                index += 1;
-            }
-
-            if (cursor > fromDate) {
-                return null;
-            }
-
-            return Math.max(1, total - index + 1);
+            return;
         }
 
-        const fromDate = parseDateOnly(selectedDate);
-        const endDate = parseDateOnly(recurrence?.ends?.until)
-            ?? getFallbackSeriesEndDate(fromDate);
+        await fetchGroupEventDeleteImpactPreview({
+            action: 'delete',
+            selectedOccurrence: groupEventDeleteSelectedOccurrence.value,
+        });
+    },
+    { immediate: true },
+);
 
-        return countOccurrencesBetween(fromDate, endDate, recurrence);
-    }
+const deleteCountOccurrence = computed(() => groupEventDeleteImpactPreview.value?.occurrence?.count ?? 1);
 
-    if (!selectedDate) {
-        return deleteCountSeries.value;
-    }
+const deleteCountSeries = computed(() => groupEventDeleteImpactPreview.value?.series?.count ?? null);
 
-    const filtered = currentSeriesWindows.value.filter((window) => {
-        const dateOnly = String(window?.date ?? window?.starts_at ?? window?.starts_datetime ?? '').slice(0, 10);
-
-        return dateOnly >= selectedDate;
-    });
-
-    return filtered.length || null;
-});
+const deleteCountFromDate = computed(() => groupEventDeleteImpactPreview.value?.from_date?.count ?? null);
+const deleteMessageOccurrence = computed(() => groupEventDeleteImpactPreview.value?.occurrence?.message ?? null);
+const deleteMessageFromDate = computed(() => groupEventDeleteImpactPreview.value?.from_date?.message ?? null);
+const deleteMessageSeries = computed(() => groupEventDeleteImpactPreview.value?.series?.message ?? null);
 
 const formatDateOnlyForBackend = (value) => {
     if (!value) {
@@ -1530,6 +1516,9 @@ const submitPatientFromMiniDialog = () => {
         :delete-count-occurrence="deleteCountOccurrence"
         :delete-count-from-date="deleteCountFromDate"
         :delete-count-series="deleteCountSeries"
+        :delete-message-occurrence="deleteMessageOccurrence"
+        :delete-message-from-date="deleteMessageFromDate"
+        :delete-message-series="deleteMessageSeries"
         @close="closeOccurrenceDialog"
         @save="rescheduleCapacityWindow"
         @delete-occurrence="deleteCapacityWindowOccurrence"

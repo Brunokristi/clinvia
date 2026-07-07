@@ -127,15 +127,6 @@ class BranchInboxMessageService
 
         $this->broadcastInboxUpdated($message, 'created');
 
-        $this->notifyBranchRecipients(
-            branch: $appointmentRequest->branch,
-            settingKey: 'notify_new_appointment_request',
-            subject: 'Nová žiadosť o rezerváciu',
-            message: collect([
-                'Klient ' . $appointmentRequest->patient_name . ' požiadal o nový termín.',
-            ])->filter()->join("\n"),
-        );
-
         return $message;
     }
 

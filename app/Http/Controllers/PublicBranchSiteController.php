@@ -10,9 +10,9 @@ use App\Modules\Calendar\Actions\AddGroupEventParticipantAction;
 use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
 use App\Notifications\ContactFormSubmittedNotification;
-use App\Notifications\RequestCreatedNotification;
 use App\Services\BookingAvailabilityService;
 use App\Services\BranchInboxMessageService;
+use App\Services\EmailNotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -205,6 +205,7 @@ class PublicBranchSiteController extends Controller
         Branch $branch,
         AddGroupEventParticipantAction $addGroupEventParticipantAction,
         BranchInboxMessageService $inboxMessageService,
+        EmailNotificationService $emailNotificationService,
     ): RedirectResponse {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
@@ -257,6 +258,7 @@ class PublicBranchSiteController extends Controller
             branch: $branch,
             validated: $validated,
             inboxMessageService: $inboxMessageService,
+            emailNotificationService: $emailNotificationService,
         );
     }
 
@@ -813,6 +815,7 @@ class PublicBranchSiteController extends Controller
         Branch $branch,
         array $validated,
         BranchInboxMessageService $inboxMessageService,
+        EmailNotificationService $emailNotificationService,
     ): RedirectResponse {
         $serviceIds = collect($validated['service_ids'])
             ->map(fn ($id) => (int) $id)
@@ -923,10 +926,9 @@ class PublicBranchSiteController extends Controller
 
         $inboxMessageService->createForAppointmentRequest($appointmentRequest);
 
-        if ($appointmentRequest->patient_email) {
-            Notification::route('mail', $appointmentRequest->patient_email)
-                ->notify(new RequestCreatedNotification($appointmentRequest));
-        }
+        $emailNotificationService->dispatch('request.created', [
+            'appointment_request' => $appointmentRequest,
+        ]);
 
         BranchCalendarUpdated::dispatch(
             branchId: $appointmentRequest->branch_id,

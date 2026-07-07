@@ -1,6 +1,7 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { computed, ref, watch } from 'vue';
+import { useRecurringImpactPreview } from './useRecurringImpactPreview';
 
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
@@ -79,6 +80,11 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     ];
 
     const pendingRuleReschedule = ref(null);
+    const {
+        impactPreview: ruleRescheduleImpactPreview,
+        fetchImpactPreview: fetchRuleRescheduleImpactPreview,
+        clearImpactPreview: clearRuleRescheduleImpactPreview,
+    } = useRecurringImpactPreview(props.branch.id);
 
     const emptyRule = () => ({
         id: null,
@@ -727,6 +733,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         ruleRescheduleScopeDialogVisible.value = false;
+        clearRuleRescheduleImpactPreview();
     };
 
     const closeRuleDialogSafely = () => {
@@ -917,6 +924,25 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 nextRule,
             };
 
+            fetchRuleRescheduleImpactPreview({
+                action: 'reschedule',
+                selectedOccurrence: {
+                    event_id: rule.id,
+                    root_event_id: rule.root_event_id ?? null,
+                    occurrence_starts_at: `${occurrenceDate}T${String(previousRule.starts_at ?? '00:00').slice(0, 5)}:00`,
+                    occurrence_original_starts_at: `${occurrenceDate}T${String(previousRule.starts_at ?? '00:00').slice(0, 5)}:00`,
+                    starts_at: `${occurrenceDate}T${String(previousRule.starts_at ?? '00:00').slice(0, 5)}:00`,
+                    ends_at: `${occurrenceDate}T${String(previousRule.ends_at ?? '00:00').slice(0, 5)}:00`,
+                    display_key: null,
+                },
+                changes: {
+                    starts_at: `${nextRule.date}T${String(nextRule.starts_at ?? '00:00').slice(0, 5)}:00`,
+                    ends_at: `${nextRule.date}T${String(nextRule.ends_at ?? '00:00').slice(0, 5)}:00`,
+                },
+            }).catch(() => {
+                clearRuleRescheduleImpactPreview();
+            });
+
             ruleRescheduleScopeDialogVisible.value = true;
 
             return;
@@ -1062,6 +1088,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const cancelPendingRuleReschedule = () => {
         pendingRuleReschedule.value = null;
         ruleRescheduleScopeDialogVisible.value = false;
+        clearRuleRescheduleImpactPreview();
     };
 
     return {
@@ -1082,6 +1109,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         deleteCurrentRuleOccurrence,
         duplicateCurrentRule,
         cancelPendingRuleReschedule,
+        ruleRescheduleImpactPreview,
         saveRules,
         updateRuleFromDrop,
     };

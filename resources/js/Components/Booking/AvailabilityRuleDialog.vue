@@ -1,8 +1,9 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 import EventDetailDialog from '@/Components/Booking/Common/EventDetailDialog.vue';
 import EventOccurrenceActions from '@/Components/Booking/Common/EventOccurrenceActions.vue';
+import { useRecurringImpactPreview } from '@/Composables/Bookings/useRecurringImpactPreview';
 
 const props = defineProps({
     visible: {
@@ -144,6 +145,70 @@ const occurrenceLabel = computed(() => {
 
     return formatSlovakDate(occurrenceDate);
 });
+
+const selectedOccurrenceDate = computed(() => {
+    return props.selectedRuleOccurrence?.occurrenceOriginalDate
+        ?? props.selectedRuleOccurrence?.occurrenceDate
+        ?? props.rule?.date
+        ?? null;
+});
+
+const buildOccurrenceDateTime = (date, time) => {
+    const datePart = String(date ?? '').slice(0, 10);
+    const timePart = String(time ?? '').slice(0, 8);
+
+    if (!datePart || !timePart) {
+        return null;
+    }
+
+    return `${datePart}T${timePart}`;
+};
+
+const availabilityRuleBranchId = computed(() => Number(props.rule?.branch_id ?? props.rule?.branch?.id ?? 0) || null);
+
+const {
+    impactPreview: ruleDeleteImpactPreview,
+    fetchImpactPreview: fetchRuleDeleteImpactPreview,
+    clearImpactPreview: clearRuleDeleteImpactPreview,
+} = useRecurringImpactPreview(availabilityRuleBranchId);
+
+const ruleDeleteSelectedOccurrence = computed(() => {
+    if (!props.rule?.id) {
+        return null;
+    }
+
+    const startsAt = buildOccurrenceDateTime(selectedOccurrenceDate.value, props.rule?.starts_at);
+    const endsAt = buildOccurrenceDateTime(selectedOccurrenceDate.value, props.rule?.ends_at);
+
+    return {
+        rule_id: props.rule.id,
+        event_id: props.rule.id,
+        root_event_id: props.rule.root_event_id ?? null,
+        occurrence_starts_at: startsAt,
+        occurrence_ends_at: endsAt,
+        occurrence_original_starts_at: startsAt,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        display_key: props.selectedRuleOccurrence?.displayKey ?? null,
+    };
+});
+
+watch(
+    () => [props.visible, props.rule?.id, selectedOccurrenceDate.value],
+    async ([visible]) => {
+        if (!visible || !props.rule || !props.rule.repeats) {
+            clearRuleDeleteImpactPreview();
+
+            return;
+        }
+
+        await fetchRuleDeleteImpactPreview({
+            action: 'delete',
+            selectedOccurrence: ruleDeleteSelectedOccurrence.value,
+        });
+    },
+    { immediate: true },
+);
 
 const parseDateOnly = (value) => {
     if (!value) {
@@ -351,56 +416,14 @@ const getRuleOccurrences = (rule) => {
     return occurrences;
 };
 
-const deleteCountOccurrence = computed(() => 1);
+const deleteCountOccurrence = computed(() => ruleDeleteImpactPreview.value?.occurrence?.count ?? 1);
 
-const deleteCountSeries = computed(() => {
-    if (!props.rule?.repeats) {
-        return 1;
-    }
+const deleteCountSeries = computed(() => ruleDeleteImpactPreview.value?.series?.count ?? null);
 
-    const occurrences = getRuleOccurrences(props.rule);
-
-    return occurrences.length > 0 ? occurrences.length : null;
-});
-
-const deleteCountFromDate = computed(() => {
-    if (!props.rule?.repeats) {
-        return 1;
-    }
-
-    const fromDate = parseDateOnly(
-        props.selectedRuleOccurrence?.occurrenceDate
-        ?? props.rule?.date,
-    );
-
-    if (!fromDate) {
-        return null;
-    }
-
-    const occurrences = getRuleOccurrences(props.rule);
-
-    if (!occurrences.length) {
-        return null;
-    }
-
-    const matchingIndex = occurrences.findIndex((dateString) => {
-        const parsed = parseDateOnly(dateString);
-
-        return parsed && parsed.getTime() === fromDate.getTime();
-    });
-
-    if (matchingIndex >= 0) {
-        return occurrences.length - matchingIndex;
-    }
-
-    const fallbackCount = occurrences.filter((dateString) => {
-        const parsed = parseDateOnly(dateString);
-
-        return parsed && parsed >= fromDate;
-    }).length;
-
-    return fallbackCount > 0 ? fallbackCount : null;
-});
+const deleteCountFromDate = computed(() => ruleDeleteImpactPreview.value?.from_date?.count ?? null);
+const deleteMessageOccurrence = computed(() => ruleDeleteImpactPreview.value?.occurrence?.message ?? null);
+const deleteMessageFromDate = computed(() => ruleDeleteImpactPreview.value?.from_date?.message ?? null);
+const deleteMessageSeries = computed(() => ruleDeleteImpactPreview.value?.series?.message ?? null);
 
 const ruleInfoItems = computed(() => {
     if (!props.rule) {
@@ -487,6 +510,9 @@ const duplicateRule = () => {
         :delete-count-occurrence="deleteCountOccurrence"
         :delete-count-from-date="deleteCountFromDate"
         :delete-count-series="deleteCountSeries"
+        :delete-message-occurrence="deleteMessageOccurrence"
+        :delete-message-from-date="deleteMessageFromDate"
+        :delete-message-series="deleteMessageSeries"
         :show-duplicate="false"
         :show-date-time-fields="false"
         scope-mode="update"
