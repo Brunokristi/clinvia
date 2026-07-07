@@ -108,10 +108,11 @@ export function useBookingCalendarEvents({
                         endsAt: normalizeTimeValue(override?.ends_at, rule.ends_at),
                         status: String(override?.status ?? 'confirmed'),
                     }))
-                    .filter((override) => override.originalDate && override.occurrenceDate && override.status !== 'cancelled')
+                    .filter((override) => override.originalDate && override.occurrenceDate)
                 : [];
 
             const overrideOriginalDates = new Set(normalizedOverrides.map((override) => override.originalDate));
+            const visibleOverrides = normalizedOverrides.filter((override) => override.status !== 'cancelled');
 
             const baseEvents = getRuleOccurrences(rule)
                 .filter((occurrenceDate) => !overrideOriginalDates.has(occurrenceDate))
@@ -146,7 +147,7 @@ export function useBookingCalendarEvents({
                 })
                 .filter(Boolean);
 
-            const overrideEvents = normalizedOverrides.map((override) => {
+            const overrideEvents = visibleOverrides.map((override) => {
                 const isRepeatedOccurrence = Boolean(rule.repeats);
                 const eventId = `rule-${rule.id ?? 'new'}-${rule.ruleIndex}-${override.originalDate}-override`;
 
@@ -220,35 +221,37 @@ export function useBookingCalendarEvents({
             return [];
         }
 
-        return (props.calendarCapacityWindows ?? []).map((capacityWindow) => {
-            const bookingsCount = Number(capacityWindow.bookings_count ?? capacityWindow.bookings?.length ?? 0);
-            const capacity = Number(capacityWindow.capacity ?? capacityWindow.bookable_places ?? 0);
-            const isFull = capacity > 0 && bookingsCount >= capacity;
-            const eventId = capacityWindow.calendar_event_id
-                ?? `capacity-window-${capacityWindow.id}`;
+        return (props.calendarCapacityWindows ?? [])
+            .filter((capacityWindow) => String(capacityWindow?.status ?? 'confirmed') !== 'cancelled')
+            .map((capacityWindow) => {
+                const bookingsCount = Number(capacityWindow.bookings_count ?? capacityWindow.bookings?.length ?? 0);
+                const capacity = Number(capacityWindow.capacity ?? capacityWindow.bookable_places ?? 0);
+                const isFull = capacity > 0 && bookingsCount >= capacity;
+                const eventId = capacityWindow.calendar_event_id
+                    ?? `capacity-window-${capacityWindow.id}`;
 
-            if (isHiddenEventId(eventId)) {
-                return null;
-            }
+                if (isHiddenEventId(eventId)) {
+                    return null;
+                }
 
-            return {
-                id: eventId,
-                title: 'Skupinový termín',
-                start: normalizeCalendarDateTime(capacityWindow.starts_datetime ?? capacityWindow.starts_at),
-                end: normalizeCalendarDateTime(capacityWindow.ends_datetime ?? capacityWindow.ends_at),
-                editable: true,
-                durationEditable: true,
-                startEditable: true,
-                classNames: [
-                    'booking-capacity-window-event',
-                    ...(isFull ? ['booking-capacity-window-full'] : []),
-                ],
-                extendedProps: {
-                    type: 'capacity_window',
-                    capacityWindow,
-                },
-            };
-        }).filter(Boolean);
+                return {
+                    id: eventId,
+                    title: 'Skupinový termín',
+                    start: normalizeCalendarDateTime(capacityWindow.starts_datetime ?? capacityWindow.starts_at),
+                    end: normalizeCalendarDateTime(capacityWindow.ends_datetime ?? capacityWindow.ends_at),
+                    editable: true,
+                    durationEditable: true,
+                    startEditable: true,
+                    classNames: [
+                        'booking-capacity-window-event',
+                        ...(isFull ? ['booking-capacity-window-full'] : []),
+                    ],
+                    extendedProps: {
+                        type: 'capacity_window',
+                        capacityWindow,
+                    },
+                };
+            }).filter(Boolean);
     });
 
     const disabledDayEvents = computed(() => {

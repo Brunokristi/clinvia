@@ -18,6 +18,13 @@ class EventReadAdapterService
     public function getLegacyCalendarPayload(Branch $branch, Carbon $rangeStart, Carbon $rangeEnd): array
     {
         $expandedOccurrences = $this->recurrenceExpansionService->forBranch($branch, $rangeStart, $rangeEnd);
+        $expandedOccurrencesWithCancelled = $this->recurrenceExpansionService->forBranch(
+            $branch,
+            $rangeStart,
+            $rangeEnd,
+            null,
+            true,
+        );
 
         $events = $expandedOccurrences
             ->pluck('event')
@@ -31,7 +38,7 @@ class EventReadAdapterService
             ->map(fn (Event $event) => $this->mapper->mapForLegacyPayload($event))
             ->all();
 
-        $availabilityOverrideMap = $expandedOccurrences
+        $availabilityOverrideMap = $expandedOccurrencesWithCancelled
             ->filter(fn (array $occurrence) => $occurrence['event']->type === EventType::AvailabilityRule)
             ->filter(fn (array $occurrence) => (bool) ($occurrence['is_override'] ?? false))
             ->groupBy(fn (array $occurrence) => (int) $occurrence['root_event_id'])
@@ -74,7 +81,7 @@ class EventReadAdapterService
             ->values()
             ->all();
 
-        $calendarCapacityWindows = $expandedOccurrences
+        $calendarCapacityWindows = $expandedOccurrencesWithCancelled
             ->filter(fn (array $occurrence) => $occurrence['event']->type === EventType::GroupEvent)
             ->map(fn (array $occurrence) => $this->mapper->mapExpandedOccurrenceForLegacyPayload($occurrence))
             ->values()

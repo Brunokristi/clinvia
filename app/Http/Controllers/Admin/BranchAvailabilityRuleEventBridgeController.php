@@ -11,6 +11,8 @@ use App\Modules\Calendar\Actions\UpdateEventAction;
 use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Services\CalendarEntitlementService;
+use App\Services\DisabledDayService;
+use App\Services\OpeningHoursService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +23,8 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
 {
     public function __construct(
         private readonly CalendarEntitlementService $entitlementService,
+        private readonly DisabledDayService $disabledDayService,
+        private readonly OpeningHoursService $openingHoursService,
     ) {
     }
 
@@ -69,6 +73,18 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
                 $date = Carbon::parse($ruleData['date'])->toDateString();
                 $startsAt = Carbon::parse($date . ' ' . $ruleData['starts_at']);
                 $endsAt = Carbon::parse($date . ' ' . $ruleData['ends_at']);
+
+                if ($this->disabledDayService->isDisabled($branch, $startsAt)) {
+                    throw ValidationException::withMessages([
+                        "rules.{$index}.date" => 'Tento deň je v kalendári zakázaný.',
+                    ]);
+                }
+
+                if (! $this->openingHoursService->isWithinOpeningHours($branch, $startsAt, $endsAt)) {
+                    throw ValidationException::withMessages([
+                        "rules.{$index}.starts_at" => 'Termín musí byť v rámci otváracích hodín.',
+                    ]);
+                }
 
                 if ($endsAt->lessThanOrEqualTo($startsAt)) {
                     throw ValidationException::withMessages([

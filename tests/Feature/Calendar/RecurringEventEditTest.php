@@ -283,6 +283,38 @@ class RecurringEventEditTest extends TestCase
         $this->assertSame(0, Event::query()->where('recurrence_parent_id', $override->id)->count());
     }
 
+    public function test_update_rejects_duration_shorter_than_attached_service_duration_for_booking(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createBookingEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:30:00'),
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(EventMutationService::class)->update($event, [
+            'starts_at' => '2026-07-06 10:00:00',
+            'ends_at' => '2026-07-06 10:20:00',
+        ], actorId: $fixture['user']->id, scope: 'series');
+    }
+
+    public function test_update_rejects_duration_shorter_than_attached_service_duration_for_group_event(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createGroupEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 14:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 15:00:00'),
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(EventMutationService::class)->update($event, [
+            'starts_at' => '2026-07-06 14:00:00',
+            'ends_at' => '2026-07-06 14:20:00',
+        ], actorId: $fixture['user']->id, scope: 'series');
+    }
+
     private function withRequestBody(array $input, callable $callback)
     {
         request()->replace($input);

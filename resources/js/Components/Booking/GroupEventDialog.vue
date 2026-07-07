@@ -866,6 +866,14 @@ const formatDateOnlyForBackend = (value) => {
 };
 
 const selectedDateForBackend = computed(() => formatDateOnlyForBackend(groupForm.date) ?? capacityWindowDate.value);
+const occurrenceReferenceDateForBackend = computed(() => {
+    return String(
+        props.capacityWindow?.occurrence_original_date
+        ?? props.capacityWindow?.occurrence_date
+        ?? capacityWindowDate.value
+        ?? '',
+    ).slice(0, 10) || null;
+});
 
 const canSaveGroupEvent = computed(() => {
     return Boolean(props.capacityWindow)
@@ -1221,7 +1229,7 @@ const closeOccurrenceDialog = () => {
 
 const buildReschedulePayload = () => {
     return {
-        date: selectedDateForBackend.value,
+        date: occurrenceReferenceDateForBackend.value,
         starts_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.starts_at)),
         ends_at: formatDateTimeForBackend(mergeDateAndTime(groupForm.date, groupForm.ends_at)),
         notify_patient: true,
@@ -1313,9 +1321,57 @@ const deleteCapacityWindowSeries = () => {
 };
 
 const cancelPatientBooking = (booking) => {
-    emit('cancel-booking', booking, {
+    emit('cancel-booking', {
+        ...booking,
+        capacity_window_id: props.capacityWindow?.capacity_window_id ?? props.capacityWindow?.id ?? null,
+    }, {
         notify_patient: true,
     });
+};
+
+const normalizePatientValue = (value) => String(value ?? '').trim().toLowerCase();
+
+const resolvePatientForBooking = (booking) => {
+    const name = normalizePatientValue(booking?.patient_name);
+    const email = normalizePatientValue(booking?.patient_email);
+    const phone = normalizePatientValue(String(booking?.patient_phone ?? '').replace(/\s+/g, ''));
+
+    const exactMatch = (props.patients ?? []).find((patient) => {
+        const patientName = normalizePatientValue(patient?.patient_name);
+        const patientEmail = normalizePatientValue(patient?.patient_email);
+        const patientPhone = normalizePatientValue(String(patient?.patient_phone ?? '').replace(/\s+/g, ''));
+
+        return Boolean(
+            (email && patientEmail && patientEmail === email)
+            || (phone && patientPhone && patientPhone === phone)
+            || (name && patientName && patientName === name),
+        );
+    });
+
+    if (exactMatch) {
+        return exactMatch;
+    }
+
+    if (!name) {
+        return null;
+    }
+
+    return (props.patients ?? []).find((patient) => {
+        return normalizePatientValue(patient?.patient_name).includes(name)
+            || name.includes(normalizePatientValue(patient?.patient_name));
+    }) ?? null;
+};
+
+const openPatientEditorForBooking = (booking) => {
+    const matchedPatient = resolvePatientForBooking(booking);
+
+    if (matchedPatient) {
+        openPatientEditDialog(matchedPatient);
+
+        return;
+    }
+
+    openPatientCreateDialog({ prefillName: booking?.patient_name ?? '' });
 };
 
 const addPatientToCapacityWindow = (patient = null) => {
@@ -1519,7 +1575,27 @@ const submitPatientFromMiniDialog = () => {
                         :patient-phone="booking.patient_phone"
                         :patient-email="booking.patient_email"
                         :patient-birth-number="booking.patient_birth_number"
-                    />
+                    >
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                label="Upraviť pacienta"
+                                severity="secondary"
+                                outlined
+                                size="small"
+                                @click="openPatientEditorForBooking(booking)"
+                            />
+
+                            <Button
+                                type="button"
+                                label="Odstrániť pacienta"
+                                severity="danger"
+                                outlined
+                                size="small"
+                                @click="cancelPatientBooking(booking)"
+                            />
+                        </div>
+                    </PatientCard>
                 </div>
             </FormSection>
         </div>
@@ -1535,17 +1611,24 @@ const submitPatientFromMiniDialog = () => {
                         :patient-email="booking.patient_email"
                         :patient-birth-number="booking.patient_birth_number"
                     >
-                        <div class="mt-4 grid gap-4">
-                            <div>
-                                <Button
-                                    type="button"
-                                    label="Odstrániť rezerváciu pacienta"
-                                    severity="danger"
-                                    outlined
-                                    size="small"
-                                    @click="cancelPatientBooking(booking)"
-                                />
-                            </div>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                label="Upraviť pacienta"
+                                severity="secondary"
+                                outlined
+                                size="small"
+                                @click="openPatientEditorForBooking(booking)"
+                            />
+
+                            <Button
+                                type="button"
+                                label="Odstrániť pacienta"
+                                severity="danger"
+                                outlined
+                                size="small"
+                                @click="cancelPatientBooking(booking)"
+                            />
                         </div>
                     </PatientCard>
                 </div>

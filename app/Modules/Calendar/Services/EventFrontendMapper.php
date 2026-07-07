@@ -146,6 +146,7 @@ class EventFrontendMapper
                         'patient_name' => $participant->participant_name,
                         'patient_email' => $participant->participant_email,
                         'patient_phone' => $participant->participant_phone,
+                        'patient_birth_number' => $participant->participant_birth_number,
                         'status' => $participant->status,
                         'starts_at' => $this->formatDateTime($event->starts_at),
                         'ends_at' => $this->formatDateTime($event->ends_at),
@@ -265,6 +266,8 @@ class EventFrontendMapper
 
         if ($event->type === EventType::GroupEvent) {
             $payload['calendar_event_id'] = sprintf('capacity-window-%s', $occurrence['occurrence_id']);
+            $payload['occurrence_date'] = $startsAt?->toDateString();
+            $payload['occurrence_original_date'] = ($occurrence['occurrence_original_starts_at'] ?? null)?->toDateString();
             $payload['bookings'] = collect($payload['bookings'] ?? [])
                 ->map(fn (array $booking) => [
                     ...$booking,

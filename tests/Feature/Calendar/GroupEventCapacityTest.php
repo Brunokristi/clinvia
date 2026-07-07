@@ -139,6 +139,79 @@ class GroupEventCapacityTest extends TestCase
         ]);
     }
 
+    public function test_rescheduling_group_event_occurrence_preserves_capacity(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createGroupEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 14:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 15:00:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['MO'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-27']),
+            'group_detail' => [
+                'capacity' => 5,
+            ],
+        ]);
+
+        $response = $this->actingAs($fixture['user'])->post(route('branches.booking.capacity-windows.reschedule', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'starts_at' => '2026-07-13 16:00:00',
+            'ends_at' => '2026-07-13 17:00:00',
+            'reschedule_scope' => 'occurrence',
+            'from_date' => '2026-07-13',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $override = Event::query()
+            ->where('recurrence_parent_id', $event->id)
+            ->where('starts_at', '2026-07-13 16:00:00')
+            ->first();
+
+        $this->assertNotNull($override);
+        $this->assertDatabaseHas('group_event_details', [
+            'event_id' => $override->id,
+            'capacity' => 5,
+        ]);
+    }
+
+    public function test_deleted_recurring_group_event_occurrence_is_kept_as_cancelled_override_in_payload(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createGroupEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-03 14:00:00'),
+            'ends_at' => Carbon::parse('2026-07-03 15:00:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['FR'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-31']),
+            'group_detail' => [
+                'capacity' => 5,
+            ],
+        ]);
+
+        $response = $this->actingAs($fixture['user'])->delete(route('branches.booking.capacity-windows.delete-occurrence', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'delete_scope' => 'occurrence',
+            'date' => '2026-07-10',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $payload = app(EventReadAdapterService::class)->getLegacyCalendarPayload(
+            $fixture['branch'],
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        );
+
+        $deletedOccurrence = collect($payload['calendarCapacityWindows'] ?? [])->firstWhere('occurrence_original_date', '2026-07-10');
+
+        $this->assertNotNull($deletedOccurrence);
+        $this->assertSame('cancelled', $deletedOccurrence['status'] ?? null);
+        $this->assertSame('2026-07-10', $deletedOccurrence['occurrence_date'] ?? null);
+    }
+
     public function test_group_event_recurrence_edit_is_applied_even_if_occurrence_scope_is_sent(): void
     {
         $fixture = $this->createCalendarFixture();

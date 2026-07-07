@@ -37,6 +37,13 @@ class RecurrenceExpansionService
                             ->where('is_recurring', true)
                             ->whereNull('recurrence_parent_id')
                             ->where('starts_at', '<=', $rangeEnd);
+                    })
+                    ->orWhere(function ($subQuery) use ($rangeStart, $rangeEnd) {
+                        $subQuery
+                            ->whereNotNull('recurrence_parent_id')
+                            ->whereNotNull('recurrence_original_starts_at')
+                            ->where('recurrence_original_starts_at', '<=', $rangeEnd)
+                            ->where('recurrence_original_starts_at', '>=', $rangeStart);
                     });
             })
             ->orderBy('starts_at')
@@ -103,8 +110,19 @@ class RecurrenceExpansionService
             ->filter(fn (Event $override) => $override->recurrence_original_starts_at)
             ->keyBy(fn (Event $override) => $override->recurrence_original_starts_at->copy()->utc()->format('Y-m-d\TH:i:s'));
 
-        return $occurrences
-            ->map(function (Carbon $occurrenceDate) use ($root, $overrideMap, $includeCancelled, $branch, $disabledDateContext) {
+        $occurrenceStartKeys = $occurrences
+            ->map(function (Carbon $occurrenceDate) use ($root) {
+                $occurrenceStartsAt = $this->combineOccurrenceDate($root->starts_at, $occurrenceDate);
+
+                return $occurrenceStartsAt?->copy()->utc()->format('Y-m-d\TH:i:s');
+            })
+            ->filter()
+            ->values();
+
+        $occurrenceStartKeyLookup = array_fill_keys($occurrenceStartKeys->all(), true);
+
+        $expandedOccurrences = $occurrences
+            ->map(function (Carbon $occurrenceDate) use ($root, $overrideMap, $includeCancelled, $branch, $disabledDateContext, $rangeStart, $rangeEnd) {
                 $occurrenceStartsAt = $this->combineOccurrenceDate($root->starts_at, $occurrenceDate);
                 $occurrenceEndsAt = $this->combineOccurrenceDate($root->ends_at, $occurrenceDate);
 
@@ -115,6 +133,10 @@ class RecurrenceExpansionService
                 $override = $overrideMap->get($occurrenceStartsAt->copy()->utc()->format('Y-m-d\TH:i:s'));
 
                 if ($override) {
+                    if (! $this->windowOverlapsRange($override->starts_at, $override->ends_at, $rangeStart, $rangeEnd)) {
+                        return null;
+                    }
+
                     if (! $includeCancelled && $override->status === 'cancelled') {
                         return null;
                     }
@@ -134,6 +156,10 @@ class RecurrenceExpansionService
                         $occurrenceStartsAt,
                         $occurrenceEndsAt,
                     );
+                }
+
+                if (! $this->windowOverlapsRange($occurrenceStartsAt, $occurrenceEndsAt, $rangeStart, $rangeEnd)) {
+                    return null;
                 }
 
                 if (! $includeCancelled && $root->status === 'cancelled') {
@@ -157,6 +183,45 @@ class RecurrenceExpansionService
                 );
             })
             ->filter()
+            ->values();
+
+        $detachedOverridesInRange = $overrideMap
+            ->filter(fn (Event $override, string $key) => ! isset($occurrenceStartKeyLookup[$key]))
+            ->map(function (Event $override) use ($includeCancelled, $branch, $disabledDateContext, $root, $rangeStart, $rangeEnd) {
+                if (! $this->windowOverlapsRange($override->starts_at, $override->ends_at, $rangeStart, $rangeEnd)) {
+                    return null;
+                }
+
+                if (! $includeCancelled && $override->status === 'cancelled') {
+                    return null;
+                }
+
+                if ($branch && ! $this->occurrenceWindowIsAllowed($branch, $override->starts_at, $override->ends_at, $disabledDateContext)) {
+                    return null;
+                }
+
+                return $this->makeOccurrencePayload(
+                    $override,
+                    $override->starts_at?->copy(),
+                    $override->ends_at?->copy(),
+                    true,
+                    true,
+                    $override->status === 'cancelled',
+                    $root,
+                    $override->recurrence_original_starts_at?->copy(),
+                    $override->recurrence_original_ends_at?->copy(),
+                );
+            })
+            ->filter()
+            ->values();
+
+        return $expandedOccurrences
+            ->merge($detachedOverridesInRange)
+            ->sortBy(fn (array $occurrence) => sprintf(
+                '%s|%s',
+                $occurrence['occurrence_starts_at']?->copy()->utc()->format('Y-m-d\TH:i:s') ?? '0000-00-00T00:00:00',
+                (string) ($occurrence['occurrence_id'] ?? ''),
+            ))
             ->values();
     }
 
@@ -209,6 +274,15 @@ class RecurrenceExpansionService
         }
 
         return $event->starts_at->lte($rangeEnd) && $event->ends_at->gte($rangeStart);
+    }
+
+    private function windowOverlapsRange(?Carbon $startsAt, ?Carbon $endsAt, Carbon $rangeStart, Carbon $rangeEnd): bool
+    {
+        if (! $startsAt || ! $endsAt) {
+            return false;
+        }
+
+        return $startsAt->lte($rangeEnd) && $endsAt->gte($rangeStart);
     }
 
     private function occurrenceWindowIsAllowed(Branch $branch, ?Carbon $startsAt, ?Carbon $endsAt, array $disabledDateContext): bool
@@ -278,34 +352,44 @@ class RecurrenceExpansionService
     {
         $year = (int) substr($date, 0, 4);
 
-        return array_key_exists($date, $this->holidayMapForYear($year));
+        return array_key_exists($date, $this->stateHolidayMapForYear($year));
     }
 
-    private function holidayMapForYear(int $year): array
+    private function stateHolidayMapForYear(int $year): array
     {
-        $fixed = [
-            sprintf('%d-01-01', $year) => 'Den vzniku Slovenskej republiky',
-            sprintf('%d-01-06', $year) => 'Zjavenie Pana',
-            sprintf('%d-05-01', $year) => 'Sviatok prace',
-            sprintf('%d-05-08', $year) => 'Den vitazstva nad fasizmom',
-            sprintf('%d-07-05', $year) => 'Sviatok svateho Cyrila a Metoda',
-            sprintf('%d-08-29', $year) => 'Vyrocie SNP',
-            sprintf('%d-09-01', $year) => 'Den Ustavy Slovenskej republiky',
-            sprintf('%d-09-15', $year) => 'Sedembolestna Panna Maria',
-            sprintf('%d-11-01', $year) => 'Sviatok vsetkych svatych',
-            sprintf('%d-11-17', $year) => 'Den boja za slobodu a demokraciu',
-            sprintf('%d-12-24', $year) => 'Stedry den',
-            sprintf('%d-12-25', $year) => 'Prvy sviatok vianocny',
-            sprintf('%d-12-26', $year) => 'Druhy sviatok vianocny',
-        ];
+        $map = collect($this->holidayDefinitionsForYear($year))
+            ->filter(fn (array $holiday): bool => (bool) ($holiday['is_state_holiday'] ?? false))
+            ->mapWithKeys(fn (array $holiday): array => [
+                $holiday['date'] => $holiday['title'],
+            ])
+            ->all();
 
+        ksort($map);
+
+        return $map;
+    }
+
+    private function holidayDefinitionsForYear(int $year): array
+    {
         $easterSunday = Carbon::createFromTimestamp((int) easter_date($year))->setTimezone(config('app.timezone'));
 
-        $fixed[$easterSunday->copy()->subDays(2)->toDateString()] = 'Velky piatok';
-        $fixed[$easterSunday->copy()->addDay()->toDateString()] = 'Velkonocny pondelok';
-
-        ksort($fixed);
-
-        return $fixed;
+        return [
+            ['date' => sprintf('%d-01-01', $year), 'title' => 'Den vzniku Slovenskej republiky', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-01-06', $year), 'title' => 'Zjavenie Pana', 'is_state_holiday' => false],
+            ['date' => $easterSunday->copy()->subDays(2)->toDateString(), 'title' => 'Velky piatok', 'is_state_holiday' => false],
+            ['date' => $easterSunday->copy()->addDay()->toDateString(), 'title' => 'Velkonocny pondelok', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-05-01', $year), 'title' => 'Sviatok prace', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-05-08', $year), 'title' => 'Den vitazstva nad fasizmom', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-07-05', $year), 'title' => 'Sviatok svateho Cyrila a Metoda', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-08-29', $year), 'title' => 'Vyrocie SNP', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-09-01', $year), 'title' => 'Den Ustavy Slovenskej republiky', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-10-28', $year), 'title' => 'Den vzniku samostatneho cesko-slovenskeho statu (nie je dnom pracovneho pokoja)', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-11-17', $year), 'title' => 'Den boja za slobodu a demokraciu', 'is_state_holiday' => true],
+            ['date' => sprintf('%d-09-15', $year), 'title' => 'Sedembolestna Panna Maria', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-11-01', $year), 'title' => 'Sviatok vsetkych svatych', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-12-24', $year), 'title' => 'Stedry den', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-12-25', $year), 'title' => 'Prvy sviatok vianocny', 'is_state_holiday' => false],
+            ['date' => sprintf('%d-12-26', $year), 'title' => 'Druhy sviatok vianocny', 'is_state_holiday' => false],
+        ];
     }
 }

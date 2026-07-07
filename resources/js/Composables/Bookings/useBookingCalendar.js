@@ -1544,6 +1544,7 @@ export function useBookingCalendar(props, options = {}) {
 
         closeRuleDialog: dialogs.closeRuleDialog,
         closeRuleDialogSafely: rules.closeRuleDialogSafely,
+        cancelPendingRuleReschedule: rules.cancelPendingRuleReschedule,
         closeGroupEventDialog: dialogs.closeGroupEventDialog,
         deleteCurrentRule: rules.deleteCurrentRule,
         deleteCurrentRuleByScope: rules.deleteCurrentRuleByScope,

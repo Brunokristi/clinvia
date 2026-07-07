@@ -216,11 +216,14 @@ class BranchCapacityEventBridgeController extends Controller
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
             'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'occurrence_starts_at' => ['nullable', 'date'],
             'from_date' => ['nullable', 'date'],
             'date' => ['nullable', 'date'],
         ]);
 
-        $occurrenceDateRaw = $validated['from_date'] ?? $validated['date'] ?? $event->starts_at?->toDateString();
+        $occurrenceDateRaw = filled($validated['occurrence_starts_at'] ?? null)
+            ? Carbon::parse($validated['occurrence_starts_at'])->toDateString()
+            : ($validated['from_date'] ?? $validated['date'] ?? $event->starts_at?->toDateString());
 
         $rescheduleEventAction->execute(
             event: $event,
@@ -248,6 +251,7 @@ class BranchCapacityEventBridgeController extends Controller
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_email' => ['nullable', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
+            'patient_birth_number' => ['nullable', 'string', 'max:255'],
             'occurrence_starts_at' => ['nullable', 'date'],
             'occurrence_ends_at' => ['nullable', 'date', 'after:occurrence_starts_at'],
             'occurrence_date' => ['nullable', 'date'],
@@ -263,6 +267,7 @@ class BranchCapacityEventBridgeController extends Controller
             'participant_name' => $validated['patient_name'],
             'participant_email' => $validated['patient_email'] ?? null,
             'participant_phone' => $validated['patient_phone'] ?? null,
+            'participant_birth_number' => $validated['patient_birth_number'] ?? null,
             'occurrence_starts_at' => $validated['occurrence_starts_at'] ?? null,
             'occurrence_ends_at' => $validated['occurrence_ends_at'] ?? null,
             'occurrence_date' => $validated['occurrence_date'] ?? null,
@@ -270,6 +275,32 @@ class BranchCapacityEventBridgeController extends Controller
         ]);
 
         return back()->with('success', 'Pacient bol pridany do skupinoveho terminu.');
+    }
+
+    public function destroyBooking(
+        Request $request,
+        Branch $branch,
+        int $capacityWindow,
+        int $booking,
+        RemoveGroupEventParticipantAction $removeGroupEventParticipantAction,
+    ): RedirectResponse {
+        $this->authorizeAccess($request, $branch);
+
+        $event = $this->resolveGroupEvent($branch, $capacityWindow);
+
+        $participant = $event->participants()
+            ->whereKey($booking)
+            ->first();
+
+        if (! $participant) {
+            throw ValidationException::withMessages([
+                'booking' => 'Pacienta sa nepodarilo najst v tomto skupinovom termine.',
+            ]);
+        }
+
+        $removeGroupEventParticipantAction->execute($event, $participant);
+
+        return back()->with('success', 'Pacient bol odstraneny zo skupinoveho terminu.');
     }
 
     public function destroy(

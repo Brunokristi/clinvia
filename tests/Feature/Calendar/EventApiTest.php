@@ -63,6 +63,35 @@ class EventApiTest extends TestCase
         ]);
     }
 
+    public function test_availability_rule_duration_is_not_constrained_by_service_duration(): void
+    {
+        $fixture = $this->createCalendarFixture();
+
+        $response = $this->actingAs($fixture['user'])->postJson(route('admin.branches.events.store', [
+            $fixture['branch']->id,
+        ]), [
+            'type' => 'availability_rule',
+            'status' => 'active',
+            'starts_at' => '2026-07-20 09:00:00',
+            'ends_at' => '2026-07-20 09:10:00',
+            'services' => [
+                [
+                    'service_id' => $fixture['service']->id,
+                    'duration_minutes_snapshot' => 30,
+                    'price_snapshot' => 30,
+                    'sort_order' => 0,
+                    'quantity' => 1,
+                ],
+            ],
+            'availability_rule_detail' => [
+                'slot_interval_minutes' => 10,
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.type', 'availability_rule');
+    }
+
     public function test_can_add_and_remove_group_event_participant_via_unified_api(): void
     {
         Queue::fake();

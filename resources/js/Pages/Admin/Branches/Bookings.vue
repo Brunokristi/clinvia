@@ -267,6 +267,7 @@ const {
     openRuleInUnifiedEditor,
 
     closeRuleDialogSafely,
+    cancelPendingRuleReschedule,
     saveRules,
     deleteCurrentRuleByScope,
     duplicateCurrentRule,
@@ -1717,6 +1718,7 @@ onBeforeUnmount(() => {
             mode="reschedule"
             subject-label="voľný čas"
             @select="saveRules"
+            @cancel="cancelPendingRuleReschedule"
         />
 
         <OccurrenceScopeDialog

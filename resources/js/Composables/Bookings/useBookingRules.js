@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
@@ -80,6 +80,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         },
     ];
 
+    const pendingRuleReschedule = ref(null);
+
     const emptyRule = () => ({
         id: null,
 
@@ -124,6 +126,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
     const mapRuleFromBackend = (rule) => ({
         id: getRuleId(rule),
+        series_uuid: rule.series_uuid ?? null,
 
         date: formatDate(rule.date ?? rule.starts_on ?? rule.start_date),
         starts_at: formatTime(rule.starts_at),
@@ -334,6 +337,25 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
     const isBlockedDate = (dateString) => blockedDateSet.value.has(dateString);
 
+    const isRuleOccurrenceInsideOpeningHours = (dateString, rule) => {
+        if (typeof isDateRangeInsideOpeningHours !== 'function') {
+            return true;
+        }
+
+        if (!dateString || !rule?.starts_at || !rule?.ends_at) {
+            return false;
+        }
+
+        const start = new Date(`${dateString}T${rule.starts_at}:00`);
+        const end = new Date(`${dateString}T${rule.ends_at}:00`);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return false;
+        }
+
+        return isDateRangeInsideOpeningHours(start, end);
+    };
+
     const getRuleWeekdayCodes = (rule) => {
         if (!Array.isArray(rule?.repeat_weekdays)) {
             return [];
@@ -376,6 +398,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 && intervalMatches
                 && !excludedDates.includes(candidateDateString)
                 && !isBlockedDate(candidateDateString)
+                && isRuleOccurrenceInsideOpeningHours(candidateDateString, rule)
             ) {
                 producedOccurrences += 1;
 
@@ -454,6 +477,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 && startDate <= maxEndDate
                 && !excludedDates.includes(rule.date)
                 && !isBlockedDate(rule.date)
+                && isRuleOccurrenceInsideOpeningHours(rule.date, rule)
             ) {
                 occurrences.push(rule.date);
             }
@@ -481,6 +505,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             if (
                 !excludedDates.includes(occurrenceDateString)
                 && !isBlockedDate(occurrenceDateString)
+                && isRuleOccurrenceInsideOpeningHours(occurrenceDateString, rule)
             ) {
                 producedOccurrences += 1;
 
@@ -637,6 +662,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             }
 
             const previousSeriesRule = cloneRule(originalRule);
+            const currentSeriesUuid = rule.series_uuid ?? originalRule?.series_uuid ?? null;
 
             previousSeriesRule.repeat_ends_on = subtractOneDay(normalizedOccurrenceDate);
             previousSeriesRule.excluded_dates = (previousSeriesRule.excluded_dates ?? [])
@@ -645,14 +671,24 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             const followingSeriesRule = {
                 ...cloneRule(rule),
                 id: null,
+                series_uuid: currentSeriesUuid,
                 excluded_dates: (rule.excluded_dates ?? [])
                     .filter((date) => String(date).slice(0, 10) >= normalizedOccurrenceDate),
             };
 
-            const nextRules = [...ruleForm.rules];
+            const nextRules = ruleForm.rules.filter((entry, entryIndex) => {
+                if (entryIndex === ruleIndex) {
+                    return false;
+                }
 
-            nextRules[ruleIndex] = previousSeriesRule;
-            nextRules.push(followingSeriesRule);
+                if (!currentSeriesUuid || entry.series_uuid !== currentSeriesUuid) {
+                    return true;
+                }
+
+                return normalizeDateOnly(entry.date) < normalizedOccurrenceDate;
+            });
+
+            nextRules.push(previousSeriesRule, followingSeriesRule);
 
             return nextRules;
         }
@@ -661,6 +697,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const restorePendingRuleReschedule = () => {
+        pendingRuleReschedule.value = null;
+
         if (selectedRuleOccurrence.value?.originalRule && currentRule.value) {
             Object.assign(currentRule.value, cloneRule(selectedRuleOccurrence.value.originalRule));
         }
@@ -690,6 +728,37 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         const rule = currentRule.value;
         const occurrenceDate = normalizedOptions.occurrence_date ?? getSelectedOccurrenceDate();
+
+        if (rescheduleScope && pendingRuleReschedule.value?.ruleId) {
+            const pending = pendingRuleReschedule.value;
+
+            router.post(route('branches.booking.rules.reschedule', [
+                props.branch.id,
+                pending.ruleId,
+            ]), {
+                occurrence_date: pending.occurrenceDate,
+                date: pending.nextRule.date,
+                starts_at: pending.nextRule.starts_at,
+                ends_at: pending.nextRule.ends_at,
+                reschedule_scope: rescheduleScope,
+            }, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    pendingRuleReschedule.value = null;
+                    ruleRescheduleScopeDialogVisible.value = false;
+                    showSuccess('Voľný čas bol presunutý.');
+                    reloadRuleStateSoon();
+                },
+                onError: (errors) => {
+                    pendingRuleReschedule.value = null;
+                    ruleRescheduleScopeDialogVisible.value = false;
+                    showError('Voľný čas sa nepodarilo presunúť.', errors);
+                },
+            });
+
+            return;
+        }
 
         if (updateScope && rule?.id && occurrenceDate) {
             const previousRules = ruleForm.rules.map((entry) => cloneRule(entry));
@@ -810,26 +879,22 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 ?? changeInfo.event.extendedProps.occurrenceDate
                 ?? previousRule.date;
 
-            router.post(route('branches.booking.rules.reschedule', [
-                props.branch.id,
-                rule.id,
-            ]), {
-                occurrence_date: occurrenceDate,
-                date: nextRule.date,
-                starts_at: nextRule.starts_at,
-                ends_at: nextRule.ends_at,
-                reschedule_scope: 'occurrence',
-            }, {
-                preserveScroll: true,
-                preserveState: true,
-                onSuccess: () => {
-                    showSuccess('Voľný čas bol presunutý.');
-                    reloadRuleStateSoon();
-                },
-                onError: (errors) => {
-                    showError('Voľný čas sa nepodarilo presunúť.', errors);
-                },
-            });
+            selectedRuleIndex.value = index;
+            selectedRuleOccurrence.value = {
+                ruleIndex: index,
+                occurrenceDate,
+                occurrenceOriginalDate: occurrenceDate,
+                isRepeatedOccurrence: true,
+                originalRule: cloneRule(previousRule),
+            };
+
+            pendingRuleReschedule.value = {
+                ruleId: rule.id,
+                occurrenceDate,
+                nextRule,
+            };
+
+            ruleRescheduleScopeDialogVisible.value = true;
 
             return;
         }
@@ -971,6 +1036,11 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         deleteCurrentRuleEverywhere();
     };
 
+    const cancelPendingRuleReschedule = () => {
+        pendingRuleReschedule.value = null;
+        ruleRescheduleScopeDialogVisible.value = false;
+    };
+
     return {
         currentRule,
         emptyRule,
@@ -988,6 +1058,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         deleteCurrentRuleFromNowOn,
         deleteCurrentRuleOccurrence,
         duplicateCurrentRule,
+        cancelPendingRuleReschedule,
         saveRules,
         updateRuleFromDrop,
     };

@@ -38,11 +38,22 @@ class EventMutationService
 
         $this->validatePayload($type, $payload);
 
+        $startsAt = isset($payload['starts_at']) ? Carbon::parse($payload['starts_at']) : null;
+        $endsAt = isset($payload['ends_at']) ? Carbon::parse($payload['ends_at']) : null;
+
+        if ($startsAt && $endsAt && $this->shouldEnforceServiceDuration($type)) {
+            $this->validateWindowMeetsServiceDuration(
+                $startsAt,
+                $endsAt,
+                $this->resolveRequiredServiceDurationMinutes(null, $payload),
+            );
+        }
+
         if (isset($payload['starts_at']) && isset($payload['ends_at'])) {
             $this->validateEventWindowIsAllowed(
                 $branch,
-                Carbon::parse($payload['starts_at']),
-                Carbon::parse($payload['ends_at']),
+                $startsAt,
+                $endsAt,
             );
         }
 
@@ -282,6 +293,17 @@ class EventMutationService
     public function updateServices(Event $event, array $services, ?int $actorId = null): Event
     {
         $updated = DB::transaction(function () use ($event, $services, $actorId): Event {
+            $startsAt = $event->starts_at;
+            $endsAt = $event->ends_at;
+
+            if ($startsAt && $endsAt && $this->shouldEnforceServiceDuration($event->type)) {
+                $this->validateWindowMeetsServiceDuration(
+                    $startsAt,
+                    $endsAt,
+                    $this->resolveDurationFromServicePayload($services),
+                );
+            }
+
             $this->syncServices($event, $services);
             $event->updated_by = $actorId;
             $event->save();
@@ -341,6 +363,7 @@ class EventMutationService
                 'participant_name' => $payload['participant_name'] ?? null,
                 'participant_email' => $payload['participant_email'] ?? null,
                 'participant_phone' => $payload['participant_phone'] ?? null,
+                'participant_birth_number' => $payload['participant_birth_number'] ?? null,
             ]);
 
             $event->groupDetail->increment('reserved_places');
@@ -524,18 +547,31 @@ class EventMutationService
 
     private function applyPayloadToEvent(Event $event, array $payload, ?int $actorId): Event
     {
+        $startsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at'])
+            ? Carbon::parse($payload['starts_at'])
+            : $event->starts_at;
+
+        $endsAt = Arr::exists($payload, 'ends_at') && filled($payload['ends_at'])
+            ? Carbon::parse($payload['ends_at'])
+            : $event->ends_at;
+
+        if (
+            (Arr::exists($payload, 'starts_at') || Arr::exists($payload, 'ends_at') || Arr::exists($payload, 'services'))
+            && $startsAt
+            && $endsAt
+            && $this->shouldEnforceServiceDuration($event->type)
+        ) {
+            $this->validateWindowMeetsServiceDuration(
+                $startsAt,
+                $endsAt,
+                $this->resolveRequiredServiceDurationMinutes($event, $payload),
+            );
+        }
+
         if (Arr::exists($payload, 'starts_at') || Arr::exists($payload, 'ends_at')) {
             $branch = Branch::query()->find($event->branch_id);
 
             if ($branch) {
-                $startsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at'])
-                    ? Carbon::parse($payload['starts_at'])
-                    : $event->starts_at;
-
-                $endsAt = Arr::exists($payload, 'ends_at') && filled($payload['ends_at'])
-                    ? Carbon::parse($payload['ends_at'])
-                    : $event->ends_at;
-
                 if ($startsAt && $endsAt) {
                     $this->validateEventWindowIsAllowed($branch, $startsAt, $endsAt);
                 }
@@ -630,10 +666,12 @@ class EventMutationService
         }
 
         if ($event->type === EventType::GroupEvent) {
+            $existingGroupDetail = $event->groupDetail()->first();
+
             $detailPayload = array_merge([
-                'capacity' => 1,
-                'reserved_places' => 0,
-                'group_status' => $event->status,
+                'capacity' => $existingGroupDetail?->capacity ?? 1,
+                'reserved_places' => $existingGroupDetail?->reserved_places ?? 0,
+                'group_status' => $existingGroupDetail?->group_status ?? $event->status,
             ], $payload['group_detail'] ?? []);
 
             $event->groupDetail()->updateOrCreate(
@@ -799,6 +837,80 @@ class EventMutationService
         throw ValidationException::withMessages([
             'starts_at' => 'Termín musí byť v rámci otváracích hodín.',
         ]);
+    }
+
+    private function shouldEnforceServiceDuration(EventType $type): bool
+    {
+        return in_array($type, [EventType::Booking, EventType::GroupEvent], true);
+    }
+
+    private function validateWindowMeetsServiceDuration(Carbon $startsAt, Carbon $endsAt, int $requiredMinutes): void
+    {
+        if ($requiredMinutes <= 0) {
+            return;
+        }
+
+        $actualMinutes = max(0, $startsAt->diffInMinutes($endsAt, false));
+
+        if ($actualMinutes >= $requiredMinutes) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'ends_at' => "Trvanie terminu nemoze byt kratsie ako trvanie sluzieb ({$requiredMinutes} min).",
+        ]);
+    }
+
+    private function resolveRequiredServiceDurationMinutes(?Event $event, array $payload): int
+    {
+        if (Arr::exists($payload, 'services')) {
+            return $this->resolveDurationFromServicePayload($payload['services'] ?? []);
+        }
+
+        if (! $event) {
+            return 0;
+        }
+
+        $event->loadMissing('services');
+
+        return (int) $event->services
+            ->sum(function ($service): int {
+                $durationMinutes = (int) ($service->pivot?->duration_minutes_snapshot ?? $service->duration_minutes ?? 0);
+                $quantity = max(1, (int) ($service->pivot?->quantity ?? 1));
+
+                return max(0, $durationMinutes) * $quantity;
+            });
+    }
+
+    private function resolveDurationFromServicePayload(array $services): int
+    {
+        $serviceItems = collect($services)
+            ->filter(fn ($item) => filled($item['service_id'] ?? null))
+            ->values();
+
+        if ($serviceItems->isEmpty()) {
+            return 0;
+        }
+
+        $serviceIds = $serviceItems
+            ->pluck('service_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $serviceMap = Service::query()
+            ->whereIn('id', $serviceIds)
+            ->get()
+            ->keyBy('id');
+
+        return (int) $serviceItems
+            ->sum(function ($item) use ($serviceMap): int {
+                $serviceId = (int) ($item['service_id'] ?? 0);
+                $durationMinutes = (int) ($item['duration_minutes_snapshot'] ?? $serviceMap[$serviceId]?->duration_minutes ?? 0);
+                $quantity = max(1, (int) ($item['quantity'] ?? 1));
+
+                return max(0, $durationMinutes) * $quantity;
+            });
     }
 
     private function resolveScopedMutationEvent(Event $event, string $scope): Event

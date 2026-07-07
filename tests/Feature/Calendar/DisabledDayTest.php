@@ -309,6 +309,66 @@ class DisabledDayTest extends TestCase
         ]);
     }
 
+    public function test_unified_availability_rule_creation_is_blocked_on_manually_disabled_day(): void
+    {
+        $company = Company::query()->create([
+            'legal_name' => 'Clinvia Clinic',
+            'slug' => 'clinvia-clinic-rule-disabled-day',
+            'is_active' => true,
+        ]);
+
+        $branch = Branch::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Main Branch',
+            'slug' => 'main-branch-rule-disabled-day',
+            'type' => 'clinic',
+            'is_active' => true,
+        ]);
+
+        $service = Service::query()->create([
+            'company_id' => $company->id,
+            'branch_id' => $branch->id,
+            'name' => 'Consultation',
+            'slug' => 'consultation-rule-disabled-day',
+            'is_bookable' => true,
+            'duration_minutes' => 30,
+            'capacity' => 1,
+            'buffer_before_minutes' => 0,
+            'buffer_after_minutes' => 0,
+            'booking_type' => 'individual',
+            'public_booking_type' => 'immediate_booking',
+            'is_active' => true,
+        ]);
+
+        BranchDisabledDay::query()->create([
+            'branch_id' => $branch->id,
+            'created_by' => null,
+            'date' => '2026-07-15',
+            'title' => 'Closed Day',
+            'type' => 'closed',
+            'reason' => null,
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(CreateEventAction::class)->execute($branch, [
+            'type' => EventType::AvailabilityRule->value,
+            'status' => 'confirmed',
+            'starts_at' => '2026-07-15 10:00:00',
+            'ends_at' => '2026-07-15 10:15:00',
+            'services' => [
+                [
+                    'service_id' => $service->id,
+                    'sort_order' => 0,
+                    'quantity' => 1,
+                ],
+            ],
+            'availability_rule_detail' => [
+                'slot_interval_minutes' => 15,
+            ],
+        ]);
+    }
+
     public function test_disabled_day_is_branch_specific(): void
     {
         $user = User::query()->create([

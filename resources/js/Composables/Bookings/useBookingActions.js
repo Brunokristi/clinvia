@@ -158,8 +158,35 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
     const cancelBooking = (booking, options = {}) => {
         const eventId = booking?.calendar_event_id ?? `booking-${getBookingRecordId(booking)}`;
+        const capacityWindowId = booking?.capacity_window_id ?? null;
 
         hideCalendarEventId?.(eventId);
+
+        if (capacityWindowId) {
+            router.delete(route('branches.booking.capacity-windows.bookings.destroy', {
+                branch: props.branch.id,
+                capacityWindow: capacityWindowId,
+                booking: getBookingRecordId(booking),
+            }), {
+                data: {
+                    notify_patient: true,
+                    date: options.date ?? booking.occurrence_date ?? booking.starts_at ?? null,
+                },
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    closeBookingDialogs();
+                    showSuccess('Pacient bol odstránený zo skupinového termínu.');
+                    reloadCalendarDataInternal();
+                },
+                onError: (errors) => {
+                    restoreCalendarEventId?.(eventId);
+                    showError('Pacienta sa nepodarilo odstrániť zo skupinového termínu.', errors);
+                },
+            });
+
+            return;
+        }
 
         router.post(route('branches.booking.bookings.cancel', [
             props.branch.id,

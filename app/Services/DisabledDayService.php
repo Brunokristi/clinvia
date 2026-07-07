@@ -123,7 +123,7 @@ class DisabledDayService
 		$normalizedDate = $this->normalizeDate($date);
 		$year = (int) substr($normalizedDate, 0, 4);
 
-		return array_key_exists($normalizedDate, $this->holidayMapForYear($year));
+		return array_key_exists($normalizedDate, $this->stateHolidayMapForYear($year));
 	}
 
 	private function getHolidayDaysForRange(Carbon $rangeStart, Carbon $rangeEnd): Collection
@@ -134,7 +134,7 @@ class DisabledDayService
 		$holidays = collect();
 
 		for ($year = $startYear; $year <= $endYear; $year++) {
-			foreach ($this->holidayMapForYear($year) as $date => $title) {
+			foreach ($this->stateHolidayMapForYear($year) as $date => $title) {
 				if ($date < $rangeStart->toDateString() || $date > $rangeEnd->toDateString()) {
 					continue;
 				}
@@ -149,31 +149,41 @@ class DisabledDayService
 		return $holidays->sortBy('date')->values();
 	}
 
-	private function holidayMapForYear(int $year): array
+	private function stateHolidayMapForYear(int $year): array
 	{
-		$fixed = [
-			sprintf('%d-01-01', $year) => 'Den vzniku Slovenskej republiky',
-			sprintf('%d-01-06', $year) => 'Zjavenie Pana',
-			sprintf('%d-05-01', $year) => 'Sviatok prace',
-			sprintf('%d-05-08', $year) => 'Den vitazstva nad fasizmom',
-			sprintf('%d-07-05', $year) => 'Sviatok svateho Cyrila a Metoda',
-			sprintf('%d-08-29', $year) => 'Vyrocie SNP',
-			sprintf('%d-09-01', $year) => 'Den Ustavy Slovenskej republiky',
-			sprintf('%d-09-15', $year) => 'Sedembolestna Panna Maria',
-			sprintf('%d-11-01', $year) => 'Sviatok vsetkych svatych',
-			sprintf('%d-11-17', $year) => 'Den boja za slobodu a demokraciu',
-			sprintf('%d-12-24', $year) => 'Stedry den',
-			sprintf('%d-12-25', $year) => 'Prvy sviatok vianocny',
-			sprintf('%d-12-26', $year) => 'Druhy sviatok vianocny',
-		];
+		$map = collect($this->holidayDefinitionsForYear($year))
+			->filter(fn (array $holiday): bool => (bool) ($holiday['is_state_holiday'] ?? false))
+			->mapWithKeys(fn (array $holiday): array => [
+				$holiday['date'] => $holiday['title'],
+			])
+			->all();
 
+		ksort($map);
+
+		return $map;
+	}
+
+	private function holidayDefinitionsForYear(int $year): array
+	{
 		$easterSunday = Carbon::createFromTimestamp((int) easter_date($year))->setTimezone(config('app.timezone'));
 
-		$fixed[$easterSunday->copy()->subDays(2)->toDateString()] = 'Velky piatok';
-		$fixed[$easterSunday->copy()->addDay()->toDateString()] = 'Velkonocny pondelok';
-
-		ksort($fixed);
-
-		return $fixed;
+		return [
+			['date' => sprintf('%d-01-01', $year), 'title' => 'Den vzniku Slovenskej republiky', 'is_state_holiday' => true],
+			['date' => sprintf('%d-01-06', $year), 'title' => 'Zjavenie Pana', 'is_state_holiday' => false],
+			['date' => $easterSunday->copy()->subDays(2)->toDateString(), 'title' => 'Velky piatok', 'is_state_holiday' => false],
+			['date' => $easterSunday->copy()->addDay()->toDateString(), 'title' => 'Velkonocny pondelok', 'is_state_holiday' => false],
+			['date' => sprintf('%d-05-01', $year), 'title' => 'Sviatok prace', 'is_state_holiday' => false],
+			['date' => sprintf('%d-05-08', $year), 'title' => 'Den vitazstva nad fasizmom', 'is_state_holiday' => false],
+			['date' => sprintf('%d-07-05', $year), 'title' => 'Sviatok svateho Cyrila a Metoda', 'is_state_holiday' => true],
+			['date' => sprintf('%d-08-29', $year), 'title' => 'Vyrocie SNP', 'is_state_holiday' => true],
+			['date' => sprintf('%d-09-01', $year), 'title' => 'Den Ustavy Slovenskej republiky', 'is_state_holiday' => true],
+			['date' => sprintf('%d-10-28', $year), 'title' => 'Den vzniku samostatneho cesko-slovenskeho statu (nie je dnom pracovneho pokoja)', 'is_state_holiday' => true],
+			['date' => sprintf('%d-11-17', $year), 'title' => 'Den boja za slobodu a demokraciu', 'is_state_holiday' => true],
+			['date' => sprintf('%d-09-15', $year), 'title' => 'Sedembolestna Panna Maria', 'is_state_holiday' => false],
+			['date' => sprintf('%d-11-01', $year), 'title' => 'Sviatok vsetkych svatych', 'is_state_holiday' => false],
+			['date' => sprintf('%d-12-24', $year), 'title' => 'Stedry den', 'is_state_holiday' => false],
+			['date' => sprintf('%d-12-25', $year), 'title' => 'Prvy sviatok vianocny', 'is_state_holiday' => false],
+			['date' => sprintf('%d-12-26', $year), 'title' => 'Druhy sviatok vianocny', 'is_state_holiday' => false],
+		];
 	}
 }

@@ -132,6 +132,25 @@ export function useCapacityWindowActions({
         return stringValue.slice(0, 5);
     };
 
+    const getOccurrenceReferenceDate = (capacityWindow) => {
+        return getDateOnly(
+            capacityWindow?.occurrence_original_date
+            ?? capacityWindow?.occurrence_date
+            ?? capacityWindow?.date
+            ?? getExistingStart(capacityWindow),
+        );
+    };
+
+    const getOccurrenceReferenceDateFromChangeInfo = (changeInfo, capacityWindow) => {
+        return getDateOnly(changeInfo?.oldEvent?.start) ?? getOccurrenceReferenceDate(capacityWindow);
+    };
+
+    const getOccurrenceReferenceDateTime = (capacityWindow) => {
+        return capacityWindow?.occurrence_starts_at
+            ?? getExistingStart(capacityWindow)
+            ?? null;
+    };
+
     const toDateTimeString = (date, time) => {
         if (!date || !time) {
             return null;
@@ -510,7 +529,7 @@ export function useCapacityWindowActions({
                 starts_at: nextStartsAt,
                 ends_at: nextEndsAt,
                 reschedule_scope: updateScope,
-                from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
+                from_date: getOccurrenceReferenceDate(groupEvent),
                 notify_patient: true,
             }, {
                 preserveScroll: true,
@@ -532,7 +551,7 @@ export function useCapacityWindowActions({
             capacity: groupEvent.capacity ?? groupEvent.bookable_places ?? 1,
             public_booking_type: groupEvent.public_booking_type ?? 'immediate_booking',
             update_scope: updateScope,
-            from_date: groupEvent.date ?? getDateOnly(getExistingStart(groupEvent)),
+            from_date: getOccurrenceReferenceDate(groupEvent),
             starts_at: nextStartsAt,
             ends_at: nextEndsAt,
             ...(shouldSyncPatients
@@ -598,6 +617,10 @@ export function useCapacityWindowActions({
             target_is_recurring: Boolean(capacityWindow.series_uuid || capacityWindow.is_recurring || recurrence),
             target_original_recurrence: recurrence,
             date,
+            occurrence_date: capacityWindow.occurrence_date ?? date,
+            occurrence_original_date: capacityWindow.occurrence_original_date
+                ?? capacityWindow.occurrence_date
+                ?? date,
             starts_at: startsAt,
             ends_at: endsAt,
             original_starts_at: startsAt,
@@ -661,7 +684,8 @@ export function useCapacityWindowActions({
             starts_at: data.starts_at,
             ends_at: data.ends_at,
             reschedule_scope: data.reschedule_scope ?? 'occurrence',
-            from_date: data.date ?? capacityWindow.date ?? getDateOnly(getExistingStart(capacityWindow)),
+            occurrence_starts_at: data.occurrence_starts_at ?? getOccurrenceReferenceDateTime(capacityWindow),
+            from_date: data.from_date ?? getOccurrenceReferenceDate(capacityWindow),
             notify_patient: true,
         }, {
             preserveScroll: true,
@@ -698,6 +722,8 @@ export function useCapacityWindowActions({
 
         const pendingReschedule = {
             date: getDateOnly(changeInfo.event.start),
+            from_date: getOccurrenceReferenceDateFromChangeInfo(changeInfo, capacityWindow),
+            occurrence_starts_at: toLocalDateTimeString(changeInfo.oldEvent?.start ?? null),
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: toLocalDateTimeString(changeInfo.event.end),
             notify_patient: true,
@@ -723,7 +749,7 @@ export function useCapacityWindowActions({
             starts_at: pendingReschedule.starts_at,
             ends_at: pendingReschedule.ends_at,
             reschedule_scope: 'occurrence',
-            from_date: capacityWindow.date ?? getDateOnly(getExistingStart(capacityWindow)),
+            from_date: getOccurrenceReferenceDate(capacityWindow),
             notify_patient: true,
         }, {
             preserveScroll: true,
@@ -763,6 +789,7 @@ export function useCapacityWindowActions({
     const deleteCapacityWindowOccurrence = (capacityWindow, options = {}) => {
         const capacityWindowId = getCapacityWindowId(capacityWindow);
         const eventId = `capacity-window-${capacityWindowId}`;
+        const occurrenceDate = options.date ?? getOccurrenceReferenceDate(capacityWindow);
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for occurrence delete', capacityWindow);
@@ -779,6 +806,7 @@ export function useCapacityWindowActions({
         }), {
             data: {
                 delete_scope: 'occurrence',
+                date: occurrenceDate,
                 notify_patient: true,
             },
             preserveScroll: true,
@@ -798,6 +826,7 @@ export function useCapacityWindowActions({
     const deleteCapacityWindowFromDate = (capacityWindow, options = {}) => {
         const capacityWindowId = getCapacityWindowId(capacityWindow);
         const eventId = `capacity-window-${capacityWindowId}`;
+        const fromDate = options.date ?? getOccurrenceReferenceDate(capacityWindow);
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for future delete', capacityWindow);
@@ -814,7 +843,7 @@ export function useCapacityWindowActions({
         }), {
             data: {
                 delete_scope: 'from_date',
-                from_date: options.date ?? capacityWindow.date ?? null,
+                from_date: fromDate,
                 notify_patient: true,
             },
             preserveScroll: true,
@@ -903,6 +932,7 @@ export function useCapacityWindowActions({
                 patient_name: payload.patient_name,
                 patient_email: payload.patient_email,
                 patient_phone: payload.patient_phone,
+                patient_birth_number: payload.patient_birth_number ?? null,
                 occurrence_starts_at: payload.starts_at ?? null,
                 occurrence_ends_at: payload.ends_at ?? null,
                 occurrence_date: payload.date ?? null,
@@ -924,6 +954,7 @@ export function useCapacityWindowActions({
                             patient_name: payload.patient_name,
                             patient_email: payload.patient_email ?? null,
                             patient_phone: payload.patient_phone ?? null,
+                            patient_birth_number: payload.patient_birth_number ?? null,
                             status: 'confirmed',
                         };
 

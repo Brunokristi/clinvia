@@ -312,6 +312,9 @@ Route::middleware(['auth', 'active'])->group(function () {
                 Route::post('/booking/capacity-windows/{capacityWindow}/bookings', [BranchCapacityEventBridgeController::class, 'storeBooking'])
                     ->name('booking.capacity-windows.bookings.store');
 
+                Route::delete('/booking/capacity-windows/{capacityWindow}/bookings/{booking}', [BranchCapacityEventBridgeController::class, 'destroyBooking'])
+                    ->name('booking.capacity-windows.bookings.destroy');
+
                 Route::delete('/booking/capacity-windows/{capacityWindow}', [BranchCapacityEventBridgeController::class, 'destroy'])
                     ->name('booking.capacity-windows.destroy');
 

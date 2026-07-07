@@ -22,6 +22,7 @@ class GroupEventParticipant extends Model
         'participant_name',
         'participant_email',
         'participant_phone',
+        'participant_birth_number',
     ];
 
     protected function casts(): array
