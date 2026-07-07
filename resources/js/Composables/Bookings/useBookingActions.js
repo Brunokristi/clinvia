@@ -2,6 +2,8 @@ import { router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
+import { isRecurringEntity } from './recurrencePolicy';
+
 export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
     const toast = useToast();
     const { toLocalDateTimeString } = dateTime;
@@ -67,6 +69,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     const closeBookingDialogs = () => {
         bookingDialogVisible.value = false;
         groupEventOccurrenceDialogVisible.value = false;
+        selectedBooking.value = null;
     };
 
     const getBookingRecordId = (booking) => {
@@ -74,7 +77,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     };
 
     const isBookingRepeatable = (booking) => {
-        return Boolean(booking?.series_uuid || booking?.recurrence || booking?.is_recurring);
+        return isRecurringEntity(booking);
     };
 
     const availableSlotsForBooking = () => {
@@ -234,7 +237,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
         return [];
     };
 
-    const rescheduleBooking = (booking, data = {}) => {
+    const rescheduleBooking = (booking, data = {}, options = {}) => {
         const serviceIds = getBookingServiceIds(booking, data);
         const inferredRecurringScope = isBookingRepeatable(booking)
             ? (data.date || booking.occurrence_original_date || booking.occurrence_date ? 'occurrence' : 'series')
@@ -271,9 +274,15 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                 closeBookingDialogs();
                 showSuccess('Rezervácia bola presunutá.');
                 reloadCalendarDataInternal();
+                options.onSuccess?.({
+                    booking,
+                    data,
+                    requestedScope,
+                });
             },
             onError: (errors) => {
                 showError('Rezerváciu sa nepodarilo presunúť.', errors);
+                options.onError?.(errors);
             },
         });
     };
@@ -299,7 +308,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
         closeBookingDialogs();
     };
 
-    const rescheduleBookingByCalendarChange = (changeInfo) => {
+    const rescheduleBookingByCalendarChange = (changeInfo, options = {}) => {
         const booking = changeInfo.event.extendedProps.booking;
 
         if (!booking) {
@@ -309,6 +318,10 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
         }
 
         const serviceIds = getBookingServiceIds(booking);
+        const previousStartsAt = toLocalDateTimeString(changeInfo.oldEvent?.start ?? booking.starts_datetime ?? booking.starts_at ?? null);
+        const previousEndsAt = changeInfo.oldEvent?.end
+            ? toLocalDateTimeString(changeInfo.oldEvent.end)
+            : (booking.ends_datetime ?? booking.ends_at ?? null);
 
         const payload = {
             service_id: serviceIds[0] ?? booking.service_id,
@@ -353,6 +366,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             onError: (errors) => {
                 changeInfo.revert();
                 showError('Rezerváciu sa nepodarilo presunúť.', errors);
+                options.onError?.(errors);
             },
             onSuccess: () => {
                 changeInfo.event.setExtendedProp('booking', {
@@ -364,6 +378,15 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                     occurrence_date: payload.date,
                 });
                 showSuccess('Rezervácia bola presunutá.');
+                options.onSuccess?.({
+                    booking,
+                    payload,
+                    previous: {
+                        starts_at: previousStartsAt,
+                        ends_at: previousEndsAt,
+                        date: payload.date,
+                    },
+                });
             },
         });
     };

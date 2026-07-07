@@ -19,6 +19,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
 
 class EventMutationService
 {
@@ -69,7 +70,7 @@ class EventMutationService
                 'description' => $payload['description'] ?? null,
                 'recurrence_rule' => $payload['recurrence_rule'] ?? null,
                 'is_recurring' => ! empty($payload['recurrence_rule']),
-                'metadata' => $payload['metadata'] ?? [],
+                'metadata' => $this->prepareMetadata($payload),
                 'created_by' => $actorId,
                 'updated_by' => $actorId,
             ]);
@@ -83,6 +84,17 @@ class EventMutationService
         $this->eventNotificationService->dispatchMutationSignals($event, EventAction::EventCreated);
 
         return $event;
+    }
+
+    private function prepareMetadata(array $payload): array
+    {
+        $metadata = $payload['metadata'] ?? [];
+
+        if (! empty($payload['recurrence_rule']) && empty($metadata['series_uuid'])) {
+            $metadata['series_uuid'] = (string) Str::uuid();
+        }
+
+        return $metadata;
     }
 
     public function update(Event $event, array $payload, ?int $actorId = null, ?string $scope = null): Event

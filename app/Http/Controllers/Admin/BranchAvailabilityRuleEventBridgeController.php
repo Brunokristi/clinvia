@@ -171,7 +171,7 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
             'date' => ['required', 'date'],
             'starts_at' => ['required', 'date_format:H:i'],
             'ends_at' => ['required', 'date_format:H:i', 'after:starts_at'],
-            'reschedule_scope' => ['required', 'in:occurrence,series,from_date'],
+            'reschedule_scope' => ['required', 'in:occurrence,series,from_date,this,this_and_following,all'],
         ]);
 
         $targetDate = Carbon::parse($validated['date'])->toDateString();
@@ -296,8 +296,9 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
     private function mapScope(string $scope): string
     {
         return match ($scope) {
-            'occurrence' => 'this',
-            'from_date' => 'this_and_following',
+            'occurrence', 'this' => 'this',
+            'from_date', 'this_and_following' => 'this_and_following',
+            'all', 'series' => 'series',
             default => 'series',
         };
     }

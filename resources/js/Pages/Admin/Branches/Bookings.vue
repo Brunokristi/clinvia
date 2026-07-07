@@ -254,6 +254,8 @@ const {
     repeatUnitOptions,
 
     bookingNotes,
+    canUndoCalendarChange,
+    undoLastCalendarChange,
     calendarOptions,
     currentCalendarRange,
 
@@ -1422,6 +1424,16 @@ onBeforeUnmount(() => {
                                 Skupinové termíny
                             </label>
                         </div>
+
+                        <Button
+                            type="button"
+                            icon="pi pi-undo"
+                            label="Krok späť"
+                            severity="secondary"
+                            outlined
+                            :disabled="!canUndoCalendarChange"
+                            @click="undoLastCalendarChange"
+                        />
                     </div>
                 </div>
 

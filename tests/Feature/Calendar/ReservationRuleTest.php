@@ -56,6 +56,7 @@ class ReservationRuleTest extends TestCase
         $this->assertSame(1, $rule->recurrence_rule['interval'] ?? null);
         $this->assertSame(['MO'], $rule->recurrence_rule['weekdays'] ?? []);
         $this->assertSame('2026-09-30', $rule->recurrence_rule['ends']['until'] ?? null);
+        $this->assertNotEmpty(data_get($rule->metadata, 'series_uuid'));
     }
 
     public function test_single_occurrence_can_be_excluded_without_deleting_series(): void

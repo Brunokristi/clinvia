@@ -176,6 +176,43 @@ class GroupEventCapacityTest extends TestCase
         ]);
     }
 
+    public function test_recurring_group_event_occurrence_time_update_does_not_create_duplicate_overrides(): void
+    {
+        $fixture = $this->createCalendarFixture();
+        $event = $this->createGroupEvent($fixture, [
+            'starts_at' => Carbon::parse('2026-07-06 14:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 15:00:00'),
+            'is_recurring' => true,
+            'recurrence_rule' => $this->weeklyRecurrence(['MO'], 1, ['type' => 'on', 'count' => null, 'until' => '2026-07-27']),
+            'group_detail' => [
+                'capacity' => 5,
+            ],
+        ]);
+
+        $response = $this->actingAs($fixture['user'])->put(route('branches.booking.capacity-windows.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'capacity' => 5,
+            'starts_at' => '2026-07-13 16:00:00',
+            'ends_at' => '2026-07-13 17:00:00',
+            'update_scope' => 'occurrence',
+            'from_date' => '2026-07-13',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+
+        $overrides = Event::query()
+            ->where('recurrence_parent_id', $event->id)
+            ->where('recurrence_original_starts_at', '2026-07-13 14:00:00')
+            ->get();
+
+        $this->assertCount(1, $overrides);
+        $this->assertSame('2026-07-13 16:00:00', $overrides->first()?->starts_at?->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-13 17:00:00', $overrides->first()?->ends_at?->format('Y-m-d H:i:s'));
+    }
+
     public function test_deleted_recurring_group_event_occurrence_is_kept_as_cancelled_override_in_payload(): void
     {
         $fixture = $this->createCalendarFixture();

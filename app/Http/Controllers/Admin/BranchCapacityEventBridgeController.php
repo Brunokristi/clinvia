@@ -118,7 +118,7 @@ class BranchCapacityEventBridgeController extends Controller
             'admin_note' => ['nullable', 'string'],
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
-            'update_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'update_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'from_date' => ['nullable', 'date'],
             'recurrence' => ['nullable', 'array'],
             'sync_patients' => ['nullable', 'boolean'],
@@ -137,7 +137,11 @@ class BranchCapacityEventBridgeController extends Controller
             ->whereKey($validated['service_id'])
             ->firstOrFail();
 
-        $scope = $this->mapScope($validated['update_scope'] ?? 'occurrence');
+        $scope = $this->mapScope($validated['update_scope'] ?? (
+            $event->is_recurring && $event->recurrence_parent_id === null
+                ? 'series'
+                : 'occurrence'
+        ));
 
         if (array_key_exists('recurrence', $validated) && $scope === 'this') {
             // Recurrence changes must be applied to the series, not a single occurrence.
@@ -215,7 +219,7 @@ class BranchCapacityEventBridgeController extends Controller
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
-            'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'occurrence_starts_at' => ['nullable', 'date'],
             'from_date' => ['nullable', 'date'],
             'date' => ['nullable', 'date'],
@@ -225,12 +229,18 @@ class BranchCapacityEventBridgeController extends Controller
             ? Carbon::parse($validated['occurrence_starts_at'])->toDateString()
             : ($validated['from_date'] ?? $validated['date'] ?? $event->starts_at?->toDateString());
 
+        $scope = $this->mapScope($validated['reschedule_scope'] ?? (
+            filled($validated['occurrence_starts_at'] ?? null) || filled($validated['from_date'] ?? null)
+                ? 'occurrence'
+                : ($event->is_recurring && $event->recurrence_parent_id === null ? 'series' : 'occurrence')
+        ));
+
         $rescheduleEventAction->execute(
             event: $event,
             startsAt: Carbon::parse($validated['starts_at']),
             endsAt: Carbon::parse($validated['ends_at']),
             actorId: $request->user()?->id,
-            scope: $this->mapScope($validated['reschedule_scope'] ?? 'occurrence'),
+            scope: $scope,
             occurrenceDate: filled($occurrenceDateRaw) ? Carbon::parse($occurrenceDateRaw) : null,
         );
 
@@ -314,21 +324,22 @@ class BranchCapacityEventBridgeController extends Controller
         $event = $this->resolveGroupEvent($branch, $capacityWindow);
 
         $validated = $request->validate([
-            'delete_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'delete_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'from_date' => ['nullable', 'date'],
             'date' => ['nullable', 'date'],
         ]);
 
         $scope = $validated['delete_scope'] ?? 'occurrence';
+        $normalizedScope = $this->mapScope($scope);
         $occurrenceDateRaw = $validated['from_date'] ?? $validated['date'] ?? $event->starts_at?->toDateString();
 
-        if ($scope !== 'series') {
+        if ($normalizedScope !== 'series') {
             request()->merge([
                 'occurrence_date' => $occurrenceDateRaw,
             ]);
         }
 
-        $deleteEventAction->execute($event, $this->mapScope($scope));
+        $deleteEventAction->execute($event, $normalizedScope);
 
         return back()->with('success', 'Skupinovy termin bol vymazany.');
     }
@@ -494,8 +505,9 @@ class BranchCapacityEventBridgeController extends Controller
     private function mapScope(string $scope): string
     {
         return match ($scope) {
-            'occurrence' => 'this',
-            'from_date' => 'this_and_following',
+            'occurrence', 'this' => 'this',
+            'from_date', 'this_and_following' => 'this_and_following',
+            'all', 'series' => 'series',
             default => 'series',
         };
     }

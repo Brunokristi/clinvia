@@ -42,9 +42,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const reloadRuleStateSoon = () => {
-        window.setTimeout(() => {
-            reloadRuleState();
-        }, 250);
+        reloadRuleState();
     };
 
     const {
@@ -195,6 +193,21 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         return ruleForm.rules[selectedRuleIndex.value] ?? null;
     });
 
+    watch(
+        () => [selectedRuleIndex.value, ruleForm.rules.length],
+        () => {
+            if (selectedRuleIndex.value === null) {
+                return;
+            }
+
+            if (ruleForm.rules[selectedRuleIndex.value]) {
+                return;
+            }
+
+            closeRuleDeletes();
+        },
+    );
+
     const getSelectedRule = () => {
         if (selectedRuleIndex.value === null) {
             return null;
@@ -263,6 +276,16 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         return `rule-${rule.id ?? 'new'}-${selectedRuleIndex.value}-${occurrenceDate}`;
+    };
+
+    const getSelectedRuleEventIds = () => {
+        const baseId = getSelectedRuleEventId();
+
+        if (!baseId) {
+            return [];
+        }
+
+        return [baseId, `${baseId}-override`];
     };
 
     const getServiceNames = (serviceIds) => {
@@ -924,7 +947,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const deleteCurrentRuleOccurrence = () => {
         const rule = getSelectedRule();
         const occurrenceDate = getSelectedOccurrenceDate();
-        const eventId = getSelectedRuleEventId();
+        const eventIds = getSelectedRuleEventIds();
 
         if (!rule || !occurrenceDate) {
             return;
@@ -936,7 +959,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             return;
         }
 
-        hideCalendarEventId?.(eventId);
+        eventIds.forEach((id) => hideCalendarEventId?.(id));
 
         router.post(route('branches.booking.rules.exclude-date', [props.branch.id, rule.id]), {
             date: occurrenceDate,
@@ -949,7 +972,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
-                restoreCalendarEventId?.(eventId);
+                eventIds.forEach((id) => restoreCalendarEventId?.(id));
                 showError('Výskyt voľného času sa nepodarilo vymazať.', errors);
             },
         });
@@ -958,7 +981,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const deleteCurrentRuleFromNowOn = () => {
         const rule = getSelectedRule();
         const occurrenceDate = getSelectedOccurrenceDate();
-        const eventId = getSelectedRuleEventId();
+        const eventIds = getSelectedRuleEventIds();
 
         if (!rule || !occurrenceDate) {
             return;
@@ -970,7 +993,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             return;
         }
 
-        hideCalendarEventId?.(eventId);
+        eventIds.forEach((id) => hideCalendarEventId?.(id));
 
         router.post(route('branches.booking.rules.end-before-date', [props.branch.id, rule.id]), {
             date: occurrenceDate,
@@ -983,7 +1006,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
-                restoreCalendarEventId?.(eventId);
+                eventIds.forEach((id) => restoreCalendarEventId?.(id));
                 showError('Výskyty voľného času sa nepodarilo vymazať.', errors);
             },
         });
@@ -991,7 +1014,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
     const deleteCurrentRuleEverywhere = () => {
         const rule = getSelectedRule();
-        const eventId = getSelectedRuleEventId();
+        const eventIds = getSelectedRuleEventIds();
 
         if (!rule) {
             return;
@@ -1003,7 +1026,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             return;
         }
 
-        hideCalendarEventId?.(eventId);
+        eventIds.forEach((id) => hideCalendarEventId?.(id));
 
         router.delete(route('branches.booking.rules.destroy', [props.branch.id, rule.id]), {
             preserveScroll: true,
@@ -1014,7 +1037,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
-                restoreCalendarEventId?.(eventId);
+                eventIds.forEach((id) => restoreCalendarEventId?.(id));
                 showError('Voľný čas sa nepodarilo vymazať.', errors);
             },
         });

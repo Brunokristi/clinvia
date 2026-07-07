@@ -954,6 +954,7 @@ const submitCreate = (saveScope = null) => {
         v-model:ends-at="form.ends_at"
         width="max-w-3xl"
         :is-repeatable="isRecurringScopedEdit"
+        :scope-on-save="isRecurringScopedEdit"
         :save-label="createSubmitLabel"
         :save-disabled="!canCreateSubmit"
         :show-delete="false"

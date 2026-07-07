@@ -147,20 +147,20 @@ class BranchBookingEventBridgeController extends Controller
         $event = $this->resolveBookingEvent($branch, $booking);
 
         $validated = $request->validate([
-            'delete_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'delete_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'date' => ['nullable', 'date'],
         ]);
 
-        $scope = $validated['delete_scope'] ?? 'series';
+        $scope = $this->normalizeScope($validated['delete_scope'] ?? 'series');
 
-        if ($scope === 'occurrence') {
+        if ($scope === 'this') {
             request()->merge(['occurrence_date' => $validated['date'] ?? $event->starts_at?->toDateString()]);
             $deleteEventAction->execute($event, 'this');
 
             return back()->with('success', 'Vyskyt rezervacie bol zruseny.');
         }
 
-        if ($scope === 'from_date') {
+        if ($scope === 'this_and_following') {
             request()->merge(['occurrence_date' => $validated['date'] ?? $event->starts_at?->toDateString()]);
             $deleteEventAction->execute($event, 'this_and_following');
 
@@ -196,7 +196,7 @@ class BranchBookingEventBridgeController extends Controller
             'patient_birth_number' => ['nullable', 'string', 'max:255'],
             'patient_note' => ['nullable', 'string'],
             'admin_note' => ['nullable', 'string'],
-            'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series'],
+            'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'date' => ['nullable', 'date'],
             'recurrence' => ['nullable', 'array'],
             'recurrence.frequency' => ['required_with:recurrence', 'in:daily,weekly,monthly,yearly'],
@@ -209,11 +209,7 @@ class BranchBookingEventBridgeController extends Controller
             'recurrence.ends.until' => ['nullable', 'date'],
         ]);
 
-        $scope = match ($validated['reschedule_scope'] ?? 'series') {
-            'occurrence' => 'this',
-            'from_date' => 'this_and_following',
-            default => 'series',
-        };
+        $scope = $this->normalizeScope($validated['reschedule_scope'] ?? 'series');
 
         $rescheduledEvent = $rescheduleEventAction->execute(
             event: $event,
@@ -277,6 +273,14 @@ class BranchBookingEventBridgeController extends Controller
             $normalizedRecurrence = filled($validated['recurrence'] ?? null)
                 ? $recurrenceService->normalize($validated['recurrence'])
                 : null;
+
+            $currentRecurrence = filled($rescheduledEvent->recurrence_rule)
+                ? $recurrenceService->normalize($rescheduledEvent->recurrence_rule)
+                : null;
+
+            if ($normalizedRecurrence == $currentRecurrence) {
+                return back()->with('success', 'Rezervacia bola presunuta.');
+            }
 
             $recurrenceScope = $scope;
 
@@ -401,5 +405,15 @@ class BranchBookingEventBridgeController extends Controller
     private function authorizeAccess(Request $request, Branch $branch): void
     {
         abort_if(! $this->entitlementService->userCanManageCalendar($request->user(), $branch), 403);
+    }
+
+    private function normalizeScope(string $scope): string
+    {
+        return match ($scope) {
+            'occurrence', 'this' => 'this',
+            'from_date', 'this_and_following' => 'this_and_following',
+            'all', 'series' => 'series',
+            default => 'series',
+        };
     }
 }

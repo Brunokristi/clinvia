@@ -46,6 +46,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    scopeOnSave: {
+        type: Boolean,
+        default: false,
+    },
     scopeMode: {
         type: String,
         default: 'update',
@@ -89,6 +93,7 @@ const emit = defineEmits([
         :save-disabled="saveDisabled"
         :show-save="showSave"
         :is-repeatable="isRepeatable"
+        :scope-on-save="scopeOnSave"
         :scope-mode="scopeMode"
         :scope-subject-label="scopeSubjectLabel"
         :show-duplicate="showDuplicate"

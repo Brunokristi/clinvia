@@ -2,6 +2,13 @@ import { router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
+import {
+    hasRecurringRuleChanged,
+    inferRecurringScope,
+    isRecurrenceRemoved,
+    isRecurringEntity,
+} from './recurrencePolicy';
+
 export function useCapacityWindowActions({
     props,
     dateTime,
@@ -74,11 +81,7 @@ export function useCapacityWindowActions({
     };
 
     const isCapacityWindowRepeatable = (capacityWindow) => {
-        return Boolean(
-            capacityWindow?.series_uuid
-            || capacityWindow?.repeats
-            || capacityWindow?.is_recurring,
-        );
+        return isRecurringEntity(capacityWindow);
     };
 
     const getExistingStart = (capacityWindow) => {
@@ -481,14 +484,23 @@ export function useCapacityWindowActions({
                 },
             }
             : null);
-        const updateScope = groupEvent.update_scope ?? 'occurrence';
+        const recurrenceChanged = hasRecurringRuleChanged(
+            groupEvent.target_original_recurrence ?? null,
+            recurrence ?? null,
+        );
+        const recurrenceRemoved = isRecurrenceRemoved(
+            groupEvent.target_original_recurrence ?? null,
+            recurrence ?? null,
+        );
+        const updateScope = inferRecurringScope({
+            entity: groupEvent,
+            occurrenceDate: groupEvent.occurrence_date ?? getOccurrenceReferenceDate(groupEvent),
+            requestedScope: groupEvent.update_scope,
+            defaultScope: isCapacityWindowRepeatable(capacityWindow) ? 'series' : 'occurrence',
+            recurrenceChanged,
+            recurrenceRemoved,
+        }) ?? 'occurrence';
 
-        const shouldReschedule = nextStartsAt
-            && nextEndsAt
-            && (
-                !previousStartsAt.startsWith(nextStartsAt.slice(0, 16))
-                || !previousEndsAt.startsWith(nextEndsAt.slice(0, 16))
-            );
         const shouldSendRecurrence = updateScope !== 'occurrence';
         const recurrencePayload = shouldSendRecurrence ? recurrence : undefined;
         const normalizeRecurrenceForCompare = (value) => {
@@ -521,28 +533,6 @@ export function useCapacityWindowActions({
             reloadCalendarDataInternal();
         };
 
-        const rescheduleAfterUpdate = () => {
-            router.post(route('branches.booking.capacity-windows.reschedule', {
-                branch: props.branch.id,
-                capacityWindow: capacityWindowId,
-            }), {
-                starts_at: nextStartsAt,
-                ends_at: nextEndsAt,
-                reschedule_scope: updateScope,
-                from_date: getOccurrenceReferenceDate(groupEvent),
-                notify_patient: true,
-            }, {
-                preserveScroll: true,
-                preserveState: true,
-                onSuccess: () => {
-                    finishUpdate('Skupinový termín bol upravený a presunutý.');
-                },
-                onError: (errors) => {
-                    showError('Skupinový termín sa nepodarilo presunúť.', errors);
-                },
-            });
-        };
-
         router.put(route('branches.booking.capacity-windows.update', {
             branch: props.branch.id,
             capacityWindow: capacityWindowId,
@@ -571,12 +561,6 @@ export function useCapacityWindowActions({
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
-                if (shouldReschedule) {
-                    rescheduleAfterUpdate();
-
-                    return;
-                }
-
                 finishUpdate();
             },
             onError: (errors) => {
@@ -667,7 +651,7 @@ export function useCapacityWindowActions({
         });
     };
 
-    const rescheduleCapacityWindow = (capacityWindow, data = {}) => {
+    const rescheduleCapacityWindow = (capacityWindow, data = {}, options = {}) => {
         const capacityWindowId = getCapacityWindowId(capacityWindow);
 
         if (!capacityWindowId) {
@@ -677,13 +661,20 @@ export function useCapacityWindowActions({
             return;
         }
 
+        const resolvedScope = inferRecurringScope({
+            entity: capacityWindow,
+            occurrenceDate: data.occurrence_starts_at ?? data.from_date ?? getOccurrenceReferenceDate(capacityWindow),
+            requestedScope: data.reschedule_scope,
+            defaultScope: isCapacityWindowRepeatable(capacityWindow) ? 'series' : 'occurrence',
+        }) ?? 'occurrence';
+
         router.post(route('branches.booking.capacity-windows.reschedule', {
             branch: props.branch.id,
             capacityWindow: capacityWindowId,
         }), {
             starts_at: data.starts_at,
             ends_at: data.ends_at,
-            reschedule_scope: data.reschedule_scope ?? 'occurrence',
+            reschedule_scope: resolvedScope,
             occurrence_starts_at: data.occurrence_starts_at ?? getOccurrenceReferenceDateTime(capacityWindow),
             from_date: data.from_date ?? getOccurrenceReferenceDate(capacityWindow),
             notify_patient: true,
@@ -694,14 +685,20 @@ export function useCapacityWindowActions({
                 closeCapacityWindowDialog();
                 showSuccess('Skupinový termín bol presunutý.');
                 reloadCalendarDataInternal();
+                options.onSuccess?.({
+                    capacityWindow,
+                    data,
+                    resolvedScope,
+                });
             },
             onError: (errors) => {
                 showError('Skupinový termín sa nepodarilo presunúť.', errors);
+                options.onError?.(errors);
             },
         });
     };
 
-    const rescheduleCapacityWindowByCalendarChange = (changeInfo) => {
+    const rescheduleCapacityWindowByCalendarChange = (changeInfo, options = {}) => {
         const capacityWindow = changeInfo.event.extendedProps.capacityWindow;
 
         if (!capacityWindow) {
@@ -727,6 +724,15 @@ export function useCapacityWindowActions({
             starts_at: toLocalDateTimeString(changeInfo.event.start),
             ends_at: toLocalDateTimeString(changeInfo.event.end),
             notify_patient: true,
+        };
+
+        const previous = {
+            starts_at: toLocalDateTimeString(changeInfo.oldEvent?.start ?? getExistingStart(capacityWindow)),
+            ends_at: changeInfo.oldEvent?.end
+                ? toLocalDateTimeString(changeInfo.oldEvent.end)
+                : (getExistingEnd(capacityWindow) ?? null),
+            from_date: getOccurrenceReferenceDate(capacityWindow),
+            occurrence_starts_at: toLocalDateTimeString(changeInfo.oldEvent?.start ?? getOccurrenceReferenceDateTime(capacityWindow)),
         };
 
         if (isCapacityWindowRepeatable(capacityWindow)) {
@@ -757,10 +763,16 @@ export function useCapacityWindowActions({
             onSuccess: () => {
                 showSuccess('Skupinový termín bol presunutý.');
                 reloadCalendarData();
+                options.onSuccess?.({
+                    capacityWindow,
+                    pendingReschedule,
+                    previous,
+                });
             },
             onError: (errors) => {
                 changeInfo.revert();
                 showError('Skupinový termín sa nepodarilo presunúť.', errors);
+                options.onError?.(errors);
             },
         });
     };
