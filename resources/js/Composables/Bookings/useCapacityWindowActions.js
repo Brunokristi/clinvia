@@ -1,5 +1,4 @@
 import { router } from '@inertiajs/vue3';
-import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
 import {
@@ -9,6 +8,7 @@ import {
     isRecurringEntity,
 } from './recurrencePolicy';
 import { useRecurringImpactPreview } from './useRecurringImpactPreview';
+import { scopeSuccessMessage, useCalendarActionFeedback } from './useCalendarActionFeedback';
 
 export function useCapacityWindowActions({
     props,
@@ -18,7 +18,7 @@ export function useCapacityWindowActions({
     restoreCalendarEventId,
     reloadCalendarData,
 }) {
-    const toast = useToast();
+    const feedback = useCalendarActionFeedback();
     const { toLocalDateTimeString } = dateTime;
 
     const {
@@ -33,25 +33,13 @@ export function useCapacityWindowActions({
     } = dialogs;
 
     const pendingCapacityWindowReschedule = ref(null);
+    const pendingCapacityWindowScopeSubmit = ref(false);
+    const capacityWindowMutationPending = ref(false);
     const {
         impactPreview: capacityWindowRescheduleImpactPreview,
         fetchImpactPreview: fetchCapacityWindowRescheduleImpactPreview,
         clearImpactPreview: clearCapacityWindowRescheduleImpactPreview,
     } = useRecurringImpactPreview(props.branch.id);
-
-    // Success notifications are shown centrally from flash messages in AdminLayout.
-    const showSuccess = () => { };
-
-    const showError = (fallback, errors = {}) => {
-        const firstError = Object.values(errors ?? {})?.[0];
-
-        toast.add({
-            severity: 'error',
-            summary: 'Chyba',
-            detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
-            life: 5000,
-        });
-    };
 
     const reloadCalendarDataInternal = reloadCalendarData ?? (() => {
         router.reload({
@@ -387,6 +375,12 @@ export function useCapacityWindowActions({
     };
 
     const createCapacityWindow = (groupEvent) => {
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
+
         router.post(route('branches.booking.capacity-windows.store', {
             branch: props.branch.id,
         }), normalizeCapacityWindowPayload(groupEvent), {
@@ -403,11 +397,14 @@ export function useCapacityWindowActions({
                     suppressEventClicksFor(2000);
                 }
 
-                showSuccess('Skupinový termín bol vytvorený.');
+                feedback.success(groupEvent.recurrence ? 'Opakovaný skupinový termín bol vytvorený.' : 'Skupinový termín bol vytvorený.');
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
-                showError('Skupinový termín sa nepodarilo vytvoriť.', errors);
+                feedback.error(errors, 'Skupinový termín sa nepodarilo vytvoriť.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -462,13 +459,12 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for update', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
 
         const nextStartsAt = toDateTimeString(groupEvent.date, groupEvent.starts_at);
-        const nextEndsAt = toDateTimeString(groupEvent.date, groupEvent.ends_at);
         const previousStartsAt = String(groupEvent.original_starts_at ?? getExistingStart(groupEvent) ?? '').replace('T', ' ');
         const previousEndsAt = String(groupEvent.original_ends_at ?? getExistingEnd(groupEvent) ?? '').replace('T', ' ');
         const rawPatients = Array.isArray(groupEvent.group_patients)
@@ -535,9 +531,15 @@ export function useCapacityWindowActions({
 
         const finishUpdate = (message = 'Skupinový termín bol upravený.') => {
             closeGroupEventDialog();
-            showSuccess(message);
+            feedback.success(message);
             reloadCalendarDataInternal();
         };
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         router.put(route('branches.booking.capacity-windows.update', {
             branch: props.branch.id,
@@ -549,7 +551,6 @@ export function useCapacityWindowActions({
             update_scope: updateScope,
             from_date: getOccurrenceReferenceDate(groupEvent),
             starts_at: nextStartsAt,
-            ends_at: nextEndsAt,
             ...(shouldSyncPatients
                 ? {
                     sync_patients: true,
@@ -570,7 +571,10 @@ export function useCapacityWindowActions({
                 finishUpdate();
             },
             onError: (errors) => {
-                showError('Skupinový termín sa nepodarilo upraviť.', errors);
+                feedback.error(errors, 'Skupinový termín sa nepodarilo upraviť.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -633,10 +637,16 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for cancel', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         router.post(route('branches.booking.capacity-windows.cancel', {
             branch: props.branch.id,
@@ -648,11 +658,14 @@ export function useCapacityWindowActions({
             preserveState: true,
             onSuccess: () => {
                 closeCapacityWindowDialog();
-                showSuccess('Skupinový termín bol zrušený.');
+                feedback.success('Skupinový termín bol zrušený.');
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
-                showError('Skupinový termín sa nepodarilo zrušiť.', errors);
+                feedback.error(errors, 'Skupinový termín sa nepodarilo zrušiť.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -662,10 +675,16 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for reschedule', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         const resolvedScope = inferRecurringScope({
             entity: capacityWindow,
@@ -679,7 +698,6 @@ export function useCapacityWindowActions({
             capacityWindow: capacityWindowId,
         }), {
             starts_at: data.starts_at,
-            ends_at: data.ends_at,
             reschedule_scope: resolvedScope,
             occurrence_starts_at: data.occurrence_starts_at ?? getOccurrenceReferenceDateTime(capacityWindow),
             from_date: data.from_date ?? getOccurrenceReferenceDate(capacityWindow),
@@ -689,7 +707,10 @@ export function useCapacityWindowActions({
             preserveState: true,
             onSuccess: () => {
                 closeCapacityWindowDialog();
-                showSuccess('Skupinový termín bol presunutý.');
+                const successDetail = options.successMessage
+                    ?? scopeSuccessMessage({ action: 'reschedule', scope: resolvedScope });
+
+                feedback.success(successDetail);
                 reloadCalendarDataInternal();
                 options.onSuccess?.({
                     capacityWindow,
@@ -698,8 +719,11 @@ export function useCapacityWindowActions({
                 });
             },
             onError: (errors) => {
-                showError('Skupinový termín sa nepodarilo presunúť.', errors);
+                feedback.error(errors, 'Skupinový termín sa nepodarilo presunúť.');
                 options.onError?.(errors);
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -713,11 +737,18 @@ export function useCapacityWindowActions({
             return;
         }
 
+        if (capacityWindowMutationPending.value) {
+            changeInfo.revert();
+            feedback.info('Počkajte na dokončenie predchádzajúcej zmeny.');
+
+            return;
+        }
+
         const capacityWindowId = getCapacityWindowId(capacityWindow);
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for calendar reschedule', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
             changeInfo.revert();
 
             return;
@@ -789,7 +820,7 @@ export function useCapacityWindowActions({
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
-                showSuccess('Skupinový termín bol presunutý.');
+                feedback.success('Skupinový termín bol presunutý.');
                 reloadCalendarData();
                 options.onSuccess?.({
                     capacityWindow,
@@ -799,30 +830,49 @@ export function useCapacityWindowActions({
             },
             onError: (errors) => {
                 changeInfo.revert();
-                showError('Skupinový termín sa nepodarilo presunúť.', errors);
+                feedback.error(errors, 'Skupinový termín sa nepodarilo presunúť.');
                 options.onError?.(errors);
             },
         });
     };
 
     const submitPendingCapacityWindowRescheduleScope = (scope) => {
-        if (!pendingCapacityWindowReschedule.value) {
+        if (!pendingCapacityWindowReschedule.value || pendingCapacityWindowScopeSubmit.value) {
             return;
         }
 
         const { capacityWindow, payload } = pendingCapacityWindowReschedule.value;
+        const previewKey = scope === 'series' ? 'series' : (scope === 'from_date' ? 'from_date' : 'occurrence');
+        const affectedCount = capacityWindowRescheduleImpactPreview.value?.[previewKey]?.count ?? null;
+
+        pendingCapacityWindowScopeSubmit.value = true;
 
         rescheduleCapacityWindow(capacityWindow, {
             ...payload,
             reschedule_scope: scope,
+        }, {
+            successMessage: scopeSuccessMessage({
+                action: 'reschedule',
+                scope,
+                affectedCount,
+            }),
+            onSuccess: () => {
+                pendingCapacityWindowReschedule.value = null;
+                capacityWindowRescheduleScopeDialogVisible.value = false;
+                clearCapacityWindowRescheduleImpactPreview();
+                pendingCapacityWindowScopeSubmit.value = false;
+            },
+            onError: () => {
+                pendingCapacityWindowScopeSubmit.value = false;
+            },
         });
-
-        pendingCapacityWindowReschedule.value = null;
-        capacityWindowRescheduleScopeDialogVisible.value = false;
-        clearCapacityWindowRescheduleImpactPreview();
     };
 
     const cancelPendingCapacityWindowReschedule = () => {
+        if (pendingCapacityWindowScopeSubmit.value) {
+            return;
+        }
+
         pendingCapacityWindowReschedule.value = null;
         capacityWindowRescheduleScopeDialogVisible.value = false;
         clearCapacityWindowRescheduleImpactPreview();
@@ -835,10 +885,16 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for occurrence delete', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         hideCalendarEventId?.(eventId);
 
@@ -855,12 +911,15 @@ export function useCapacityWindowActions({
             preserveState: true,
             onSuccess: () => {
                 closeCapacityWindowDialog();
-                showSuccess('Tento skupinový termín bol vymazaný.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'occurrence' }));
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 restoreCalendarEventId?.(eventId);
-                showError('Tento skupinový termín sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Tento skupinový termín sa nepodarilo vymazať.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -872,10 +931,16 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for future delete', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         hideCalendarEventId?.(eventId);
 
@@ -892,12 +957,15 @@ export function useCapacityWindowActions({
             preserveState: true,
             onSuccess: () => {
                 closeCapacityWindowDialog();
-                showSuccess('Skupinové termíny od vybraného dátumu boli vymazané.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'from_date' }));
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 restoreCalendarEventId?.(eventId);
-                showError('Skupinové termíny od vybraného dátumu sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Skupinové termíny od vybraného dátumu sa nepodarilo vymazať.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -908,10 +976,16 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for series delete', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
+
+        if (capacityWindowMutationPending.value) {
+            return;
+        }
+
+        capacityWindowMutationPending.value = true;
 
         hideCalendarEventId?.(eventId);
 
@@ -927,12 +1001,15 @@ export function useCapacityWindowActions({
             preserveState: true,
             onSuccess: () => {
                 closeCapacityWindowDialog();
-                showSuccess('Celá séria skupinových termínov bola vymazaná.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'series' }));
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 restoreCalendarEventId?.(eventId);
-                showError('Celú sériu skupinových termínov sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Celú sériu skupinových termínov sa nepodarilo vymazať.');
+            },
+            onFinish: () => {
+                capacityWindowMutationPending.value = false;
             },
         });
     };
@@ -960,7 +1037,7 @@ export function useCapacityWindowActions({
 
         if (!capacityWindowId) {
             console.error('Missing capacity window id for capacity window booking store', capacityWindow);
-            showError('Chýba ID skupinového termínu.');
+            feedback.error(null, 'Chýba ID skupinového termínu.');
 
             return;
         }
@@ -1006,16 +1083,11 @@ export function useCapacityWindowActions({
                         };
                     }
 
-                    toast.add({
-                        severity: 'success',
-                        summary: 'Hotovo',
-                        detail: 'Pacient bol pridaný do skupinového termínu.',
-                        life: 3500,
-                    });
+                    feedback.success('Účastník bol pridaný.');
                     reloadCalendarDataInternal();
                 },
                 onError: (errors) => {
-                    showError('Pacienta sa nepodarilo pridať do skupinového termínu.', errors);
+                    feedback.error(errors, 'Pacienta sa nepodarilo pridať do skupinového termínu.');
                 },
             },
         );
@@ -1033,6 +1105,8 @@ export function useCapacityWindowActions({
         submitPendingCapacityWindowRescheduleScope,
         cancelPendingCapacityWindowReschedule,
         capacityWindowRescheduleImpactPreview,
+        pendingCapacityWindowScopeSubmit,
+        capacityWindowMutationPending,
         addPatientToCapacityWindow,
         openCapacityWindowEditor,
         saveCapacityWindow,

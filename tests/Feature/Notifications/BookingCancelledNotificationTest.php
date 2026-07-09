@@ -6,28 +6,28 @@ use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Service;
-use App\Notifications\BookingRescheduledNotification;
+use App\Notifications\BookingCancelledNotification;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
-class BookingRescheduledNotificationTest extends TestCase
+class BookingCancelledNotificationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_new_appointment_label_is_built_from_booking_times_without_slot(): void
+    public function test_cancelled_notification_attaches_cancel_ics(): void
     {
         $company = Company::query()->create([
             'legal_name' => 'Clinvia Clinic',
-            'slug' => 'clinvia-reschedule-company-' . Str::random(8),
+            'slug' => 'clinvia-cancel-company-' . Str::random(8),
             'is_active' => true,
         ]);
 
         $branch = Branch::query()->create([
             'company_id' => $company->id,
-            'name' => 'Reschedule Branch',
-            'slug' => 'reschedule-branch-' . Str::random(6),
+            'name' => 'Cancel Branch',
+            'slug' => 'cancel-branch-' . Str::random(6),
             'type' => 'clinic',
             'is_active' => true,
         ]);
@@ -35,8 +35,8 @@ class BookingRescheduledNotificationTest extends TestCase
         $service = Service::query()->create([
             'company_id' => $company->id,
             'branch_id' => $branch->id,
-            'name' => 'Konzultácia',
-            'slug' => 'konzultacia-' . Str::random(8),
+            'name' => 'Konzultacia',
+            'slug' => 'konzultacia-cancel-' . Str::random(8),
             'is_bookable' => true,
             'duration_minutes' => 30,
             'capacity' => 1,
@@ -62,21 +62,19 @@ class BookingRescheduledNotificationTest extends TestCase
         $booking->setRelation('service', $service);
         $booking->setRelation('services', collect([$service]));
 
-        $notification = new BookingRescheduledNotification(
+        $mail = (new BookingCancelledNotification(
             booking: $booking,
-            oldStartsAt: Carbon::parse('2026-08-10 09:00:00', 'Europe/Bratislava'),
-            oldEndsAt: Carbon::parse('2026-08-10 09:30:00', 'Europe/Bratislava'),
-            reason: 'Posun termínu',
-        );
+            reason: 'Zrusene ambulanciou',
+            appointmentStartsAt: Carbon::parse('2026-08-12 10:30:00', 'Europe/Bratislava'),
+            appointmentEndsAt: Carbon::parse('2026-08-12 11:00:00', 'Europe/Bratislava'),
+        ))->toMail((object) []);
 
-        $mail = $notification->toMail((object) []);
-        $data = $mail->viewData;
-
-        $this->assertSame('12.08.2026 o 10:30 – 11:00', $data['newAppointmentLabel']);
         $this->assertNotEmpty($mail->rawAttachments);
-        $this->assertSame('reservation-updated.ics', $mail->rawAttachments[0]['name'] ?? null);
+        $this->assertSame('reservation-cancelled.ics', $mail->rawAttachments[0]['name'] ?? null);
+
         $ics = (string) ($mail->rawAttachments[0]['data'] ?? '');
-        $this->assertStringContainsString('METHOD:REQUEST', $ics);
+        $this->assertStringContainsString('METHOD:CANCEL', $ics);
+        $this->assertStringContainsString('STATUS:CANCELLED', $ics);
         $this->assertStringContainsString('UID:booking-' . $booking->id . '@clinvia.local', $ics);
     }
 }

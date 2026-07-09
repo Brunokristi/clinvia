@@ -13,10 +13,12 @@ use App\Notifications\BookingCancelledNotification;
 use App\Notifications\BookingChangeSummaryNotification;
 use App\Notifications\BookingCreatedNotification;
 use App\Notifications\BookingReminderNotification;
+use App\Notifications\BookingRescheduledNotification;
 use App\Notifications\BranchAdminNotification;
 use App\Notifications\GroupEventReminderNotification;
 use App\Notifications\RequestCreatedNotification;
 use App\Notifications\RequestRejectedNotification;
+use App\Notifications\RequestVerificationNotification;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -32,6 +34,7 @@ class EmailNotificationService
     public function dispatch(string $eventName, array $payload = []): void
     {
         match ($eventName) {
+            'request.verification' => $this->handleRequestVerification($payload),
             'request.created' => $this->handleRequestCreated($payload),
             'request.accepted_as_booking' => $this->handleRequestAcceptedAsBooking($payload),
             'request.rejected' => $this->handleRequestRejected($payload),
@@ -117,6 +120,10 @@ class EmailNotificationService
                 ? 'booking.recurring_cancelled'
                 : 'booking.cancelled';
 
+            $oldStartsAt = $this->toCarbon(Arr::get($context, 'old_snapshot.starts_at'));
+            $oldEndsAt = $this->toCarbon(Arr::get($context, 'old_snapshot.ends_at'));
+            $reason = $this->scopeMessage($scope, $this->resolveRecurringAffectedCount($event, $scope), 'booking');
+
             $this->sendOnce(
                 dedupeKey: sprintf('booking:%d:cancelled:%s:root-%d:patient:%s', $event->id, $scope, (int) ($event->root_event_id ?? $event->id), $event->bookingDetail?->id ?? 'none'),
                 notificationType: $type,
@@ -129,7 +136,12 @@ class EmailNotificationService
                 occurrenceDisplayKey: data_get($context, 'occurrence_display_key'),
                 scope: $scope,
                 payload: $this->userFacingSnapshot($event),
-                sender: fn () => Notification::route('mail', $recipient)->notify(new BookingCancelledNotification($legacyBooking)),
+                sender: fn () => Notification::route('mail', $recipient)->notify(new BookingCancelledNotification(
+                    booking: $legacyBooking,
+                    reason: $reason,
+                    appointmentStartsAt: $oldStartsAt ?? $legacyBooking->starts_at,
+                    appointmentEndsAt: $oldEndsAt ?? $legacyBooking->ends_at,
+                )),
             );
 
             return;
@@ -149,6 +161,9 @@ class EmailNotificationService
         $notificationType = $event->is_recurring && in_array($scope, ['this_and_following', 'series', 'all'], true)
             ? 'booking.recurring_updated'
             : 'booking.updated';
+
+        $oldStartsAt = $this->toCarbon($old['starts_at'] ?? null);
+        $oldEndsAt = $this->toCarbon($old['ends_at'] ?? null);
 
         $this->sendOnce(
             dedupeKey: sprintf(
@@ -174,11 +189,11 @@ class EmailNotificationService
                 'diff' => $diff,
                 'scope_message' => $scopeMessage,
             ],
-            sender: fn () => Notification::route('mail', $recipient)->notify(new BookingChangeSummaryNotification(
-                subject: 'Rezervácia bola upravená',
-                headline: 'Na vašej rezervácii nastala zmena.',
-                diffLines: $diff,
-                scopeMessage: $scopeMessage,
+            sender: fn () => Notification::route('mail', $recipient)->notify(new BookingRescheduledNotification(
+                booking: $legacyBooking,
+                oldStartsAt: $oldStartsAt,
+                oldEndsAt: $oldEndsAt,
+                reason: $scopeMessage,
             )),
         );
     }
@@ -217,14 +232,8 @@ class EmailNotificationService
                     occurrenceDisplayKey: data_get($context, 'occurrence_display_key'),
                     scope: 'this',
                     payload: $this->userFacingSnapshot($event),
-                    sender: fn () => Notification::route('mail', $email)->notify(new BookingChangeSummaryNotification(
-                        subject: 'Boli ste pridaný do skupinového termínu',
-                        headline: 'Ste prihlásený na skupinový termín.',
-                        diffLines: [
-                            'Termín: ' . $this->dateTimeRangeLabel($event->starts_at, $event->ends_at),
-                            'Udalosť: ' . ($event->title ?: $event->groupDetail?->service_name ?: 'Skupinový termín'),
-                            'Pobočka: ' . ($event->branch?->name ?? '—'),
-                        ],
+                    sender: fn () => Notification::route('mail', $email)->notify(new BookingCreatedNotification(
+                        $this->toLegacyGroupParticipantBookingPayload($event, $participant),
                     )),
                 );
             }
@@ -260,6 +269,7 @@ class EmailNotificationService
             $lines = $isCancellation
                 ? ['Termín bol zrušený: ' . $this->dateTimeRangeLabel($event->starts_at, $event->ends_at)]
                 : ($diff ?: ['Došlo k zmene skupinového termínu.']);
+            $participant = $event->participants->firstWhere('id', $participantId);
 
             $this->sendOnce(
                 dedupeKey: sprintf(
@@ -285,12 +295,21 @@ class EmailNotificationService
                     'diff' => $lines,
                     'scope_message' => $scopeMessage,
                 ],
-                sender: fn () => Notification::route('mail', $email)->notify(new BookingChangeSummaryNotification(
-                    subject: $isCancellation ? 'Skupinový termín bol zrušený' : 'Skupinový termín bol upravený',
-                    headline: $isCancellation ? 'Váš skupinový termín bol zrušený.' : 'Váš skupinový termín bol upravený.',
-                    diffLines: $lines,
-                    scopeMessage: $scopeMessage,
-                )),
+                sender: fn () => Notification::route('mail', $email)->notify(
+                    $isCancellation
+                        ? new BookingCancelledNotification(
+                            booking: $this->toLegacyGroupParticipantBookingPayload($event, $participant, $email),
+                            reason: $scopeMessage,
+                            appointmentStartsAt: $this->toCarbon($old['starts_at'] ?? null) ?? $event->starts_at,
+                            appointmentEndsAt: $this->toCarbon($old['ends_at'] ?? null) ?? $event->ends_at,
+                        )
+                        : new BookingChangeSummaryNotification(
+                            subject: 'Skupinový termín bol upravený',
+                            headline: 'Váš skupinový termín bol upravený.',
+                            diffLines: $lines,
+                            scopeMessage: $scopeMessage,
+                        )
+                ),
             );
         }
     }
@@ -306,7 +325,9 @@ class EmailNotificationService
 
         $request->loadMissing(['branch', 'services']);
 
-        if ($request->patient_email) {
+        $skipPatientNotification = (bool) ($payload['skip_patient_notification'] ?? false);
+
+        if ($request->patient_email && ! $skipPatientNotification) {
             $this->sendOnce(
                 dedupeKey: sprintf('request:%d:created:patient:%s', $request->id, md5((string) $request->patient_email)),
                 notificationType: 'request.created',
@@ -327,6 +348,38 @@ class EmailNotificationService
         }
 
         $this->sendBranchRequestCreatedNotification($request);
+    }
+
+    private function handleRequestVerification(array $payload): void
+    {
+        /** @var AppointmentRequest|null $request */
+        $request = $payload['appointment_request'] ?? null;
+        $verificationUrl = Arr::get($payload, 'verification_url');
+
+        if (! $request || ! $request->patient_email || ! $verificationUrl) {
+            return;
+        }
+
+        $request->loadMissing(['branch', 'services']);
+
+        $this->sendOnce(
+            dedupeKey: sprintf('request:%d:verification:%s', $request->id, md5((string) $request->patient_email)),
+            notificationType: 'request.verification',
+            recipientType: 'patient',
+            recipientId: null,
+            recipientEmail: $request->patient_email,
+            notifiableType: AppointmentRequest::class,
+            notifiableId: $request->id,
+            rootEventId: null,
+            occurrenceDisplayKey: null,
+            scope: null,
+            payload: [
+                'request_id' => $request->id,
+                'status' => $request->status,
+            ],
+            sender: fn () => Notification::route('mail', $request->patient_email)
+                ->notify(new RequestVerificationNotification($request, (string) $verificationUrl)),
+        );
     }
 
     private function handleRequestAcceptedAsBooking(array $payload): void
@@ -510,7 +563,11 @@ class EmailNotificationService
 
         $pending = AppointmentRequest::query()
             ->where('branch_id', $branch->id)
-            ->where('status', 'pending')
+            ->whereIn('status', [
+                AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
+                AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+                AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+            ])
             ->orderBy('created_at')
             ->get();
 
@@ -847,6 +904,39 @@ class EmailNotificationService
         $filtered = collect($names)->filter()->values()->all();
 
         return $filtered === [] ? '—' : implode(', ', $filtered);
+    }
+
+    private function toCarbon(mixed $value): ?Carbon
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        return Carbon::parse((string) $value);
+    }
+
+    private function toLegacyGroupParticipantBookingPayload(Event $event, ?GroupEventParticipant $participant = null, ?string $fallbackEmail = null): \App\Models\Booking
+    {
+        $event->loadMissing(['branch', 'services', 'groupDetail']);
+
+        $legacyBooking = new \App\Models\Booking();
+
+        $legacyBooking->id = (int) $event->id;
+        $legacyBooking->branch_id = (int) $event->branch_id;
+        $legacyBooking->starts_at = $event->starts_at;
+        $legacyBooking->ends_at = $event->ends_at;
+        $legacyBooking->patient_name = $participant?->participant_name ?? 'Pacient';
+        $legacyBooking->patient_email = $participant?->participant_email ?? $fallbackEmail;
+        $legacyBooking->patient_phone = $participant?->participant_phone;
+        $legacyBooking->patient_birth_number = $participant?->participant_birth_number;
+        $legacyBooking->status = $event->status;
+        $legacyBooking->service_id = $event->services->first()?->id;
+
+        $legacyBooking->setRelation('branch', $event->branch);
+        $legacyBooking->setRelation('service', $event->services->first());
+        $legacyBooking->setRelation('services', $event->services);
+
+        return $legacyBooking;
     }
 
     private function sendOnce(

@@ -4,8 +4,10 @@ namespace Tests\Feature\Calendar;
 
 use App\Models\Branch;
 use App\Models\Company;
+use App\Models\Patient;
 use App\Models\Service;
 use App\Models\User;
+use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Services\EventReadAdapterService;
 use Carbon\Carbon;
@@ -20,6 +22,12 @@ class LegacyBookingBridgeTest extends TestCase
     public function test_legacy_booking_route_stores_unified_booking_event(): void
     {
         $fixture = $this->createFixture();
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Legacy Bridge Patient',
+            'patient_email' => 'legacy.bridge@example.com',
+            'patient_phone' => '+421900001111',
+        ]);
 
         $response = $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.store', [
             $fixture['branch']->id,
@@ -28,6 +36,7 @@ class LegacyBookingBridgeTest extends TestCase
             'service_ids' => [$fixture['service']->id],
             'starts_at' => '2026-07-20 10:00:00',
             'ends_at' => '2026-07-20 10:30:00',
+            'patient_id' => $patient->id,
             'patient_name' => 'Legacy Bridge Patient',
             'patient_email' => 'legacy.bridge@example.com',
             'patient_phone' => '+421900001111',
@@ -41,6 +50,7 @@ class LegacyBookingBridgeTest extends TestCase
         $this->assertSame('booking', $event->type->value);
         $this->assertDatabaseHas('booking_event_details', [
             'event_id' => $event->id,
+            'patient_id' => $patient->id,
             'patient_name' => 'Legacy Bridge Patient',
         ]);
     }
@@ -48,6 +58,12 @@ class LegacyBookingBridgeTest extends TestCase
     public function test_legacy_booking_reschedule_route_updates_booking_detail_payload(): void
     {
         $fixture = $this->createFixture();
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Old Name',
+            'patient_email' => 'old@example.com',
+            'patient_phone' => '+421900001111',
+        ]);
 
         $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.store', [
             $fixture['branch']->id,
@@ -56,6 +72,7 @@ class LegacyBookingBridgeTest extends TestCase
             'service_ids' => [$fixture['service']->id],
             'starts_at' => '2026-07-20 10:00:00',
             'ends_at' => '2026-07-20 10:30:00',
+            'patient_id' => $patient->id,
             'patient_name' => 'Old Name',
             'patient_email' => 'old@example.com',
             'patient_phone' => '+421900001111',
@@ -85,16 +102,388 @@ class LegacyBookingBridgeTest extends TestCase
         $event->refresh();
 
         $this->assertSame('2026-07-21 11:00:00', $event->starts_at?->format('Y-m-d H:i:s'));
-        $this->assertSame('2026-07-21 11:45:00', $event->ends_at?->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-21 11:30:00', $event->ends_at?->format('Y-m-d H:i:s'));
 
         $this->assertDatabaseHas('booking_event_details', [
             'event_id' => $event->id,
+            'patient_id' => $patient->id,
             'patient_name' => 'New Name',
             'patient_email' => 'new@example.com',
             'patient_phone' => '+421900009999',
             'patient_birth_number' => '999999/0000',
             'public_notes' => 'Updated public note',
             'internal_notes' => 'Updated admin note',
+        ]);
+    }
+
+    public function test_legacy_booking_store_route_fails_without_patient_id(): void
+    {
+        $fixture = $this->createFixture();
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-22 10:00:00',
+            'ends_at' => '2026-07-22 10:30:00',
+            'patient_name' => 'Missing Id Patient',
+            'patient_email' => 'missing.id@example.com',
+            'patient_phone' => '+421900111222',
+        ])->assertSessionHasErrors('patient_id');
+    }
+
+    public function test_legacy_booking_store_route_rejects_patient_from_another_branch(): void
+    {
+        $fixture = $this->createFixture();
+
+        $otherCompany = Company::query()->create([
+            'legal_name' => 'Other Company',
+            'slug' => 'other-company-' . Str::random(8),
+            'is_active' => true,
+        ]);
+
+        $otherBranch = Branch::query()->create([
+            'company_id' => $otherCompany->id,
+            'name' => 'Other Branch',
+            'slug' => 'other-branch-' . Str::random(8),
+            'type' => 'clinic',
+            'is_active' => true,
+            'booking_settings' => [
+                'is_enabled' => true,
+                'calendar_addon_enabled' => true,
+                'booking_addon_enabled' => true,
+            ],
+        ]);
+
+        $foreignPatient = Patient::query()->create([
+            'branch_id' => $otherBranch->id,
+            'patient_name' => 'Foreign Patient',
+            'patient_email' => 'foreign.patient@example.com',
+            'patient_phone' => '+421900666555',
+        ]);
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.store', [
+            $fixture['branch']->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-22 12:00:00',
+            'ends_at' => '2026-07-22 12:30:00',
+            'patient_id' => $foreignPatient->id,
+            'patient_name' => 'Foreign Patient',
+            'patient_email' => 'foreign.patient@example.com',
+            'patient_phone' => '+421900666555',
+        ])->assertSessionHasErrors('patient_id');
+    }
+
+    public function test_legacy_booking_update_route_recalculates_end_time_from_services(): void
+    {
+        $fixture = $this->createFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Bridge Patient',
+            'patient_email' => 'bridge.patient@example.com',
+            'patient_phone' => '+421900123456',
+        ]);
+
+        $additionalService = Service::query()->create([
+            'company_id' => $fixture['company']->id,
+            'branch_id' => $fixture['branch']->id,
+            'name' => 'Long Service',
+            'slug' => 'long-service-' . Str::random(8),
+            'is_bookable' => true,
+            'duration_minutes' => 45,
+            'capacity' => 1,
+            'buffer_before_minutes' => 0,
+            'buffer_after_minutes' => 0,
+            'booking_type' => 'individual',
+            'public_booking_type' => 'immediate_booking',
+            'is_active' => true,
+        ]);
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+            'metadata' => [
+                'series_uuid' => (string) Str::uuid(),
+            ],
+        ]);
+
+        $event->bookingDetail()->create([
+            'patient_id' => $patient->id,
+            'patient_name' => $patient->patient_name,
+            'patient_email' => $patient->patient_email,
+            'patient_phone' => $patient->patient_phone,
+            'booking_source' => 'admin_calendar',
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.bookings.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_ids' => [$fixture['service']->id, $additionalService->id],
+            'starts_at' => '2026-07-20 12:00:00',
+            'ends_at' => '2026-07-20 12:30:00',
+            'patient_name' => 'Bridge Patient',
+            'update_scope' => 'series',
+        ])->assertSessionHasNoErrors();
+
+        $event->refresh();
+
+        $this->assertSame('2026-07-20 12:00:00', $event->starts_at?->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-20 13:15:00', $event->ends_at?->format('Y-m-d H:i:s'));
+        $this->assertSame([
+            $fixture['service']->id,
+            $additionalService->id,
+        ], $event->services()->orderBy('event_service.sort_order')->pluck('services.id')->all());
+    }
+
+    public function test_legacy_booking_update_route_rejects_patient_id_mutation(): void
+    {
+        $fixture = $this->createFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Immutable Patient',
+            'patient_email' => 'immutable.patient@example.com',
+            'patient_phone' => '+421900987654',
+        ]);
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+        ]);
+
+        $event->bookingDetail()->create([
+            'patient_id' => $patient->id,
+            'patient_name' => $patient->patient_name,
+            'booking_source' => 'admin_calendar',
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.bookings.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-20 11:00:00',
+            'patient_id' => 999999,
+            'update_scope' => 'series',
+        ])->assertSessionHasErrors([
+            'patient_id' => 'Pacienta existujúcej rezervácie nie je možné zmeniť.',
+        ]);
+
+        $this->assertDatabaseHas('booking_event_details', [
+            'event_id' => $event->id,
+            'patient_id' => $patient->id,
+        ]);
+    }
+
+    public function test_legacy_booking_update_route_rejects_event_type_mutation_payload(): void
+    {
+        $fixture = $this->createFixture();
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.bookings.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-20 11:00:00',
+            'event_type' => 'group_event',
+            'update_scope' => 'series',
+        ])->assertSessionHasErrors('event_type');
+    }
+
+    public function test_legacy_booking_update_without_patient_payload_preserves_patient_id(): void
+    {
+        $fixture = $this->createFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Stable Patient',
+            'patient_email' => 'stable.patient@example.com',
+            'patient_phone' => '+421900444333',
+        ]);
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+        ]);
+
+        $event->bookingDetail()->create([
+            'patient_id' => $patient->id,
+            'patient_name' => $patient->patient_name,
+            'booking_source' => 'admin_calendar',
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.bookings.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_ids' => [$fixture['service']->id],
+            'starts_at' => '2026-07-20 12:00:00',
+            'patient_name' => 'Stable Patient Updated Name',
+            'update_scope' => 'series',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('booking_event_details', [
+            'event_id' => $event->id,
+            'patient_id' => $patient->id,
+            'patient_name' => 'Stable Patient Updated Name',
+        ]);
+    }
+
+    public function test_legacy_booking_reschedule_rejects_staff_id_payload(): void
+    {
+        $fixture = $this->createFixture();
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.reschedule', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'starts_at' => '2026-07-21 11:00:00',
+            'staff_id' => 12,
+            'reschedule_scope' => 'series',
+        ])->assertSessionHasErrors('staff_id');
+    }
+
+    public function test_legacy_booking_reschedule_rejects_patient_id_mutation_with_exact_message(): void
+    {
+        $fixture = $this->createFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'patient_name' => 'Immutable Reschedule Patient',
+            'patient_email' => 'immutable.reschedule.patient@example.com',
+            'patient_phone' => '+421900222111',
+        ]);
+
+        $event = Event::query()->create([
+            'branch_id' => $fixture['branch']->id,
+            'type' => EventType::Booking->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-20 10:00:00'),
+            'ends_at' => Carbon::parse('2026-07-20 10:30:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => false,
+        ]);
+
+        $event->bookingDetail()->create([
+            'patient_id' => $patient->id,
+            'patient_name' => $patient->patient_name,
+            'booking_source' => 'admin_calendar',
+            'booking_status' => 'confirmed',
+        ]);
+
+        $event->services()->sync([
+            $fixture['service']->id => [
+                'duration_minutes_snapshot' => $fixture['service']->duration_minutes,
+                'price_snapshot' => $fixture['service']->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->actingAs($fixture['user'])->post(route('branches.booking.bookings.reschedule', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'starts_at' => '2026-07-20 13:00:00',
+            'patient_id' => 123456,
+            'reschedule_scope' => 'series',
+        ])->assertSessionHasErrors([
+            'patient_id' => 'Pacienta existujúcej rezervácie nie je možné zmeniť.',
+        ]);
+
+        $this->assertDatabaseHas('booking_event_details', [
+            'event_id' => $event->id,
+            'patient_id' => $patient->id,
         ]);
     }
 

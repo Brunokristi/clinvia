@@ -6,6 +6,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    patientsDisabled: {
+        type: Boolean,
+        default: false,
+    },
     patientsLabel: {
         type: String,
         default: 'Pacienti',
@@ -42,6 +46,7 @@ const emit = defineEmits([
         :label="patientsLabel"
         severity="secondary"
         outlined
+        :disabled="patientsDisabled"
         @click="emit('patients')"
     />
 

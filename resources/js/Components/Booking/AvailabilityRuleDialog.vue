@@ -516,7 +516,7 @@ const duplicateRule = () => {
         :show-duplicate="false"
         :show-date-time-fields="false"
         scope-mode="update"
-        scope-subject-label="voľný čas"
+        scope-subject-label="pravidlo rezervácií"
         @close="closeDialog"
         @delete-occurrence="deleteOccurrence"
         @delete-from-now-on="deleteFromNowOn"

@@ -4,11 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Patient;
+use App\Models\Service;
 use App\Modules\Calendar\Actions\CancelEventAction;
 use App\Modules\Calendar\Actions\CreateEventAction;
 use App\Modules\Calendar\Actions\DeleteEventAction;
 use App\Modules\Calendar\Actions\DuplicateEventAction;
-use App\Modules\Calendar\Actions\RescheduleEventAction;
 use App\Modules\Calendar\Actions\UpdateEventAction;
 use App\Modules\Calendar\Enums\EventType;
 use App\Modules\Calendar\Models\Event;
@@ -41,6 +42,8 @@ class BranchBookingEventBridgeController extends Controller
             'service_ids.*' => ['integer', 'exists:services,id'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'staff_id' => ['prohibited'],
+            'patient_id' => ['required', 'integer', 'exists:patients,id'],
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_email' => ['nullable', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
@@ -57,6 +60,17 @@ class BranchBookingEventBridgeController extends Controller
             'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
             'recurrence.ends.until' => ['nullable', 'date'],
         ]);
+
+        $patientBelongsToBranch = Patient::query()
+            ->where('branch_id', $branch->id)
+            ->whereKey((int) $validated['patient_id'])
+            ->exists();
+
+        if (! $patientBelongsToBranch) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Vybraný pacient nepatrí do tejto pobočky.',
+            ]);
+        }
 
         $serviceIds = collect($validated['service_ids'] ?? [])
             ->map(fn ($id) => (int) $id)
@@ -86,6 +100,7 @@ class BranchBookingEventBridgeController extends Controller
                 ->values()
                 ->all(),
             'booking_detail' => [
+                'patient_id' => (int) $validated['patient_id'],
                 'booking_source' => 'admin_calendar',
                 'booking_status' => 'confirmed',
                 'internal_notes' => $validated['admin_note'] ?? null,
@@ -109,29 +124,120 @@ class BranchBookingEventBridgeController extends Controller
         int $booking,
         UpdateEventAction $updateEventAction,
         CancelEventAction $cancelEventAction,
+        RecurrenceService $recurrenceService,
     ): RedirectResponse {
         $this->authorizeAccess($request, $branch);
 
         $event = $this->resolveBookingEvent($branch, $booking);
 
-        $validated = $request->validate([
-            'status' => ['required', 'in:confirmed,cancelled,completed,no_show'],
-            'admin_note' => ['nullable', 'string'],
-        ]);
-
-        if ($validated['status'] === 'cancelled') {
-            $cancelEventAction->execute($event, $request->user()?->id, 'series');
-
-            return back()->with('success', 'Rezervacia bola zrusena.');
+        if ($request->exists('patient_id')) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Pacienta existujúcej rezervácie nie je možné zmeniť.',
+            ]);
         }
 
-        $updateEventAction->execute($event, [
-            'status' => $validated['status'],
+        $validated = $request->validate([
+            'status' => ['nullable', 'in:confirmed,cancelled,completed,no_show'],
+            'admin_note' => ['nullable', 'string'],
+            'patient_note' => ['nullable', 'string'],
+            'patient_id' => ['prohibited'],
+            'type' => ['prohibited'],
+            'event_type' => ['prohibited'],
+            'service_id' => ['nullable', 'integer', 'exists:services,id'],
+            'service_ids' => ['nullable', 'array'],
+            'service_ids.*' => ['integer', 'exists:services,id'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'patient_name' => ['nullable', 'string', 'max:255'],
+            'patient_email' => ['nullable', 'email', 'max:255'],
+            'patient_phone' => ['nullable', 'string', 'max:255'],
+            'patient_birth_number' => ['nullable', 'string', 'max:255'],
+            'update_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
+            'date' => ['nullable', 'date'],
+            'recurrence' => ['nullable', 'array'],
+            'recurrence.frequency' => ['required_with:recurrence', 'in:daily,weekly,monthly,yearly'],
+            'recurrence.interval' => ['nullable', 'integer', 'min:1'],
+            'recurrence.weekdays' => ['nullable', 'array'],
+            'recurrence.weekdays.*' => ['in:MO,TU,WE,TH,FR,SA,SU'],
+            'recurrence.ends' => ['nullable', 'array'],
+            'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
+            'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
+            'recurrence.ends.until' => ['nullable', 'date'],
+            'staff_id' => ['prohibited'],
+        ]);
+
+        $hasCalendarMutation = $request->exists('starts_at')
+            || $request->exists('service_id')
+            || $request->exists('service_ids')
+            || $request->exists('recurrence');
+
+        if (! $hasCalendarMutation) {
+            $status = $validated['status'] ?? $event->status->value;
+
+            if ($status === 'cancelled') {
+                $cancelEventAction->execute($event, $request->user()?->id, 'series');
+
+                return back()->with('success', 'Rezervacia bola zrusena.');
+            }
+
+            $updateEventAction->execute($event, [
+                'status' => $status,
+                'booking_detail' => [
+                    'internal_notes' => $validated['admin_note'] ?? $event->bookingDetail?->internal_notes,
+                    'booking_status' => $status,
+                ],
+            ], $request->user()?->id, 'series');
+
+            return back()->with('success', 'Rezervacia bola upravena.');
+        }
+
+        $scope = $this->normalizeScope($validated['update_scope'] ?? (
+            filled($validated['date'] ?? null) ? 'occurrence' : 'series'
+        ));
+
+        if ($scope === 'this' && $request->exists('recurrence')) {
+            $scope = 'series';
+        }
+
+        $serviceIds = $this->resolveServiceIds($event, $validated);
+        $startsAt = filled($validated['starts_at'] ?? null)
+            ? Carbon::parse($validated['starts_at'])
+            : $event->starts_at;
+        $endsAt = $this->resolveEndsAtFromServiceIds($branch, $serviceIds, $startsAt, $event->ends_at);
+
+        $payload = [
+            'status' => $validated['status'] ?? $event->status,
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+            'occurrence_date' => filled($validated['date'] ?? null)
+                ? Carbon::parse($validated['date'])->toDateString()
+                : null,
             'booking_detail' => [
+                'patient_name' => $validated['patient_name'] ?? $event->bookingDetail?->patient_name,
+                'patient_email' => $validated['patient_email'] ?? $event->bookingDetail?->patient_email,
+                'patient_phone' => $validated['patient_phone'] ?? $event->bookingDetail?->patient_phone,
+                'patient_birth_number' => $validated['patient_birth_number'] ?? $event->bookingDetail?->patient_birth_number,
+                'public_notes' => $validated['patient_note'] ?? $event->bookingDetail?->public_notes,
                 'internal_notes' => $validated['admin_note'] ?? $event->bookingDetail?->internal_notes,
-                'booking_status' => $validated['status'],
+                'booking_status' => $validated['status'] ?? $event->status,
             ],
-        ], $request->user()?->id, 'series');
+            'services' => collect($serviceIds)
+                ->values()
+                ->map(fn (int $serviceId, int $index) => [
+                    'service_id' => $serviceId,
+                    'sort_order' => $index,
+                    'quantity' => 1,
+                ])
+                ->all(),
+        ];
+
+        if ($request->exists('recurrence')) {
+            $payload['recurrence_rule'] = filled($validated['recurrence'] ?? null)
+                ? $recurrenceService->normalize($validated['recurrence'])
+                : null;
+        }
+
+        $updateEventAction->execute($event, $payload, $request->user()?->id, $scope);
 
         return back()->with('success', 'Rezervacia bola upravena.');
     }
@@ -177,13 +283,18 @@ class BranchBookingEventBridgeController extends Controller
         Request $request,
         Branch $branch,
         int $booking,
-        RescheduleEventAction $rescheduleEventAction,
         UpdateEventAction $updateEventAction,
         RecurrenceService $recurrenceService,
     ): RedirectResponse {
         $this->authorizeAccess($request, $branch);
 
         $event = $this->resolveBookingEvent($branch, $booking);
+
+        if ($request->exists('patient_id')) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Pacienta existujúcej rezervácie nie je možné zmeniť.',
+            ]);
+        }
 
         $validated = $request->validate([
             'service_id' => ['nullable', 'integer', 'exists:services,id'],
@@ -195,6 +306,9 @@ class BranchBookingEventBridgeController extends Controller
             'patient_email' => ['nullable', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
             'patient_birth_number' => ['nullable', 'string', 'max:255'],
+            'patient_id' => ['prohibited'],
+            'type' => ['prohibited'],
+            'event_type' => ['prohibited'],
             'patient_note' => ['nullable', 'string'],
             'admin_note' => ['nullable', 'string'],
             'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
@@ -208,78 +322,52 @@ class BranchBookingEventBridgeController extends Controller
             'recurrence.ends.type' => ['required_with:recurrence.ends', 'in:never,on,after'],
             'recurrence.ends.count' => ['nullable', 'integer', 'min:1'],
             'recurrence.ends.until' => ['nullable', 'date'],
+            'staff_id' => ['prohibited'],
         ]);
 
         $scope = $this->normalizeScope($validated['reschedule_scope'] ?? 'series');
 
-        $rescheduledEvent = $rescheduleEventAction->execute(
-            event: $event,
-            startsAt: Carbon::parse($validated['starts_at']),
-            endsAt: Carbon::parse($validated['ends_at'] ?? $event->ends_at),
-            actorId: $request->user()?->id,
-            scope: $scope,
-            occurrenceDate: filled($validated['date'] ?? null)
-                ? Carbon::parse($validated['date'])
-                : null,
-        );
-
-        $serviceIds = collect($validated['service_ids'] ?? [])
-            ->map(fn ($id) => (int) $id)
-            ->filter()
-            ->values();
-
-        if ($serviceIds->isEmpty() && filled($validated['service_id'] ?? null)) {
-            $serviceIds->push((int) $validated['service_id']);
-        }
-
-        if ($serviceIds->isEmpty()) {
-            $serviceIds = $rescheduledEvent->services
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->filter()
-                ->values();
-        }
+        $serviceIds = collect($this->resolveServiceIds($event, $validated));
+        $startsAt = Carbon::parse($validated['starts_at']);
+        $endsAt = $this->resolveEndsAtFromServiceIds($branch, $serviceIds->all(), $startsAt, $event->ends_at);
 
         $updatePayload = [
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+            'occurrence_date' => filled($validated['date'] ?? null)
+                ? Carbon::parse($validated['date'])->toDateString()
+                : null,
             'booking_detail' => [
-                'patient_name' => $validated['patient_name'] ?? $rescheduledEvent->bookingDetail?->patient_name,
-                'patient_email' => $validated['patient_email'] ?? $rescheduledEvent->bookingDetail?->patient_email,
-                'patient_phone' => $validated['patient_phone'] ?? $rescheduledEvent->bookingDetail?->patient_phone,
-                'patient_birth_number' => $validated['patient_birth_number'] ?? $rescheduledEvent->bookingDetail?->patient_birth_number,
-                'public_notes' => $validated['patient_note'] ?? $rescheduledEvent->bookingDetail?->public_notes,
-                'internal_notes' => $validated['admin_note'] ?? $rescheduledEvent->bookingDetail?->internal_notes,
-                'booking_status' => $rescheduledEvent->status,
+                'patient_name' => $validated['patient_name'] ?? $event->bookingDetail?->patient_name,
+                'patient_email' => $validated['patient_email'] ?? $event->bookingDetail?->patient_email,
+                'patient_phone' => $validated['patient_phone'] ?? $event->bookingDetail?->patient_phone,
+                'patient_birth_number' => $validated['patient_birth_number'] ?? $event->bookingDetail?->patient_birth_number,
+                'public_notes' => $validated['patient_note'] ?? $event->bookingDetail?->public_notes,
+                'internal_notes' => $validated['admin_note'] ?? $event->bookingDetail?->internal_notes,
+                'booking_status' => $event->status,
             ],
-        ];
-
-        if ($serviceIds->isNotEmpty()) {
-            $updatePayload['services'] = $serviceIds
+            'services' => $serviceIds
                 ->values()
                 ->map(fn (int $serviceId, int $index) => [
                     'service_id' => $serviceId,
                     'sort_order' => $index,
                     'quantity' => 1,
                 ])
-                ->all();
-        }
-
-        $updateEventAction->execute(
-            event: $rescheduledEvent->fresh(['services', 'bookingDetail']),
-            payload: $updatePayload,
-            actorId: $request->user()?->id,
-            scope: 'series',
-        );
+                ->all(),
+        ];
 
         if ($request->exists('recurrence')) {
             $normalizedRecurrence = filled($validated['recurrence'] ?? null)
                 ? $recurrenceService->normalize($validated['recurrence'])
                 : null;
 
-            $currentRecurrence = filled($rescheduledEvent->recurrence_rule)
-                ? $recurrenceService->normalize($rescheduledEvent->recurrence_rule)
+            $currentRecurrence = filled($event->recurrence_rule)
+                ? $recurrenceService->normalize($event->recurrence_rule)
                 : null;
 
             if ($normalizedRecurrence == $currentRecurrence) {
+                $updateEventAction->execute($event, $updatePayload, $request->user()?->id, $scope);
+
                 return back()->with('success', 'Rezervacia bola presunuta.');
             }
 
@@ -289,11 +377,11 @@ class BranchBookingEventBridgeController extends Controller
                 $recurrenceScope = 'this_and_following';
             }
 
-            $updateEventAction->execute($rescheduledEvent->fresh(), [
-                'recurrence_rule' => $normalizedRecurrence,
-                'occurrence_date' => $validated['date'] ?? null,
-            ], $request->user()?->id, $recurrenceScope);
+            $updatePayload['recurrence_rule'] = $normalizedRecurrence;
+            $scope = $recurrenceScope;
         }
+
+        $updateEventAction->execute($event, $updatePayload, $request->user()?->id, $scope);
 
         return back()->with('success', 'Rezervacia bola presunuta.');
     }
@@ -316,6 +404,7 @@ class BranchBookingEventBridgeController extends Controller
             'service_ids.*' => ['integer', 'exists:services,id'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'staff_id' => ['prohibited'],
             'patient_name' => ['required', 'string', 'max:255'],
             'patient_email' => ['nullable', 'email', 'max:255'],
             'patient_phone' => ['nullable', 'string', 'max:255'],
@@ -416,5 +505,54 @@ class BranchBookingEventBridgeController extends Controller
             'all', 'series' => 'series',
             default => 'series',
         };
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function resolveServiceIds(Event $event, array $validated): array
+    {
+        $serviceIds = collect($validated['service_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values();
+
+        if ($serviceIds->isEmpty() && filled($validated['service_id'] ?? null)) {
+            $serviceIds->push((int) $validated['service_id']);
+        }
+
+        if ($serviceIds->isNotEmpty()) {
+            return $serviceIds
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        $event->loadMissing('services');
+
+        return $event->services
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function resolveEndsAtFromServiceIds(Branch $branch, array $serviceIds, ?Carbon $startsAt, ?Carbon $fallbackEndsAt): ?Carbon
+    {
+        if (! $startsAt) {
+            return $fallbackEndsAt;
+        }
+
+        $durationMinutes = Service::query()
+            ->where('branch_id', $branch->id)
+            ->whereIn('id', collect($serviceIds)->map(fn ($id) => (int) $id)->filter()->values())
+            ->sum('duration_minutes');
+
+        if ((int) $durationMinutes <= 0) {
+            return $fallbackEndsAt;
+        }
+
+        return $startsAt->copy()->addMinutes((int) $durationMinutes);
     }
 }

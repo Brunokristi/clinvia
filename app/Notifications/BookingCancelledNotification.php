@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Booking;
+use App\Support\BookingCalendarInvite;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -47,7 +48,7 @@ class BookingCancelledNotification extends Notification
             }
         }
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Rezervácia bola zrušená')
             ->view('emails.bookings.cancelled', [
                 'patientName' => $this->booking->patient_name,
@@ -58,5 +59,22 @@ class BookingCancelledNotification extends Notification
                 'appointmentLabel' => $appointmentLabel,
                 'reason' => $this->reason,
             ]);
+
+        if ($startsAt) {
+            $mail->attachData(
+                BookingCalendarInvite::buildIcs(
+                    booking: $this->booking,
+                    startsAt: $startsAt->copy(),
+                    endsAt: $endsAt?->copy(),
+                    method: 'CANCEL',
+                    status: 'CANCELLED',
+                    sequence: max(1, (int) ($this->booking->updated_at?->timestamp ?? now()->timestamp)),
+                ),
+                'reservation-cancelled.ics',
+                ['mime' => 'text/calendar; charset=UTF-8; method=CANCEL'],
+            );
+        }
+
+        return $mail;
     }
 }

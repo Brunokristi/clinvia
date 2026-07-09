@@ -10,6 +10,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 const toast = useToast();
 const page = usePage();
 const lastFlashSuccess = ref('');
+const isCalendarBookingsPage = computed(() => String(page.component ?? '').includes('Admin/Branches/Bookings'));
 
 const company = computed(() => page.props.company ?? page.props.branch?.company ?? null);
 const branch = computed(() => page.props.branch ?? null);
@@ -145,6 +146,10 @@ const pageTitle = computed(() => {
 watch(
     () => page.props.flash?.success,
     (message) => {
+        if (isCalendarBookingsPage.value) {
+            return;
+        }
+
         if (!message || message === lastFlashSuccess.value) {
             return;
         }

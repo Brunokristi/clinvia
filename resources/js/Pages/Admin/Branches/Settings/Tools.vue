@@ -16,6 +16,10 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    insuranceCompanies: {
+        type: Object,
+        default: () => ({}),
+    },
     templates: {
         type: Array,
         default: () => [
@@ -30,6 +34,30 @@ const props = defineProps({
 const publicSite = props.branch.public_site ?? {};
 const bookingSettings = props.branch.booking_settings ?? {};
 const notificationSettings = props.branch.notification_settings ?? {};
+const contractedInsuranceCompanies = props.branch.contracted_insurance_companies ?? [];
+
+const insuranceCompanyOptions = computed(() => {
+    return Object.entries(props.insuranceCompanies ?? {}).map(([key, item]) => ({
+        key,
+        label: item.label ?? key,
+        full_name: item.full_name ?? item.label ?? key,
+    }));
+});
+
+const bookingModeOptions = [
+    {
+        label: 'Len požiadavky',
+        value: 'requests_only',
+    },
+    {
+        label: 'Len overení pacienti',
+        value: 'verified_patients_only',
+    },
+    {
+        label: 'Len administrátor',
+        value: 'admin_only',
+    },
+];
 
 const form = useForm({
     public_site: {
@@ -47,9 +75,15 @@ const form = useForm({
         is_enabled: bookingSettings.is_enabled ?? false,
         allow_service_selection: bookingSettings.allow_service_selection ?? true,
         allow_appointment_requests: bookingSettings.allow_appointment_requests ?? true,
+        booking_mode: bookingSettings.booking_mode ?? 'requests_only',
         intro_text: bookingSettings.intro_text ?? '',
         success_message: bookingSettings.success_message ?? '',
     },
+
+    contracted_insurance_companies: Array.isArray(contractedInsuranceCompanies)
+        ? contractedInsuranceCompanies
+        : [],
+    show_other_branches_in_footer: Boolean(props.branch.show_other_branches_in_footer ?? false),
 
     notifications: {
         is_enabled: notificationSettings.is_enabled ?? false,
@@ -280,6 +314,88 @@ const publicUrl = `/p/${props.branch.slug}`;
                             Rezervácie online sú povolené
                         </p>
                     </div>
+                </FormField>
+
+                <FormField
+                    v-if="form.booking.is_enabled"
+                    label="Režim verejného objednávania"
+                    for="booking_mode"
+                    :error="form.errors['booking.booking_mode']"
+                    span="md:col-span-2"
+                >
+                    <Select
+                        id="booking_mode"
+                        v-model="form.booking.booking_mode"
+                        :options="bookingModeOptions"
+                        option-label="label"
+                        option-value="value"
+                        class="w-full"
+                        :invalid="Boolean(form.errors['booking.booking_mode'])"
+                    />
+
+                    <p class="mt-2 text-sm text-accent">
+                        Tento režim riadi, či sa verejné odoslanie vytvorí ako požiadavka alebo môže potvrdiť termín okamžite.
+                    </p>
+                </FormField>
+
+                <FormField
+                    v-if="form.booking.is_enabled"
+                    label="Zobrazovať ostatné pobočky vo footeri"
+                    for="show_other_branches_in_footer"
+                    :error="form.errors.show_other_branches_in_footer"
+                    span="md:col-span-2"
+                >
+                    <div class="mt-2 flex items-center gap-3">
+                        <Checkbox
+                            id="show_other_branches_in_footer"
+                            v-model="form.show_other_branches_in_footer"
+                            binary
+                            :invalid="Boolean(form.errors.show_other_branches_in_footer)"
+                        />
+
+                        <p class="text-normal text-accent">
+                            Vo verejnom footeri sa zobrazia odkazy na ďalšie aktívne pobočky spoločnosti.
+                        </p>
+                    </div>
+                </FormField>
+
+                <FormField
+                    v-if="form.booking.is_enabled"
+                    label="Zmluvné poisťovne"
+                    for="contracted_insurance_companies"
+                    :error="form.errors.contracted_insurance_companies"
+                    span="md:col-span-2"
+                >
+                    <p class="mb-3 text-sm text-accent">
+                        Vyberte zdravotné poisťovne, s ktorými má táto pobočka uzatvorenú zmluvu.
+                    </p>
+
+                    <div class="space-y-3">
+                        <label
+                            v-for="option in insuranceCompanyOptions"
+                            :key="option.key"
+                            class="flex items-start gap-3"
+                        >
+                            <Checkbox
+                                v-model="form.contracted_insurance_companies"
+                                :input-id="`insurance_${option.key}`"
+                                :value="option.key"
+                                :invalid="Boolean(form.errors.contracted_insurance_companies)"
+                            />
+
+                            <span class="text-normal text-dark">
+                                <span class="font-medium">{{ option.label }}</span>
+                                <span class="block text-sm text-accent">{{ option.full_name }}</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <p
+                        v-if="form.errors.contracted_insurance_companies"
+                        class="mt-2 text-small text-red-500"
+                    >
+                        {{ form.errors.contracted_insurance_companies }}
+                    </p>
                 </FormField>
             </FormSection>
 

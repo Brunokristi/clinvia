@@ -45,6 +45,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    insuranceCompanies: {
+        type: Object,
+        default: () => ({}),
+    },
     contacts: {
         type: Array,
         default: () => [],
@@ -97,6 +101,7 @@ const settingsTabs = computed(() => [
         componentProps: {
             branch: props.branch,
             templates: props.templates,
+            insuranceCompanies: props.insuranceCompanies,
         },
     },
     {

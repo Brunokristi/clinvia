@@ -15,6 +15,7 @@ class BookingEventDetail extends Model
     protected $fillable = [
         'event_id',
         'patient_id',
+        'source_request_id',
         'booking_source',
         'booking_status',
         'internal_notes',

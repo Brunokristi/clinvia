@@ -13,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 class RecurringImpactService
 {
     private const PREVIEW_COUNT_LIMIT = 50;
+    private const PREVIEW_PARTICIPANT_COUNT_LIMIT = 50;
 
     public function __construct(
         private readonly RecurrenceExpansionService $recurrenceExpansionService,
@@ -77,21 +78,25 @@ class RecurringImpactService
             eventType: $eventType,
         );
 
-        $isAffectedCountCapped = $affectedOccurrences->count() > self::PREVIEW_COUNT_LIMIT;
+        $affectedOccurrencesForCount = $affectedOccurrences
+            ->take(self::PREVIEW_COUNT_LIMIT + 1)
+            ->values();
 
-        if ($isAffectedCountCapped) {
-            $affectedOccurrences = $affectedOccurrences
-                ->take(self::PREVIEW_COUNT_LIMIT + 1)
-                ->values();
-        }
+        $isAffectedCountCapped = $affectedOccurrencesForCount->count() > self::PREVIEW_COUNT_LIMIT;
 
-        $affectedOccurrencesPayload = $affectedOccurrences
+        $affectedOccurrencesPayload = $affectedOccurrencesForCount
+            ->take(self::PREVIEW_COUNT_LIMIT)
             ->map(fn (array $occurrence): array => Arr::except($occurrence, ['event']))
             ->values();
 
         $affectedOccurrenceCount = $isAffectedCountCapped
-            ? self::PREVIEW_COUNT_LIMIT + 1
+            ? self::PREVIEW_COUNT_LIMIT
             : $affectedOccurrencesPayload->count();
+        $affectedOccurrenceCountLabel = $this->buildCountLabel(
+            $affectedOccurrenceCount,
+            $isAffectedCountCapped,
+            self::PREVIEW_COUNT_LIMIT,
+        );
         $affectedExceptionCount = $affectedOccurrencesPayload->where('is_exception', true)->count();
         $affectedMasterCount = $masters->count();
 
@@ -103,18 +108,32 @@ class RecurringImpactService
             ? $this->countConflictingBookings($branch, $affectedOccurrences, $impactWindowFrom, $impactWindowTo)
             : 0;
 
-        $affectedParticipantCount = $eventType === EventType::GroupEvent->value
-            ? $this->countAffectedParticipants($affectedOccurrences)
-            : 0;
+        $participantCounts = $eventType === EventType::GroupEvent->value
+            ? $this->countAffectedParticipantsCapped($affectedOccurrences)
+            : [0, '0', false];
+
+        [$affectedParticipantCount, $affectedParticipantCountLabel, $isAffectedParticipantCountCapped] = $participantCounts;
+
+        $selectedOccurrencePayload = $this->buildSelectedOccurrencePayload(
+            selectedOccurrence: $selectedOccurrence,
+            event: $event,
+            selectedDisplayKey: $selectedDisplayKey,
+            selectedStartsAt: $selectedStartsAt,
+            selectedOriginalStartsAt: $selectedOriginalStartsAt,
+        );
 
         $message = $this->buildMessage(
             scope: $normalizedScope,
             eventType: $eventType,
             isInfiniteSeries: $isInfiniteSeries,
             affectedOccurrenceCount: $affectedOccurrenceCount,
+            affectedOccurrenceCountLabel: $affectedOccurrenceCountLabel,
+            isAffectedCountCapped: $isAffectedCountCapped,
             pastNotModifiedCount: $pastNotModified,
             conflictingBookings: $affectedConflictingBookingCount,
             participantCount: $affectedParticipantCount,
+            participantCountLabel: $affectedParticipantCountLabel,
+            isParticipantCountCapped: $isAffectedParticipantCountCapped,
         );
 
         return [
@@ -122,6 +141,7 @@ class RecurringImpactService
             'scope' => $normalizedScope,
             'event_type' => $eventType,
             'root_event_id' => $logicalRootEventId,
+            'selected_occurrence' => $selectedOccurrencePayload,
             'selected_display_key' => $selectedDisplayKey,
             'selected_original_start_at' => $selectedOriginalStartsAt?->toIso8601String(),
             'selected_starts_at' => $selectedStartsAt?->toIso8601String(),
@@ -129,16 +149,46 @@ class RecurringImpactService
             'impact_window_to' => $impactWindowTo?->toIso8601String(),
             'is_infinite_series' => $isInfiniteSeries,
             'affected_occurrence_count' => $affectedOccurrenceCount,
+            'affected_occurrence_count_label' => $affectedOccurrenceCountLabel,
+            'is_affected_count_capped' => $isAffectedCountCapped,
             'affected_occurrences' => $affectedOccurrencesPayload->all(),
+            'affected_occurrence_sample' => $affectedOccurrencesPayload->take(5)->values()->all(),
             'affected_master_count' => $affectedMasterCount,
             'affected_exception_count' => $affectedExceptionCount,
             'affected_booking_count' => $affectedBookingCount,
             'affected_conflicting_booking_count' => $affectedConflictingBookingCount,
             'affected_participant_count' => $affectedParticipantCount,
+            'affected_participant_count_label' => $affectedParticipantCountLabel,
+            'is_affected_participant_count_capped' => $isAffectedParticipantCountCapped,
             'past_occurrence_count_not_modified' => $pastNotModified,
             'message' => $message,
             'changes' => $changes,
         ];
+    }
+
+    private function buildSelectedOccurrencePayload(
+        array $selectedOccurrence,
+        Event $event,
+        string $selectedDisplayKey,
+        Carbon $selectedStartsAt,
+        Carbon $selectedOriginalStartsAt,
+    ): array {
+        $selectedEndsAtRaw = $selectedOccurrence['occurrence_ends_at']
+            ?? $selectedOccurrence['ends_at']
+            ?? $event->ends_at?->toIso8601String();
+
+        return [
+            'display_key' => $selectedDisplayKey,
+            'active_master_id' => (int) ($selectedOccurrence['recurring_master_id'] ?? ($event->recurrence_parent_id ?? $event->id)),
+            'original_start_at' => $selectedOriginalStartsAt->toIso8601String(),
+            'starts_at' => $selectedStartsAt->toIso8601String(),
+            'ends_at' => filled($selectedEndsAtRaw) ? Carbon::parse((string) $selectedEndsAtRaw)->toIso8601String() : null,
+        ];
+    }
+
+    private function buildCountLabel(int $count, bool $isCapped, int $limit): string
+    {
+        return $isCapped ? sprintf('%d+', $limit) : (string) $count;
     }
 
     private function normalizeScope(string $scope): string
@@ -236,12 +286,18 @@ class RecurringImpactService
         string $eventType,
         Carbon $cutoff,
     ): array {
+        $earliestMasterStart = $masters
+            ->pluck('starts_at')
+            ->filter()
+            ->map(fn ($startsAt): Carbon => Carbon::parse($startsAt)->startOfMinute())
+            ->min();
+
         $from = match ($scope) {
             'this' => $selectedStartsAt->copy()->startOfMinute(),
             'this_and_following' => $selectedStartsAt->copy()->startOfMinute(),
             default => $eventType === EventType::Booking->value
                 ? $cutoff->copy()
-                : ($selectedStartsAt->lt($cutoff) ? $selectedStartsAt->copy()->startOfMinute() : $cutoff->copy()),
+                : ($earliestMasterStart?->copy() ?? $selectedStartsAt->copy()->startOfMinute()),
         };
 
         $isInfinite = $masters
@@ -441,7 +497,11 @@ class RecurringImpactService
                 return $startsAt->gte($cutoff);
             }
 
-            return $scope !== 'all' || $startsAt->gte($cutoff);
+            if ($scope === 'all') {
+                return true;
+            }
+
+            return true;
         });
 
         return $filtered->values();
@@ -531,22 +591,38 @@ class RecurringImpactService
         return $conflicts;
     }
 
-    private function countAffectedParticipants(Collection $affectedOccurrences): int
+    private function countAffectedParticipantsCapped(Collection $affectedOccurrences): array
     {
-        return $affectedOccurrences
-            ->groupBy('display_key')
-            ->sum(function (Collection $occurrenceGroup): int {
-                /** @var Event|null $event */
-                $event = $occurrenceGroup->first()['event'] ?? null;
+        $limit = self::PREVIEW_PARTICIPANT_COUNT_LIMIT;
+        $count = 0;
+        $processedDisplayKeys = [];
 
-                if (! $event) {
-                    return 0;
-                }
+        foreach ($affectedOccurrences as $occurrence) {
+            $displayKey = (string) ($occurrence['display_key'] ?? '');
 
-                return (int) $event->participants
-                    ->where('status', 'confirmed')
-                    ->count();
-            });
+            if ($displayKey === '' || isset($processedDisplayKeys[$displayKey])) {
+                continue;
+            }
+
+            $processedDisplayKeys[$displayKey] = true;
+
+            /** @var Event|null $event */
+            $event = $occurrence['event'] ?? null;
+
+            if (! $event) {
+                continue;
+            }
+
+            $count += (int) $event->participants
+                ->where('status', 'confirmed')
+                ->count();
+
+            if ($count > $limit) {
+                return [$limit, sprintf('%d+', $limit), true];
+            }
+        }
+
+        return [$count, (string) $count, false];
     }
 
     private function buildMessage(
@@ -554,29 +630,33 @@ class RecurringImpactService
         string $eventType,
         bool $isInfiniteSeries,
         int $affectedOccurrenceCount,
+        string $affectedOccurrenceCountLabel,
+        bool $isAffectedCountCapped,
         int $pastNotModifiedCount,
         int $conflictingBookings,
         int $participantCount,
+        string $participantCountLabel,
+        bool $isParticipantCountCapped,
     ): string {
         $baseMessage = match ($scope) {
             'this' => 'Táto akcia ovplyvní 1 termín.',
             'this_and_following' => $isInfiniteSeries
-                ? sprintf('Táto séria nemá koniec. Akcia ovplyvní všetky budúce termíny od vybraného dátumu. V najbližších 12 mesiacoch je to %d termínov.', $affectedOccurrenceCount)
-                : sprintf('Táto akcia ovplyvní %d termínov od vybraného dátumu.', $affectedOccurrenceCount),
+                ? sprintf('Táto séria nemá koniec. Akcia ovplyvní všetky budúce termíny od vybraného dátumu. V najbližších 12 mesiacoch je to %s termínov.', $affectedOccurrenceCountLabel)
+                : sprintf('Táto akcia ovplyvní %s termínov od vybraného dátumu.', $affectedOccurrenceCountLabel),
             default => $isInfiniteSeries
-                ? sprintf('Táto séria nemá koniec. Akcia ovplyvní všetky termíny série. V najbližších 12 mesiacoch je to %d termínov.', $affectedOccurrenceCount)
-                : sprintf('Táto akcia ovplyvní %d termínov v celej sérii.', $affectedOccurrenceCount),
+                ? sprintf('Táto séria nemá koniec. Akcia ovplyvní všetky termíny série. V najbližších 12 mesiacoch je to %s termínov.', $affectedOccurrenceCountLabel)
+                : sprintf('Táto akcia ovplyvní %s termínov v celej sérii.', $affectedOccurrenceCountLabel),
         };
 
         if ($eventType === EventType::Booking->value && $pastNotModifiedCount > 0) {
             $bookingMessage = sprintf(
-                'Táto akcia ovplyvní %d budúcich rezervácií. %d minulých rezervácií zostane v histórii.',
-                $affectedOccurrenceCount,
+                'Táto akcia ovplyvní %s budúcich rezervácií. %d minulých rezervácií zostane v histórii.',
+                $affectedOccurrenceCountLabel,
                 $pastNotModifiedCount,
             );
 
             if ($isInfiniteSeries && $scope !== 'this') {
-                return $bookingMessage.' V najbližších 12 mesiacoch je to '.(string) $affectedOccurrenceCount.' termínov.';
+                return $bookingMessage.' V najbližších 12 mesiacoch je to '.$affectedOccurrenceCountLabel.' termínov.';
             }
 
             return $bookingMessage;
@@ -584,17 +664,17 @@ class RecurringImpactService
 
         if ($eventType === EventType::AvailabilityRule->value && $conflictingBookings > 0) {
             return sprintf(
-                'Táto akcia ovplyvní %d termínov dostupnosti. %d existujúcich rezervácií môže byť v konflikte.',
-                $affectedOccurrenceCount,
+                'Táto akcia ovplyvní %s termínov dostupnosti. %d existujúcich rezervácií môže byť v konflikte.',
+                $affectedOccurrenceCountLabel,
                 $conflictingBookings,
             );
         }
 
         if ($eventType === EventType::GroupEvent->value) {
             return sprintf(
-                'Táto akcia ovplyvní %d skupinových termínov a %d prihlásených účastníkov.',
-                $affectedOccurrenceCount,
-                $participantCount,
+                'Táto akcia ovplyvní %s skupinových termínov a %s prihlásených účastníkov.',
+                $isAffectedCountCapped ? sprintf('%d+', self::PREVIEW_COUNT_LIMIT) : $affectedOccurrenceCountLabel,
+                $isParticipantCountCapped ? sprintf('%d+', self::PREVIEW_PARTICIPANT_COUNT_LIMIT) : $participantCountLabel,
             );
         }
 

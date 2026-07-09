@@ -105,6 +105,7 @@ class EventMutationService
         $scope = $this->eventOccurrenceService->resolveScope($scope)->value;
         $event = $this->resolveScopedMutationEvent($event, $scope, $payload);
         $event->loadMissing($this->relations());
+        $payload = $this->normalizePayloadForUpdate($event, $payload);
         $beforeSnapshot = $this->notificationSnapshot($event);
         $this->validateRecurringMutation($event, $payload, $scope);
 
@@ -237,6 +238,9 @@ class EventMutationService
             'occurrence_starts_at' => request('occurrence_starts_at'),
             'occurrence_date' => request('occurrence_date'),
         ]);
+        $event->loadMissing($this->relations());
+        $beforeSnapshot = $this->notificationSnapshot($event);
+        $eventSnapshot = $this->notificationEventSnapshot($event);
 
         DB::transaction(function () use ($event, $scope): void {
             $occurrenceStartsAt = $this->resolveOccurrenceStartsAt($event, [
@@ -288,6 +292,15 @@ class EventMutationService
             },
             affectedEventIds: [$event->id],
             recurrenceScope: $scope,
+            context: [
+                'old_snapshot' => $beforeSnapshot,
+                'new_snapshot' => $beforeSnapshot,
+                'occurrence_display_key' => $this->resolveOccurrenceDisplayKey($event, [
+                    'occurrence_starts_at' => request('occurrence_starts_at'),
+                    'occurrence_date' => request('occurrence_date'),
+                ]),
+                'event_snapshot' => $eventSnapshot,
+            ],
         );
     }
 
@@ -505,6 +518,68 @@ class EventMutationService
         ];
     }
 
+    private function notificationEventSnapshot(Event $event): array
+    {
+        $event->loadMissing($this->relations());
+
+        return [
+            'id' => (int) $event->id,
+            'branch_id' => (int) $event->branch_id,
+            'root_event_id' => (int) ($event->root_event_id ?? $event->id),
+            'type' => $event->type->value,
+            'status' => (string) $event->status,
+            'starts_at' => $event->starts_at?->toIso8601String(),
+            'ends_at' => $event->ends_at?->toIso8601String(),
+            'is_recurring' => (bool) $event->is_recurring,
+            'recurrence_rule' => $event->recurrence_rule,
+            'metadata' => $event->metadata,
+            'branch' => [
+                'id' => (int) ($event->branch?->id ?? $event->branch_id),
+                'name' => $event->branch?->name,
+                'notification_settings' => $event->branch?->notification_settings,
+            ],
+            'services' => $event->services
+                ->map(fn ($service) => [
+                    'id' => (int) $service->id,
+                    'name' => $service->name,
+                ])
+                ->values()
+                ->all(),
+            'booking_detail' => $event->bookingDetail ? [
+                'id' => (int) $event->bookingDetail->id,
+                'event_id' => (int) $event->id,
+                'patient_id' => $event->bookingDetail->patient_id,
+                'patient_name' => $event->bookingDetail->patient_name,
+                'patient_email' => $event->bookingDetail->patient_email,
+                'patient_phone' => $event->bookingDetail->patient_phone,
+                'patient_birth_number' => $event->bookingDetail->patient_birth_number,
+                'booking_status' => $event->bookingDetail->booking_status,
+            ] : null,
+            'group_detail' => $event->groupDetail ? [
+                'id' => (int) $event->groupDetail->id,
+                'event_id' => (int) $event->id,
+                'service_id' => $event->groupDetail->service_id,
+                'service_name' => $event->groupDetail->service_name,
+                'capacity' => $event->groupDetail->capacity,
+                'reserved_places' => $event->groupDetail->reserved_places,
+                'group_status' => $event->groupDetail->group_status,
+            ] : null,
+            'participants' => $event->participants
+                ->map(fn ($participant) => [
+                    'id' => (int) $participant->id,
+                    'event_id' => (int) $event->id,
+                    'patient_id' => $participant->patient_id,
+                    'status' => $participant->status,
+                    'participant_name' => $participant->participant_name,
+                    'participant_email' => $participant->participant_email,
+                    'participant_phone' => $participant->participant_phone,
+                    'participant_birth_number' => $participant->participant_birth_number,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
     private function resolveOccurrenceDisplayKey(Event $event, array $payload): ?string
     {
         $occurrenceStartsAt = $this->resolveOccurrenceStartsAt($event, $payload);
@@ -523,6 +598,12 @@ class EventMutationService
         if ((int) $request->branch_id !== (int) $branch->id) {
             throw ValidationException::withMessages([
                 'appointment_request_id' => 'Request nepatri branchi.',
+            ]);
+        }
+
+        if (! filled($payload['patient_id'] ?? null)) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Pre potvrdenie žiadosti je potrebné vybrať pacienta.',
             ]);
         }
 
@@ -545,6 +626,8 @@ class EventMutationService
             'title' => 'Rezervacia',
             'services' => $services,
             'booking_detail' => [
+                'patient_id' => (int) $payload['patient_id'],
+                'source_request_id' => $request->id,
                 'booking_source' => 'appointment_request',
                 'booking_status' => 'confirmed',
                 'patient_name' => $payload['patient_name'] ?? $request->patient_name,
@@ -559,7 +642,9 @@ class EventMutationService
         ], $actorId);
 
         $request->update([
-            'status' => 'converted',
+            'status' => AppointmentRequest::STATUS_ACCEPTED,
+            'patient_id' => (int) $payload['patient_id'],
+            'accepted_booking_id' => $event->id,
             'booking_id' => null,
         ]);
 
@@ -731,6 +816,132 @@ class EventMutationService
         return $event;
     }
 
+    private function normalizePayloadForUpdate(Event $event, array $payload): array
+    {
+        $this->assertNoStaffIdentifierPayload($payload);
+        $this->assertImmutableFieldsAreNotMutated($event, $payload);
+
+        if ($this->shouldRejectManualEndsAtMutation($event, $payload)) {
+            throw ValidationException::withMessages([
+                'ends_at' => 'Koniec terminu sa pri rezervacii a skupinovom termine odvodzuje automaticky zo sluzieb.',
+            ]);
+        }
+
+        if (! $this->shouldAutoDeriveEndsAt($event, $payload)) {
+            return $payload;
+        }
+
+        $startsAt = Arr::exists($payload, 'starts_at') && filled($payload['starts_at'])
+            ? Carbon::parse($payload['starts_at'])
+            : $event->starts_at;
+
+        if (! $startsAt) {
+            return $payload;
+        }
+
+        $requiredMinutes = $this->resolveRequiredServiceDurationMinutes($event, $payload);
+
+        if ($requiredMinutes <= 0 && $event->starts_at && $event->ends_at) {
+            $requiredMinutes = max(1, $event->starts_at->diffInMinutes($event->ends_at, false));
+        }
+
+        if ($requiredMinutes <= 0) {
+            return $payload;
+        }
+
+        $payload['ends_at'] = $startsAt->copy()->addMinutes($requiredMinutes);
+
+        return $payload;
+    }
+
+    private function shouldAutoDeriveEndsAt(Event $event, array $payload): bool
+    {
+        if (! $this->shouldEnforceServiceDuration($event->type)) {
+            return false;
+        }
+
+        return Arr::exists($payload, 'starts_at') || Arr::exists($payload, 'services');
+    }
+
+    private function shouldRejectManualEndsAtMutation(Event $event, array $payload): bool
+    {
+        if (! $this->shouldEnforceServiceDuration($event->type)) {
+            return false;
+        }
+
+        return Arr::exists($payload, 'ends_at')
+            && ! Arr::exists($payload, 'starts_at')
+            && ! Arr::exists($payload, 'services');
+    }
+
+    private function assertImmutableFieldsAreNotMutated(Event $event, array $payload): void
+    {
+        if (Arr::exists($payload, 'type') && (string) $payload['type'] !== $event->type->value) {
+            throw ValidationException::withMessages([
+                'type' => 'Typ udalosti sa neda zmenit.',
+            ]);
+        }
+
+        if (Arr::exists($payload, 'event_type') && (string) $payload['event_type'] !== $event->type->value) {
+            throw ValidationException::withMessages([
+                'event_type' => 'Typ udalosti sa neda zmenit.',
+            ]);
+        }
+
+        if ($event->type !== EventType::Booking) {
+            return;
+        }
+
+        if (! Arr::has($payload, 'booking_detail.patient_id')) {
+            return;
+        }
+
+        $existingPatientId = (int) ($event->bookingDetail?->patient_id ?? 0);
+        $requestedPatientId = (int) data_get($payload, 'booking_detail.patient_id');
+
+        if ($existingPatientId > 0 && $requestedPatientId !== $existingPatientId) {
+            throw ValidationException::withMessages([
+                'booking_detail.patient_id' => 'Pacienta existujúcej rezervácie nie je možné zmeniť.',
+            ]);
+        }
+    }
+
+    private function assertNoStaffIdentifierPayload(array $payload): void
+    {
+        $forbiddenPath = $this->findForbiddenKeyPath($payload, ['staff_id']);
+
+        if (! $forbiddenPath) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'staff_id' => 'Tento kalendar nepodporuje staff_id.',
+        ]);
+    }
+
+    private function findForbiddenKeyPath(array $payload, array $forbiddenKeys, string $prefix = ''): ?string
+    {
+        foreach ($payload as $key => $value) {
+            $path = $prefix === '' ? (string) $key : $prefix . '.' . $key;
+
+            if (in_array((string) $key, $forbiddenKeys, true)) {
+                return $path;
+            }
+
+            if (! is_array($value)) {
+                continue;
+            }
+
+            $nestedPath = $this->findForbiddenKeyPath($value, $forbiddenKeys, $path);
+
+            if ($nestedPath) {
+                return $nestedPath;
+            }
+        }
+
+        return null;
+    }
+
     private function resolveOccurrenceStartsAt(Event $event, array $payload): ?Carbon
     {
         if (filled($payload['occurrence_starts_at'] ?? null)) {
@@ -900,6 +1111,14 @@ class EventMutationService
             if (! filled(data_get($payload, 'booking_detail.patient_name'))) {
                 throw ValidationException::withMessages([
                     'booking_detail.patient_name' => 'Pre booking event je patient_name povinny.',
+                ]);
+            }
+
+            $bookingStatus = (string) ($payload['status'] ?? data_get($payload, 'booking_detail.booking_status', 'confirmed'));
+
+            if ($bookingStatus !== 'draft' && ! filled(data_get($payload, 'booking_detail.patient_id'))) {
+                throw ValidationException::withMessages([
+                    'booking_detail.patient_id' => 'Pre potvrdenú rezerváciu je patient_id povinný.',
                 ]);
             }
 

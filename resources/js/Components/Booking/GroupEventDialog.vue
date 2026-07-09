@@ -1530,6 +1530,7 @@ const submitPatientFromMiniDialog = () => {
                 v-if="capacityWindow && isDetailMode"
                 show-patients
                 patients-label="+ Pacient"
+                :patients-disabled="!hasFreeCapacity"
                 @duplicate="duplicateCapacityWindow"
                 @patients="openAddPatientMode"
                 @edit="enableEditMode"
@@ -1587,6 +1588,13 @@ const submitPatientFromMiniDialog = () => {
                     </PatientCard>
                 </div>
             </FormSection>
+
+            <p
+                v-if="!hasFreeCapacity"
+                class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+                Kapacita skupinového termínu je naplnená.
+            </p>
         </div>
 
         <FormPage v-else-if="capacityWindow" submit-label="Uložiť" :show-submit="false">
@@ -1628,6 +1636,13 @@ const submitPatientFromMiniDialog = () => {
                 description="Pacienta pridáte priamo do tohto skupinového termínu."
                 columns="md:grid-cols-2"
             >
+                <p
+                    v-if="!hasFreeCapacity"
+                    class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2"
+                >
+                    Kapacita skupinového termínu je naplnená.
+                </p>
+
                 <FormField label="Meno pacienta" for="capacity_new_patient_name" required span="md:col-span-2">
                     <AutoComplete
                         id="capacity_new_patient_name"
@@ -1728,6 +1743,13 @@ const submitPatientFromMiniDialog = () => {
         @close="closeAddPatientDialog"
     >
         <form class="space-y-4" @submit.prevent="submitPatientFromMiniDialog">
+            <p
+                v-if="!hasFreeCapacity"
+                class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+                Kapacita skupinového termínu je naplnená.
+            </p>
+
             <PatientLookupField
                 input-id="capacity_dialog_existing_patient"
                 :model-value="selectedCapacityPatient?.patient_name ?? ''"

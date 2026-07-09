@@ -64,9 +64,12 @@ class BookingCreatedNotification extends Notification
                     booking: $this->booking,
                     startsAt: $startsAt->copy(),
                     endsAt: $endsAt?->copy(),
+                    method: 'REQUEST',
+                    status: 'CONFIRMED',
+                    sequence: max(0, (int) ($this->booking->updated_at?->timestamp ?? 0)),
                 ),
                 'reservation.ics',
-                ['mime' => 'text/calendar; charset=UTF-8; method=PUBLISH'],
+                ['mime' => 'text/calendar; charset=UTF-8; method=REQUEST'],
             );
         }
 

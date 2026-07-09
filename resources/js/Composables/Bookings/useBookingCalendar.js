@@ -11,6 +11,7 @@ import { useBookingDateTime } from './useBookingDateTime';
 import { useBookingOpeningHours } from './useBookingOpeningHours';
 import { useBookingRules } from './useBookingRules';
 import { useCapacityWindowActions } from './useCapacityWindowActions';
+import { useCalendarActionFeedback } from './useCalendarActionFeedback';
 import {
     hasRecurringRuleChanged,
     inferRecurringScope,
@@ -18,6 +19,7 @@ import {
 } from './recurrencePolicy';
 
 export function useBookingCalendar(props, options = {}) {
+    const feedback = useCalendarActionFeedback();
     const isDateDisabled = options.isDateDisabled ?? (() => false);
     const isDateClosedByOpeningHours = options.isDateClosedByOpeningHours ?? (() => false);
     const toggleDisabledDayByDate = options.toggleDisabledDayByDate ?? (() => { });
@@ -678,10 +680,6 @@ export function useBookingCalendar(props, options = {}) {
                     service_ids: data.service_ids ?? [],
                     starts_at: data.starts_at,
                     ends_at: data.ends_at,
-                    patient_name: data.patient_name,
-                    patient_email: data.patient_email,
-                    patient_phone: data.patient_phone,
-                    patient_birth_number: data.patient_birth_number,
                     recurrence: data.recurrence ?? null,
                     reschedule_scope: resolvedScope,
                     date: data.target_occurrence_date ?? data.date ?? null,
@@ -1234,6 +1232,14 @@ export function useBookingCalendar(props, options = {}) {
 
     const handleEventDropOrResize = (changeInfo) => {
         const type = changeInfo.event.extendedProps.type;
+        const isResize = typeof changeInfo.endDelta !== 'undefined' && changeInfo.endDelta !== null;
+
+        if (isResize && (type === 'booking' || type === 'capacity_window')) {
+            changeInfo.revert();
+            feedback.warn('Trvanie tejto udalosti závisí od služieb, ktoré obsahuje.');
+
+            return;
+        }
 
         if (type === 'rule') {
             rules.updateRuleFromDrop(changeInfo);
@@ -1590,6 +1596,7 @@ export function useBookingCalendar(props, options = {}) {
         closeRuleDialogSafely: rules.closeRuleDialogSafely,
         cancelPendingRuleReschedule: rules.cancelPendingRuleReschedule,
         ruleRescheduleImpactPreview: rules.ruleRescheduleImpactPreview,
+        pendingRuleScopeSubmit: rules.pendingRuleScopeSubmit,
         closeGroupEventDialog: dialogs.closeGroupEventDialog,
         deleteCurrentRule: rules.deleteCurrentRule,
         deleteCurrentRuleByScope: rules.deleteCurrentRuleByScope,
@@ -1602,6 +1609,7 @@ export function useBookingCalendar(props, options = {}) {
         cancelBooking: bookingActions.cancelBooking,
         rescheduleBooking: bookingActions.rescheduleBooking,
         bookingRescheduleImpactPreview: bookingActions.bookingRescheduleImpactPreview,
+        pendingBookingScopeSubmit: bookingActions.pendingBookingScopeSubmit,
         submitPendingBookingRescheduleScope: bookingActions.submitPendingBookingRescheduleScope,
         cancelPendingBookingReschedule: bookingActions.cancelPendingBookingReschedule,
 
@@ -1610,6 +1618,7 @@ export function useBookingCalendar(props, options = {}) {
         saveCapacityWindow: capacityWindowActions.saveCapacityWindow,
         duplicateCapacityWindow: capacityWindowActions.duplicateCapacityWindow,
         capacityWindowRescheduleImpactPreview: capacityWindowActions.capacityWindowRescheduleImpactPreview,
+        pendingCapacityWindowScopeSubmit: capacityWindowActions.pendingCapacityWindowScopeSubmit,
         submitPendingCapacityWindowRescheduleScope: capacityWindowActions.submitPendingCapacityWindowRescheduleScope,
         cancelPendingCapacityWindowReschedule: capacityWindowActions.cancelPendingCapacityWindowReschedule,
 

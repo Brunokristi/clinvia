@@ -70,6 +70,12 @@ Route::prefix('p/{branch:slug}')
         Route::post('/booking', [PublicBranchSiteController::class, 'storeBooking'])
             ->name('booking.store');
 
+        Route::get('/booking/requests/{appointmentRequest}/verify', [PublicBranchSiteController::class, 'verifyAppointmentRequestEmail'])
+            ->name('booking.request.verify');
+
+        Route::post('/booking/requests/verification/resend', [PublicBranchSiteController::class, 'resendAppointmentRequestVerification'])
+            ->name('booking.request.verification.resend');
+
         Route::post('/contact-message', [PublicBranchSiteController::class, 'storeContactMessage'])
             ->name('contact-message.store');
     });
@@ -287,9 +293,14 @@ Route::middleware(['auth', 'active'])->group(function () {
                     'convertAppointmentRequest',
                 ])->name('booking.appointment-requests.convert');
 
+                Route::post('/booking/appointment-requests/{appointmentRequest}/manual-verify', [
+                    BranchBookingCalendarController::class,
+                    'manuallyVerifyAppointmentRequest',
+                ])->name('booking.appointment-requests.manual-verify');
+
                 Route::delete('/booking/appointment-requests/{appointmentRequest}', [
                     BranchBookingCalendarController::class,
-                    'destroyAppointmentRequest',
+                    'cancelAppointmentRequest',
                 ])->name('booking.appointment-requests.destroy');
 
                 /*

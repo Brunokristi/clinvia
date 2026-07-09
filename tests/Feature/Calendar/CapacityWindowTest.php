@@ -309,6 +309,91 @@ class CapacityWindowTest extends TestCase
         $this->assertSame(1, Event::query()->where('branch_id', $fixture['branch']->id)->where('type', EventType::GroupEvent)->count());
     }
 
+    public function test_group_event_update_derives_end_time_from_selected_service_duration(): void
+    {
+        $fixture = $this->createFixture();
+
+        $longService = Service::query()->create([
+            'company_id' => $fixture['company']->id,
+            'branch_id' => $fixture['branch']->id,
+            'name' => 'Long Group Service',
+            'slug' => 'long-group-service-' . Str::random(8),
+            'is_bookable' => true,
+            'duration_minutes' => 90,
+            'capacity' => 10,
+            'buffer_before_minutes' => 0,
+            'buffer_after_minutes' => 0,
+            'booking_type' => 'group',
+            'public_booking_type' => 'immediate_booking',
+            'is_active' => true,
+        ]);
+
+        $event = $this->createRecurringGroupEvent($fixture, [
+            'starts_at' => '2026-08-03 10:00:00',
+            'ends_at' => '2026-08-03 11:00:00',
+            'is_recurring' => false,
+            'recurrence_rule' => null,
+            'metadata' => [],
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.capacity-windows.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_id' => $longService->id,
+            'capacity' => 5,
+            'starts_at' => '2026-08-03 12:00:00',
+            'ends_at' => '2026-08-03 12:30:00',
+            'update_scope' => 'occurrence',
+        ])->assertSessionHasNoErrors();
+
+        $event->refresh();
+
+        $this->assertSame('2026-08-03 12:00:00', $event->starts_at?->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-03 13:30:00', $event->ends_at?->format('Y-m-d H:i:s'));
+    }
+
+    public function test_group_event_update_rejects_capacity_below_confirmed_participants(): void
+    {
+        $fixture = $this->createFixture();
+        $event = $this->createRecurringGroupEvent($fixture, [
+            'starts_at' => '2026-08-03 10:00:00',
+            'ends_at' => '2026-08-03 11:00:00',
+            'is_recurring' => false,
+            'recurrence_rule' => null,
+            'metadata' => [],
+        ]);
+
+        $event->participants()->create([
+            'participant_name' => 'Participant One',
+            'participant_email' => 'p1@example.com',
+            'status' => 'confirmed',
+            'booked_at' => now(),
+        ]);
+
+        $event->participants()->create([
+            'participant_name' => 'Participant Two',
+            'participant_email' => 'p2@example.com',
+            'status' => 'confirmed',
+            'booked_at' => now(),
+        ]);
+
+        $event->groupDetail()->update([
+            'reserved_places' => 2,
+            'capacity' => 5,
+        ]);
+
+        $this->actingAs($fixture['user'])->put(route('branches.booking.capacity-windows.update', [
+            $fixture['branch']->id,
+            $event->id,
+        ]), [
+            'service_id' => $fixture['service']->id,
+            'capacity' => 1,
+            'starts_at' => '2026-08-03 10:00:00',
+            'update_scope' => 'occurrence',
+        ])->assertSessionHasErrors('capacity');
+    }
+
     private function createRecurringGroupEvent(array $fixture, array $overrides = []): Event
     {
         $event = Event::query()->create(array_replace([

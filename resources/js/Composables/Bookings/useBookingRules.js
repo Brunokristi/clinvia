@@ -1,24 +1,10 @@
 import { router, useForm } from '@inertiajs/vue3';
-import { useToast } from 'primevue/usetoast';
 import { computed, ref, watch } from 'vue';
 import { useRecurringImpactPreview } from './useRecurringImpactPreview';
+import { scopeSuccessMessage, useCalendarActionFeedback } from './useCalendarActionFeedback';
 
 export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpeningHours, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
-    const toast = useToast();
-
-    // Success notifications are shown centrally from flash messages in AdminLayout.
-    const showSuccess = () => { };
-
-    const showError = (fallback, errors = {}) => {
-        const firstError = Object.values(errors ?? {})?.[0];
-
-        toast.add({
-            severity: 'error',
-            summary: 'Chyba',
-            detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
-            life: 5000,
-        });
-    };
+    const feedback = useCalendarActionFeedback();
 
     const reloadRuleState = () => {
         if (typeof reloadCalendarData === 'function') {
@@ -80,6 +66,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     ];
 
     const pendingRuleReschedule = ref(null);
+    const pendingRuleScopeSubmit = ref(false);
     const {
         impactPreview: ruleRescheduleImpactPreview,
         fetchImpactPreview: fetchRuleRescheduleImpactPreview,
@@ -304,7 +291,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     const getRuleTitle = (rule) => {
         const services = getServiceNames(rule.service_ids ?? []) || 'Bez služby';
 
-        return `${services} · voľný čas`;
+        return `${services} · pravidlo rezervácií`;
     };
 
     const getRepeatLabel = (rule) => {
@@ -761,6 +748,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
 
         if (rescheduleScope && pendingRuleReschedule.value?.ruleId) {
             const pending = pendingRuleReschedule.value;
+            pendingRuleScopeSubmit.value = true;
 
             router.post(route('branches.booking.rules.reschedule', [
                 props.branch.id,
@@ -777,13 +765,16 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 onSuccess: () => {
                     pendingRuleReschedule.value = null;
                     ruleRescheduleScopeDialogVisible.value = false;
-                    showSuccess('Voľný čas bol presunutý.');
+                    feedback.success(scopeSuccessMessage({ action: 'reschedule', scope: rescheduleScope }));
                     reloadRuleStateSoon();
                 },
                 onError: (errors) => {
                     pendingRuleReschedule.value = null;
                     ruleRescheduleScopeDialogVisible.value = false;
-                    showError('Voľný čas sa nepodarilo presunúť.', errors);
+                    feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo presunúť.');
+                },
+                onFinish: () => {
+                    pendingRuleScopeSubmit.value = false;
                 },
             });
 
@@ -809,12 +800,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             submitRules({
                 onSuccess: () => {
                     closeRuleAfterSave();
-                    showSuccess('Voľný čas bol uložený.');
+                    feedback.success(scopeSuccessMessage({ action: 'update', scope: updateScope }));
                     reloadRuleStateSoon();
                 },
                 onError: (errors) => {
                     ruleForm.rules = previousRules;
-                    showError('Voľný čas sa nepodarilo uložiť.', errors);
+                    feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo uložiť.');
                 },
             });
 
@@ -822,6 +813,8 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         }
 
         if (rescheduleScope && rule?.id && occurrenceDate) {
+            pendingRuleScopeSubmit.value = true;
+
             router.post(route('branches.booking.rules.reschedule', [
                 props.branch.id,
                 rule.id,
@@ -836,12 +829,15 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
                 preserveState: true,
                 onSuccess: () => {
                     closeRuleAfterSave();
-                    showSuccess('Voľný čas bol presunutý.');
+                    feedback.success(scopeSuccessMessage({ action: 'reschedule', scope: rescheduleScope }));
                     reloadRuleStateSoon();
                 },
                 onError: (errors) => {
                     restorePendingRuleReschedule();
-                    showError('Voľný čas sa nepodarilo presunúť.', errors);
+                    feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo presunúť.');
+                },
+                onFinish: () => {
+                    pendingRuleScopeSubmit.value = false;
                 },
             });
 
@@ -851,11 +847,11 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         submitRules({
             onSuccess: () => {
                 closeRuleAfterSave();
-                showSuccess('Voľný čas bol uložený.');
+                feedback.success('Dostupnosť bola upravená.');
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
-                showError('Voľný čas sa nepodarilo uložiť.', errors);
+                feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo uložiť.');
             },
         });
     };
@@ -954,10 +950,10 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             onError: (errors) => {
                 Object.assign(rule, previousRule);
                 changeInfo.revert();
-                showError('Voľný čas sa nepodarilo presunúť.', errors);
+                feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo presunúť.');
             },
             onSuccess: () => {
-                showSuccess('Voľný čas bol presunutý.');
+                feedback.success('Pravidlo rezervácií bolo presunuté.');
                 reloadRuleStateSoon();
             },
         });
@@ -994,12 +990,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             preserveState: true,
             onSuccess: () => {
                 closeRuleDeletes();
-                showSuccess('Výskyt voľného času bol vymazaný.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'occurrence' }));
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
                 eventIds.forEach((id) => restoreCalendarEventId?.(id));
-                showError('Výskyt voľného času sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Výskyt voľného času sa nepodarilo vymazať.');
             },
         });
     };
@@ -1028,12 +1024,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             preserveState: true,
             onSuccess: () => {
                 closeRuleDeletes();
-                showSuccess('Tento a nasledujúce výskyty boli vymazané.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'from_date' }));
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
                 eventIds.forEach((id) => restoreCalendarEventId?.(id));
-                showError('Výskyty voľného času sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Výskyty voľného času sa nepodarilo vymazať.');
             },
         });
     };
@@ -1059,12 +1055,12 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
             preserveState: true,
             onSuccess: () => {
                 closeRuleDeletes();
-                showSuccess('Voľný čas bol vymazaný.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: 'series' }));
                 reloadRuleStateSoon();
             },
             onError: (errors) => {
                 eventIds.forEach((id) => restoreCalendarEventId?.(id));
-                showError('Voľný čas sa nepodarilo vymazať.', errors);
+                feedback.error(errors, 'Pravidlo rezervácií sa nepodarilo vymazať.');
             },
         });
     };
@@ -1086,6 +1082,10 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
     };
 
     const cancelPendingRuleReschedule = () => {
+        if (pendingRuleScopeSubmit.value) {
+            return;
+        }
+
         pendingRuleReschedule.value = null;
         ruleRescheduleScopeDialogVisible.value = false;
         clearRuleRescheduleImpactPreview();
@@ -1110,6 +1110,7 @@ export function useBookingRules({ props, dateTime, dialogs, isDateRangeInsideOpe
         duplicateCurrentRule,
         cancelPendingRuleReschedule,
         ruleRescheduleImpactPreview,
+        pendingRuleScopeSubmit,
         saveRules,
         updateRuleFromDrop,
     };

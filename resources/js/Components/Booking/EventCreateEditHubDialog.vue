@@ -80,6 +80,7 @@ const form = reactive({
     starts_at: null,
     ends_at: null,
     patient_name: '',
+    patient_id: null,
     patient_email: '',
     patient_phone: '',
     patient_birth_number: '',
@@ -170,8 +171,12 @@ const getMatchingPatients = (query) => {
 
 const applyBookingPatient = (patient) => {
     if (!patient) {
+        form.patient_id = null;
+
         return;
     }
+
+    form.patient_id = patient.id ? Number(patient.id) : null;
 
     if (patient.patient_name) {
         form.patient_name = patient.patient_name;
@@ -314,6 +319,8 @@ const handleBookingPatientSelected = (patient) => {
     selectedBookingPatient.value = patient;
 
     if (!patient) {
+        form.patient_id = null;
+
         return;
     }
 
@@ -367,6 +374,13 @@ const groupServiceModel = computed({
 });
 
 const isEditMode = computed(() => Boolean(props.prefill?.edit_mode));
+const isBookingEditMode = computed(() => {
+    if (!isEditMode.value) {
+        return false;
+    }
+
+    return (props.prefill?.target_type ?? form.create_type) === 'booking';
+});
 const isRecurringScopedEdit = computed(() => {
     return Boolean(
         isEditMode.value
@@ -553,9 +567,34 @@ const canCreateSubmit = computed(() => {
             && Boolean(form.public_booking_type);
     }
 
+    if (isBookingEditMode.value) {
+        return Boolean(form.service_ids.length)
+            && selectedServicesDuration.value > 0;
+    }
+
     return Boolean(form.service_ids.length)
-        && Boolean(form.patient_name.trim())
+        && Boolean(Number(form.patient_id))
         && selectedServicesDuration.value > 0;
+});
+
+const bookingPatientReadOnly = computed(() => {
+    return {
+        id: props.prefill?.patient_id ?? selectedBookingPatient.value?.id ?? null,
+        patient_name: form.patient_name || 'Neznámy pacient',
+        patient_email: form.patient_email || null,
+        patient_phone: form.patient_phone_full || form.patient_phone || null,
+        patient_birth_number: form.patient_birth_number || null,
+    };
+});
+
+const patientDetailHref = computed(() => {
+    const patientId = Number(bookingPatientReadOnly.value.id ?? 0);
+
+    if (!patientId) {
+        return null;
+    }
+
+    return route('branches.patients.page', props.branchId) + `?patient_id=${patientId}`;
 });
 
 const eventTypeHint = computed(() => {
@@ -691,6 +730,7 @@ const resetCreateForm = () => {
     }
 
     form.patient_name = '';
+    form.patient_id = null;
     form.patient_email = '';
     form.patient_phone = '';
     form.patient_birth_number = '';
@@ -726,6 +766,7 @@ const resetCreateForm = () => {
         }
 
         form.patient_name = props.prefill.patient_name ?? '';
+        form.patient_id = props.prefill.patient_id ? Number(props.prefill.patient_id) : null;
         form.patient_email = props.prefill.patient_email ?? '';
         const patientPhone = parsePhoneValue(props.prefill.patient_phone, form.patient_phone_country);
         form.patient_phone_country = patientPhone.countryCode;
@@ -764,6 +805,27 @@ watch(
     () => {
         const matchedPatient = findPatientByName(form.patient_name);
         selectedBookingPatient.value = matchedPatient;
+        form.patient_id = matchedPatient?.id ? Number(matchedPatient.id) : null;
+    },
+    { deep: true },
+);
+
+watch(
+    () => [props.patients, props.prefill?.patient_id, props.visible],
+    () => {
+        if (!isBookingEditMode.value) {
+            return;
+        }
+
+        const prefillPatientId = Number(props.prefill?.patient_id ?? 0);
+
+        if (!prefillPatientId) {
+            return;
+        }
+
+        const matchedPatient = patientRecords.value.find((patient) => Number(patient.id) === prefillPatientId) ?? null;
+        selectedBookingPatient.value = matchedPatient;
+        form.patient_id = matchedPatient?.id ? Number(matchedPatient.id) : prefillPatientId;
     },
     { deep: true },
 );
@@ -909,7 +971,7 @@ const submitCreate = (saveScope = null) => {
     }
 
     emit('create-booking', {
-        create_type: form.create_type,
+        ...(!isEditMode.value ? { create_type: form.create_type } : {}),
         edit_mode: Boolean(props.prefill?.edit_mode),
         target_type: props.prefill?.target_type ?? null,
         target_id: props.prefill?.target_id ?? null,
@@ -932,10 +994,15 @@ const submitCreate = (saveScope = null) => {
         booking_slot_id: null,
         starts_at: startsAtForBackend.value,
         ends_at: endsAtForBackend.value,
-        patient_name: form.patient_name,
-        patient_email: form.patient_email,
-        patient_phone: form.patient_phone_full || form.patient_phone,
-        patient_birth_number: form.patient_birth_number,
+        ...(!isBookingEditMode.value
+            ? {
+                patient_id: form.patient_id,
+                patient_name: form.patient_name,
+                patient_email: form.patient_email,
+                patient_phone: form.patient_phone_full || form.patient_phone,
+                patient_birth_number: form.patient_birth_number,
+            }
+            : {}),
         group_patients: submittedGroupPatients.map((patient) => ({
             patient_name: patient.patient_name,
             patient_email: patient.patient_email,
@@ -1023,65 +1090,91 @@ const submitCreate = (saveScope = null) => {
             <template v-if="isBookingType">
                 <FormSection
                     title="Pacient"
-                    description="Zadajte pacienta, pre ktorého vytvárate konkrétny termín."
+                    :description="isBookingEditMode ? 'Pacienta existujúcej rezervácie nie je možné zmeniť.' : 'Zadajte pacienta, pre ktorého vytvárate konkrétny termín.'"
                     columns="md:grid-cols-2"
                 >
-                    <FormField
-                        label="Meno pacienta"
-                        for="patient_name"
-                        required
-                        span="md:col-span-2"
-                    >
-                        <PatientLookupField
-                            input-id="patient_name"
-                            v-model="form.patient_name"
-                            :patients="patients"
-                            placeholder="Meno a priezvisko"
-                            add-button-label="Pridať pacienta"
-                            footer-add-button-label="Pridať nového pacienta"
-                            edit-button-label="Upraviť pacienta"
-                            @select-patient="handleBookingPatientSelected"
-                            @request-add-patient="openPatientCreateDialog"
-                            @request-edit-patient="openPatientEditDialog"
-                        />
-                    </FormField>
+                    <template v-if="isBookingEditMode">
+                        <div class="space-y-2 rounded-md border border-stroke bg-white p-3 md:col-span-2">
+                            <p class="text-sm font-medium text-dark">
+                                {{ bookingPatientReadOnly.patient_name }}
+                            </p>
 
-                    <FormField
-                        label="E-mail"
-                        for="patient_email"
-                    >
-                        <InputText
-                            id="patient_email"
-                            v-model="form.patient_email"
-                            type="email"
-                            class="w-full"
-                            placeholder="napr. pacient@email.sk"
-                        />
-                    </FormField>
+                            <p v-if="bookingPatientReadOnly.patient_phone" class="text-sm text-accent">
+                                {{ bookingPatientReadOnly.patient_phone }}
+                            </p>
 
-                    <FormField
-                        label="Telefón"
-                        for="patient_phone"
-                    >
-                        <PhoneInput
-                            v-model="form.patient_phone"
-                            v-model:country-code="form.patient_phone_country"
-                            v-model:full-value="form.patient_phone_full"
-                        />
-                    </FormField>
+                            <p v-if="bookingPatientReadOnly.patient_email" class="text-sm text-accent">
+                                {{ bookingPatientReadOnly.patient_email }}
+                            </p>
 
-                    <FormField
-                        label="Rodné číslo"
-                        for="patient_birth_number"
-                        span="md:col-span-2"
-                    >
-                        <InputText
-                            id="patient_birth_number"
-                            v-model="form.patient_birth_number"
-                            class="w-full"
-                            placeholder="napr. 900101/1234"
-                        />
-                    </FormField>
+                            <a
+                                v-if="patientDetailHref"
+                                :href="patientDetailHref"
+                                class="inline-flex text-sm font-medium text-accent underline"
+                            >
+                                Otvoriť detail pacienta
+                            </a>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <FormField
+                            label="Meno pacienta"
+                            for="patient_name"
+                            required
+                            span="md:col-span-2"
+                        >
+                            <PatientLookupField
+                                input-id="patient_name"
+                                v-model="form.patient_name"
+                                :patients="patients"
+                                placeholder="Meno a priezvisko"
+                                add-button-label="Pridať pacienta"
+                                footer-add-button-label="Pridať nového pacienta"
+                                edit-button-label="Upraviť pacienta"
+                                @select-patient="handleBookingPatientSelected"
+                                @request-add-patient="openPatientCreateDialog"
+                                @request-edit-patient="openPatientEditDialog"
+                            />
+                        </FormField>
+
+                        <FormField
+                            label="E-mail"
+                            for="patient_email"
+                        >
+                            <InputText
+                                id="patient_email"
+                                v-model="form.patient_email"
+                                type="email"
+                                class="w-full"
+                                placeholder="napr. pacient@email.sk"
+                            />
+                        </FormField>
+
+                        <FormField
+                            label="Telefón"
+                            for="patient_phone"
+                        >
+                            <PhoneInput
+                                v-model="form.patient_phone"
+                                v-model:country-code="form.patient_phone_country"
+                                v-model:full-value="form.patient_phone_full"
+                            />
+                        </FormField>
+
+                        <FormField
+                            label="Rodné číslo"
+                            for="patient_birth_number"
+                            span="md:col-span-2"
+                        >
+                            <InputText
+                                id="patient_birth_number"
+                                v-model="form.patient_birth_number"
+                                class="w-full"
+                                placeholder="napr. 900101/1234"
+                            />
+                        </FormField>
+                    </template>
                 </FormSection>
 
                 <FormSection

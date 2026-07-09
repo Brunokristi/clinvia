@@ -109,11 +109,39 @@ const fullAddress = computed(() => {
         props.branch.address?.country,
     ].filter(Boolean);
 });
+
+const contractedInsuranceCompanies = computed(() => {
+    return props.branch.contracted_insurance_companies ?? [];
+});
+
+const hasContractedInsuranceCompanies = computed(() => {
+    return contractedInsuranceCompanies.value.length > 0;
+});
+
+const otherCompanyBranches = computed(() => {
+    return props.branch.other_company_branches ?? [];
+});
+
+const hasOtherCompanyBranches = computed(() => {
+    return Boolean(props.branch.show_other_branches_in_footer)
+        && otherCompanyBranches.value.length > 0;
+});
+
+const hasFooterExtras = computed(() => {
+    return hasContractedInsuranceCompanies.value || hasOtherCompanyBranches.value;
+});
+
+const otherBranchSecondaryLabel = (branchItem) => {
+    return branchItem.city || branchItem.address_line_1 || null;
+};
 </script>
 
 <template>
     <footer class="border-t border-accent bg-soft">
-        <div class="mx-auto grid max-w-6xl lg:grid-cols-3">
+        <div
+            class="mx-auto grid max-w-6xl"
+            :class="hasFooterExtras ? 'lg:grid-cols-4' : 'lg:grid-cols-3'"
+        >
             <div class="border-b border-accent px-6 py-8 lg:border-b-0 lg:border-r lg:py-10 lg:pl-6 lg:pr-8">
                 <h2 class="text-normal font-semibold text-dark">
                     {{ branch.name }}
@@ -174,7 +202,10 @@ const fullAddress = computed(() => {
                 </p>
             </div>
 
-            <div class="px-6 py-8 lg:py-10 lg:pl-8 lg:pr-6">
+            <div
+                class="border-b border-accent px-6 py-8 lg:border-b-0 lg:py-10 lg:pl-8 lg:pr-6"
+                :class="hasFooterExtras ? 'lg:border-r' : ''"
+            >
                 <h2 class="text-normal font-semibold text-dark">
                     Otváracie hodiny
                 </h2>
@@ -204,6 +235,54 @@ const fullAddress = computed(() => {
                 >
                     Otváracie hodiny zatiaľ nie sú uvedené.
                 </p>
+            </div>
+
+            <div
+                v-if="hasContractedInsuranceCompanies || hasOtherCompanyBranches"
+                class="px-6 py-8 lg:py-10 lg:pl-8 lg:pr-6"
+            >
+                <div
+                    v-if="hasContractedInsuranceCompanies"
+                    class="space-y-3"
+                >
+                    <h2 class="text-normal font-semibold text-dark">
+                        Zmluvné poisťovne
+                    </h2>
+
+                    <p class="text-sm text-accent">
+                        {{ contractedInsuranceCompanies.map((item) => item.label).join(' · ') }}
+                    </p>
+                </div>
+
+                <div
+                    v-if="hasOtherCompanyBranches"
+                    class="space-y-3"
+                    :class="hasContractedInsuranceCompanies ? 'mt-6' : ''"
+                >
+                    <h2 class="text-normal font-semibold text-dark">
+                        Naše pobočky
+                    </h2>
+
+                    <ul class="space-y-2">
+                        <li
+                            v-for="otherBranch in otherCompanyBranches"
+                            :key="otherBranch.id"
+                        >
+                            <Link
+                                :href="otherBranch.href"
+                                class="text-sm text-accent transition hover:text-dark"
+                            >
+                                <span class="block">{{ otherBranch.name }}</span>
+                                <span
+                                    v-if="otherBranchSecondaryLabel(otherBranch)"
+                                    class="text-xs text-accent/80"
+                                >
+                                    {{ otherBranchSecondaryLabel(otherBranch) }}
+                                </span>
+                            </Link>
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
 

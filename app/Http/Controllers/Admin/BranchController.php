@@ -240,6 +240,7 @@ class BranchController extends Controller
             'branch' => $branch,
             'availableUsers' => $availableUsers,
             'categories' => $categories,
+            'insuranceCompanies' => $this->insuranceCompanies(),
             'templates' => [
                 [
                     'label' => 'Predvolený',
@@ -406,6 +407,7 @@ class BranchController extends Controller
             'booking.is_enabled' => ['boolean'],
             'booking.allow_service_selection' => ['boolean'],
             'booking.allow_appointment_requests' => ['boolean'],
+            'booking.booking_mode' => ['nullable', 'string', 'in:requests_only,verified_patients_only,admin_only'],
             'booking.intro_text' => ['nullable', 'string', 'max:2000'],
             'booking.success_message' => ['nullable', 'string', 'max:2000'],
 
@@ -416,6 +418,10 @@ class BranchController extends Controller
             'notifications.notify_new_appointment_request' => ['boolean'],
             'notifications.notify_new_booking' => ['boolean'],
             'notifications.notify_new_contact_form' => ['boolean'],
+
+            'contracted_insurance_companies' => ['nullable', 'array'],
+            'contracted_insurance_companies.*' => ['required', 'string', Rule::in(array_keys($this->insuranceCompanies()))],
+            'show_other_branches_in_footer' => ['boolean'],
         ]);
 
         if (! empty($validated['public_site'])) {
@@ -435,9 +441,24 @@ class BranchController extends Controller
         $branch->update([
             'booking_settings' => $validated['booking'] ?? [],
             'notification_settings' => $validated['notifications'] ?? [],
+            'contracted_insurance_companies' => collect($validated['contracted_insurance_companies'] ?? [])
+                ->map(fn (string $key): string => trim($key))
+                ->filter(fn (string $key): bool => $key !== '')
+                ->unique()
+                ->values()
+                ->all(),
+            'show_other_branches_in_footer' => (bool) ($validated['show_other_branches_in_footer'] ?? false),
         ]);
 
         return back()->with('success', 'Nastavenia boli uložené.');
+    }
+
+    /**
+     * @return array<string, array{label: string, full_name: string}>
+     */
+    private function insuranceCompanies(): array
+    {
+        return config('health_insurance.companies', []);
     }
 
     public function destroy(Branch $branch): RedirectResponse

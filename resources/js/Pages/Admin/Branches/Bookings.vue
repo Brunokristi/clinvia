@@ -9,6 +9,7 @@ import ConfirmDialog from '@/Components/Dialogs/ConfirmationDialog.vue';
 import OccurrenceScopeDialog from '@/Components/Booking/Common/OccurrenceScopeDialog.vue';
 
 import { useBookingCalendar } from '@/Composables/Bookings/useBookingCalendar';
+import { useCalendarActionFeedback } from '@/Composables/Bookings/useCalendarActionFeedback';
 
 import FullCalendar from '@fullcalendar/vue3';
 import { Draggable } from '@fullcalendar/interaction';
@@ -19,7 +20,6 @@ import { useBranchBroadcasting } from '@/Composables/useBranchBroadcasting';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { useToast } from 'primevue/usetoast';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref } from 'vue';
 
@@ -70,7 +70,7 @@ const props = defineProps({
     },
 });
 
-const toast = useToast();
+const feedback = useCalendarActionFeedback();
 
 const formatDateOnly = (value) => {
     if (!value) {
@@ -166,19 +166,11 @@ const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
             preserveScroll: true,
             onSuccess: () => {
                 callbacks.onSuccess?.();
+                feedback.success('Dostupnosť dňa bola upravená.');
                 reloadCalendarData();
             },
             onError: (errors) => {
-                const firstError = Object.values(errors ?? {})?.[0];
-
-                toast.add({
-                    severity: 'error',
-                    summary: 'Chyba',
-                    detail: Array.isArray(firstError)
-                        ? firstError[0]
-                        : (firstError || 'Deň sa nepodarilo zatvoriť.'),
-                    life: 5000,
-                });
+                feedback.error(errors, 'Deň sa nepodarilo zatvoriť.');
 
                 callbacks.onError?.();
             },
@@ -199,6 +191,7 @@ const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
                 preserveScroll: true,
                 onSuccess: () => {
                     callbacks.onSuccess?.();
+                    feedback.success('Dostupnosť dňa bola upravená.');
                     reloadCalendarData();
                 },
                 onError: () => {
@@ -218,6 +211,7 @@ const toggleDisabledDayByDate = (date, checked, callbacks = {}) => {
         preserveScroll: true,
         onSuccess: () => {
             callbacks.onSuccess?.();
+            feedback.success('Dostupnosť dňa bola upravená.');
             reloadCalendarData();
         },
         onError: () => {
@@ -271,6 +265,7 @@ const {
     closeRuleDialogSafely,
     cancelPendingRuleReschedule,
     ruleRescheduleImpactPreview,
+    pendingRuleScopeSubmit,
     saveRules,
     deleteCurrentRuleByScope,
     duplicateCurrentRule,
@@ -281,12 +276,14 @@ const {
     cancelBooking,
     duplicateBooking,
     bookingRescheduleImpactPreview,
+    pendingBookingScopeSubmit,
     submitPendingBookingRescheduleScope,
     cancelPendingBookingReschedule,
 
     cancelCapacityWindow,
     rescheduleCapacityWindow,
     capacityWindowRescheduleImpactPreview,
+    pendingCapacityWindowScopeSubmit,
     submitPendingCapacityWindowRescheduleScope,
     cancelPendingCapacityWindowReschedule,
     duplicateCapacityWindow,
@@ -313,7 +310,10 @@ let pendingCalendarResizeFrame = null;
 let requestDraggable = null;
 let calendarResizeObserver = null;
 
+const sidePanelBreakpoint = 1180;
 const sidePanelMode = ref('requests');
+const lastSidePanelMode = ref('requests');
+const isCompactSidePanel = ref(false);
 const reservationSearch = ref('');
 
 const highlightedReservationEventId = ref(null);
@@ -328,6 +328,18 @@ const openSearchResultGroups = ref({
     group_reservation: false,
     request: false,
 });
+
+const isSidePanelExpanded = computed(() => Boolean(sidePanelMode.value));
+
+const bookingLayoutClass = computed(() => ({
+    'is-side-panel-collapsed': !isSidePanelExpanded.value,
+    'is-side-panel-compact': isCompactSidePanel.value,
+}));
+
+const bookingSideColumnClass = computed(() => ({
+    'is-collapsed': !isSidePanelExpanded.value,
+    'is-compact': isCompactSidePanel.value,
+}));
 
 const sidePanelModes = [
     {
@@ -350,6 +362,28 @@ const sidePanelModes = [
     },
 ];
 
+const resizeCalendarAfterSidePanelChange = () => {
+    nextTick(() => {
+        updateRequestSidebarHeight();
+        updateCalendarWidth();
+    });
+};
+
+const collapseSidePanel = () => {
+    if (sidePanelMode.value) {
+        lastSidePanelMode.value = sidePanelMode.value;
+    }
+
+    sidePanelMode.value = null;
+    resizeCalendarAfterSidePanelChange();
+};
+
+const openSidePanel = (modeKey = null) => {
+    sidePanelMode.value = modeKey ?? lastSidePanelMode.value ?? 'requests';
+    lastSidePanelMode.value = sidePanelMode.value;
+    resizeCalendarAfterSidePanelChange();
+};
+
 const handleSidePanelModeClick = (mode) => {
     if (mode.key === 'create') {
         openCreateChoiceFromButton();
@@ -357,7 +391,38 @@ const handleSidePanelModeClick = (mode) => {
         return;
     }
 
-    sidePanelMode.value = mode.key;
+    if (sidePanelMode.value === mode.key) {
+        collapseSidePanel();
+
+        return;
+    }
+
+    openSidePanel(mode.key);
+};
+
+const syncSidePanelWithViewport = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const shouldUseCompactPanel = window.innerWidth < sidePanelBreakpoint;
+    const wasCompact = isCompactSidePanel.value;
+
+    isCompactSidePanel.value = shouldUseCompactPanel;
+
+    if (shouldUseCompactPanel && sidePanelMode.value) {
+        collapseSidePanel();
+
+        return;
+    }
+
+    if (!shouldUseCompactPanel && wasCompact && !sidePanelMode.value) {
+        openSidePanel(lastSidePanelMode.value);
+
+        return;
+    }
+
+    resizeCalendarAfterSidePanelChange();
 };
 
 const searchResultGroupDefinitions = [
@@ -569,11 +634,14 @@ const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatie
 
     if (selectedPatient) {
         payload.selected_patient = {
+            patient_id: selectedPatient.id ?? selectedPatient.patient_id ?? null,
             patient_name: selectedPatient.patient_name ?? null,
             patient_email: selectedPatient.patient_email ?? null,
             patient_phone: selectedPatient.patient_phone ?? null,
             patient_birth_number: selectedPatient.patient_birth_number ?? null,
         };
+    } else {
+        payload.force_create_patient = true;
     }
 
     router.post(route('branches.booking.appointment-requests.convert', [
@@ -584,20 +652,12 @@ const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatie
         preserveState: true,
         onSuccess: () => {
             showReservations.value = true;
+            feedback.success('Požiadavka bola potvrdená ako rezervácia.');
             reloadCalendarData();
             closeRequestConversionDialog();
         },
         onError: (errors) => {
-            const firstError = Object.values(errors ?? {})?.[0];
-
-            toast.add({
-                severity: 'error',
-                summary: 'Chyba',
-                detail: Array.isArray(firstError)
-                    ? firstError[0]
-                    : (firstError || 'Žiadosť sa nepodarilo premeniť na rezerváciu.'),
-                life: 5000,
-            });
+            feedback.error(errors, 'Žiadosť sa nepodarilo premeniť na rezerváciu.');
 
             reloadCalendarData();
         },
@@ -1129,7 +1189,7 @@ const openSearchResult = (result) => {
     }
 
     if (result.type === 'request') {
-        sidePanelMode.value = 'requests';
+        openSidePanel('requests');
 
         nextTick(() => {
             requestAnimationFrame(() => {
@@ -1218,6 +1278,12 @@ const confirmCancelAppointmentRequest = () => {
     ]), {
         preserveScroll: true,
         preserveState: true,
+        onSuccess: () => {
+            feedback.success('Požiadavka bola odmietnutá.');
+        },
+        onError: (errors) => {
+            feedback.error(errors, 'Požiadavku sa nepodarilo odmietnuť.');
+        },
         onFinish: () => {
             closeCancelAppointmentRequestDialog();
         },
@@ -1339,6 +1405,8 @@ const calendarRenderKey = computed(() => {
 });
 
 onMounted(() => {
+    syncSidePanelWithViewport();
+
     if (requestSidebar.value) {
         requestDraggable = new Draggable(requestSidebar.value, {
             itemSelector: '.appointment-request-card',
@@ -1385,6 +1453,7 @@ onMounted(() => {
         }
     });
 
+    window.addEventListener('resize', syncSidePanelWithViewport);
     window.addEventListener('resize', updateRequestSidebarHeight);
     window.addEventListener('resize', updateCalendarWidth);
 });
@@ -1410,6 +1479,7 @@ onBeforeUnmount(() => {
 
     clearReservationHighlight();
 
+    window.removeEventListener('resize', syncSidePanelWithViewport);
     window.removeEventListener('resize', updateRequestSidebarHeight);
     window.removeEventListener('resize', updateCalendarWidth);
 
@@ -1423,7 +1493,10 @@ onBeforeUnmount(() => {
 <template>
     <AdminLayout>
         <div class="space-y-4">
-            <div class="grid gap-4 grid-cols-[minmax(0,1fr)_300px]">
+            <div
+                class="booking-page-grid"
+                :class="bookingLayoutClass"
+            >
                 <div
                     ref="bookingCalendar"
                     class="booking-calendar flex min-w-0 flex-col gap-4"
@@ -1464,7 +1537,10 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div class="booking-side-column">
+                <div
+                    class="booking-side-column"
+                    :class="bookingSideColumnClass"
+                >
                     <div ref="sideSegmentedControl" class="booking-side-segmented-control">
                         <button
                             v-for="mode in sidePanelModes"
@@ -1475,33 +1551,40 @@ onBeforeUnmount(() => {
                                 'is-active': sidePanelMode === mode.key && mode.type === 'mode',
                                 'is-action': mode.type === 'action',
                             }"
-                            :title="mode.label"
+                            :title="sidePanelMode === mode.key && mode.type === 'mode' ? `Zbaliť ${mode.label.toLowerCase()}` : mode.label"
+                            :aria-pressed="sidePanelMode === mode.key && mode.type === 'mode'"
                             @click="handleSidePanelModeClick(mode)"
                         >
                             <i :class="mode.icon" class="text-xs" />
 
-                            <span
-                                v-if="sidePanelMode === mode.key && mode.type === 'mode'"
-                                class="truncate"
-                            >
-                                {{ mode.label }}
-                            </span>
+                            <Transition name="side-segment-label">
+                                <span
+                                    v-if="sidePanelMode === mode.key && mode.type === 'mode'"
+                                    class="booking-side-segmented-label truncate"
+                                >
+                                    {{ mode.label }}
+                                </span>
+                            </Transition>
 
-                            <span
-                                v-if="mode.key === 'requests' && pendingRequests.length"
-                                class="booking-side-segmented-count"
-                                :class="sidePanelMode === mode.key ? 'is-active' : ''"
-                            >
-                                {{ pendingRequests.length }}
-                            </span>
+                            <Transition name="side-segment-count">
+                                <span
+                                    v-if="mode.key === 'requests' && pendingRequests.length"
+                                    class="booking-side-segmented-count"
+                                    :class="sidePanelMode === mode.key ? 'is-active' : ''"
+                                >
+                                    {{ pendingRequests.length }}
+                                </span>
+                            </Transition>
                         </button>
                     </div>
 
-                    <aside
-                        ref="requestSidebar"
-                        class="dynamic-booking-panel flex min-h-0 flex-col rounded-md bg-soft p-3"
-                        :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
-                    >
+                    <Transition name="side-panel">
+                        <aside
+                            v-show="isSidePanelExpanded"
+                            ref="requestSidebar"
+                            class="dynamic-booking-panel flex min-h-0 flex-col rounded-md bg-soft p-3"
+                            :style="requestSidebarHeight ? { height: `${requestSidebarHeight}px` } : null"
+                        >
                         <div class="min-h-0 flex-1 overflow-hidden">
                             <section
                                 v-if="sidePanelMode === 'requests'"
@@ -1713,7 +1796,8 @@ onBeforeUnmount(() => {
                                 </div>
                             </section>
                         </div>
-                    </aside>
+                        </aside>
+                    </Transition>
                 </div>
             </div>
         </div>
@@ -1755,10 +1839,14 @@ onBeforeUnmount(() => {
         <OccurrenceScopeDialog
             v-model:visible="ruleRescheduleScopeDialogVisible"
             mode="reschedule"
-            subject-label="voľný čas"
+            subject-label="pravidlo rezervácií"
+            :loading="pendingRuleScopeSubmit"
             :count-occurrence="ruleRescheduleImpactPreview?.occurrence?.count"
+            :count-occurrence-label="ruleRescheduleImpactPreview?.occurrence?.countLabel"
             :count-from-date="ruleRescheduleImpactPreview?.from_date?.count"
+            :count-from-date-label="ruleRescheduleImpactPreview?.from_date?.countLabel"
             :count-series="ruleRescheduleImpactPreview?.series?.count"
+            :count-series-label="ruleRescheduleImpactPreview?.series?.countLabel"
             :message-occurrence="ruleRescheduleImpactPreview?.occurrence?.message"
             :message-from-date="ruleRescheduleImpactPreview?.from_date?.message"
             :message-series="ruleRescheduleImpactPreview?.series?.message"
@@ -1770,9 +1858,13 @@ onBeforeUnmount(() => {
             v-model:visible="bookingRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="rezervácia"
+            :loading="pendingBookingScopeSubmit"
             :count-occurrence="bookingRescheduleImpactPreview?.occurrence?.count"
+            :count-occurrence-label="bookingRescheduleImpactPreview?.occurrence?.countLabel"
             :count-from-date="bookingRescheduleImpactPreview?.from_date?.count"
+            :count-from-date-label="bookingRescheduleImpactPreview?.from_date?.countLabel"
             :count-series="bookingRescheduleImpactPreview?.series?.count"
+            :count-series-label="bookingRescheduleImpactPreview?.series?.countLabel"
             :message-occurrence="bookingRescheduleImpactPreview?.occurrence?.message"
             :message-from-date="bookingRescheduleImpactPreview?.from_date?.message"
             :message-series="bookingRescheduleImpactPreview?.series?.message"
@@ -1784,9 +1876,13 @@ onBeforeUnmount(() => {
             v-model:visible="capacityWindowRescheduleScopeDialogVisible"
             mode="reschedule"
             subject-label="skupinový termín"
+            :loading="pendingCapacityWindowScopeSubmit"
             :count-occurrence="capacityWindowRescheduleImpactPreview?.occurrence?.count"
+            :count-occurrence-label="capacityWindowRescheduleImpactPreview?.occurrence?.countLabel"
             :count-from-date="capacityWindowRescheduleImpactPreview?.from_date?.count"
+            :count-from-date-label="capacityWindowRescheduleImpactPreview?.from_date?.countLabel"
             :count-series="capacityWindowRescheduleImpactPreview?.series?.count"
+            :count-series-label="capacityWindowRescheduleImpactPreview?.series?.countLabel"
             :message-occurrence="capacityWindowRescheduleImpactPreview?.occurrence?.message"
             :message-from-date="capacityWindowRescheduleImpactPreview?.from_date?.message"
             :message-series="capacityWindowRescheduleImpactPreview?.series?.message"
@@ -1890,11 +1986,31 @@ onBeforeUnmount(() => {
 
 <style scoped>
 
+.booking-page-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 16px;
+    align-items: start;
+    transition: grid-template-columns 0.26s ease;
+}
+
+.booking-page-grid.is-side-panel-collapsed {
+    grid-template-columns: minmax(0, 1fr) 52px;
+}
+
 .booking-side-column {
     display: flex;
     min-height: 0;
     flex-direction: column;
     gap: 16px;
+    transition:
+        width 0.26s ease,
+        transform 0.26s ease,
+        opacity 0.2s ease;
+}
+
+.booking-side-column.is-collapsed {
+    gap: 0;
 }
 
 .booking-side-segmented-control {
@@ -1925,7 +2041,8 @@ onBeforeUnmount(() => {
     box-shadow: none;
     white-space: nowrap;
     transition:
-        flex-basis 0.2s ease,
+        flex-basis 0.24s ease,
+        width 0.24s ease,
         background 0.18s ease,
         color 0.18s ease;
 }
@@ -1978,6 +2095,92 @@ onBeforeUnmount(() => {
     background: rgba(255, 255, 255, 0.92);
     color: #C17979;
     font-size: 10px;
+}
+
+.booking-side-column.is-collapsed .booking-side-segmented-control {
+    flex-direction: column;
+    width: 52px;
+    height: auto;
+}
+
+.booking-side-column.is-collapsed .booking-side-segmented-button {
+    flex: 0 0 42px;
+    width: 52px;
+    height: 42px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(193, 121, 121, 0.18);
+}
+
+.booking-side-column.is-collapsed .booking-side-segmented-button:last-child {
+    border-bottom: 0;
+}
+
+.booking-side-column.is-collapsed .booking-side-segmented-button.is-action {
+    flex: 0 0 42px;
+}
+
+.booking-side-segmented-label {
+    display: inline-block;
+    max-width: 150px;
+    overflow: hidden;
+}
+
+.side-segment-label-enter-active,
+.side-segment-label-leave-active {
+    transition:
+        max-width 0.22s ease,
+        opacity 0.18s ease,
+        transform 0.18s ease;
+}
+
+.side-segment-label-enter-from,
+.side-segment-label-leave-to {
+    max-width: 0;
+    opacity: 0;
+    transform: translateX(-4px);
+}
+
+.side-segment-label-enter-to,
+.side-segment-label-leave-from {
+    max-width: 150px;
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.side-segment-count-enter-active,
+.side-segment-count-leave-active {
+    transition:
+        opacity 0.16s ease,
+        transform 0.16s ease;
+}
+
+.side-segment-count-enter-from,
+.side-segment-count-leave-to {
+    opacity: 0;
+    transform: scale(0.85);
+}
+
+.side-panel-enter-active,
+.side-panel-leave-active {
+    overflow: hidden;
+    transition:
+        opacity 0.2s ease,
+        transform 0.24s ease,
+        max-height 0.24s ease;
+}
+
+.side-panel-enter-from,
+.side-panel-leave-to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateX(10px);
+}
+
+.side-panel-enter-to,
+.side-panel-leave-from {
+    max-height: 900px;
+    opacity: 1;
+    transform: translateX(0);
 }
 
 .booking-calendar :deep(.fc) {
@@ -2366,4 +2569,35 @@ onBeforeUnmount(() => {
     background: #C17979;
     color: #ffffff !important;
 }
+@media (max-width: 1180px) {
+    .booking-page-grid {
+        grid-template-columns: minmax(0, 1fr) 52px;
+    }
+
+    .booking-page-grid:not(.is-side-panel-collapsed) {
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+    }
+}
+
+@media (max-width: 900px) {
+    .booking-page-grid,
+    .booking-page-grid:not(.is-side-panel-collapsed),
+    .booking-page-grid.is-side-panel-collapsed {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .booking-side-column {
+        width: 100%;
+    }
+
+    .booking-side-column.is-collapsed {
+        width: 52px;
+        justify-self: end;
+    }
+
+    .booking-side-column:not(.is-collapsed) .booking-side-segmented-control {
+        width: 100%;
+    }
+}
+
 </style>

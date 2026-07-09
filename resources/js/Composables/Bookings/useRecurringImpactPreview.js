@@ -3,16 +3,31 @@ import { ref, unref } from 'vue';
 const emptyImpact = () => ({
     occurrence: {
         count: null,
+        countLabel: null,
+        isCountCapped: false,
+        participantCount: null,
+        participantCountLabel: null,
+        isParticipantCountCapped: false,
         message: null,
         raw: null,
     },
     from_date: {
         count: null,
+        countLabel: null,
+        isCountCapped: false,
+        participantCount: null,
+        participantCountLabel: null,
+        isParticipantCountCapped: false,
         message: null,
         raw: null,
     },
     series: {
         count: null,
+        countLabel: null,
+        isCountCapped: false,
+        participantCount: null,
+        participantCountLabel: null,
+        isParticipantCountCapped: false,
         message: null,
         raw: null,
     },
@@ -129,6 +144,17 @@ export function useRecurringImpactPreview(branchId) {
             results.forEach(({ key, preview }) => {
                 next[key] = {
                     count: preview?.affected_occurrence_count ?? null,
+                    countLabel: preview?.affected_occurrence_count_label
+                        ?? (preview?.affected_occurrence_count !== null && preview?.affected_occurrence_count !== undefined
+                            ? String(preview.affected_occurrence_count)
+                            : null),
+                    isCountCapped: Boolean(preview?.is_affected_count_capped ?? false),
+                    participantCount: preview?.affected_participant_count ?? null,
+                    participantCountLabel: preview?.affected_participant_count_label
+                        ?? (preview?.affected_participant_count !== null && preview?.affected_participant_count !== undefined
+                            ? String(preview.affected_participant_count)
+                            : null),
+                    isParticipantCountCapped: Boolean(preview?.is_affected_participant_count_capped ?? false),
                     message: preview?.message ?? null,
                     raw: preview,
                 };

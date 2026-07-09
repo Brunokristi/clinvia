@@ -47,6 +47,24 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    isDirectBookingEligible: {
+        type: Boolean,
+        default: false,
+    },
+    flowInfoText: {
+        type: Object,
+        default: () => ({
+            anonymous_request: '',
+            verified_direct: '',
+        }),
+    },
+    verifiedPatientContext: {
+        type: Object,
+        default: () => ({
+            patient_id: null,
+            verified_patient_email: '',
+        }),
+    },
 });
 
 const page = usePage();
@@ -64,7 +82,6 @@ const visibleAvailabilityLimit = ref(5);
 const availabilityBatchSize = 5;
 
 const bookingForm = useForm({
-    mode: '',
     request_type: '',
     service_ids: [...props.selectedServiceIds],
     capacity_window_id: '',
@@ -74,8 +91,11 @@ const bookingForm = useForm({
     patient_name: '',
     patient_email: '',
     patient_phone: '',
+    patient_id: props.verifiedPatientContext?.patient_id ?? null,
+    verified_patient_email: props.verifiedPatientContext?.verified_patient_email ?? '',
     patient_birth_number: '',
     patient_note: '',
+    privacy_consent: false,
 
     website: '',
     form_started_at: Date.now(),
@@ -207,10 +227,6 @@ const hasRequestAvailability = computed(() => {
     return hasPreferredOptions.value || canUseGeneralRequest.value;
 });
 
-const canSwitchAvailabilityMode = computed(() => {
-    return hasExactSlots.value && hasRequestAvailability.value;
-});
-
 const shouldShowGeneralRequest = computed(() => {
     return canUseGeneralRequest.value;
 });
@@ -252,8 +268,11 @@ const selectedRequestDateLabel = computed(() => {
 });
 
 const isGeneralRequestSelected = computed(() => {
-    return bookingForm.mode === 'appointment_request'
-        && bookingForm.request_type === 'general';
+    return bookingForm.request_type === 'general';
+});
+
+const isExactSlotSelected = computed(() => {
+    return Boolean(bookingForm.capacity_window_id);
 });
 
 const canContinueFromServices = computed(() => {
@@ -261,15 +280,15 @@ const canContinueFromServices = computed(() => {
 });
 
 const canContinueFromAvailability = computed(() => {
-    if (bookingForm.mode === 'exact_slot') {
+    if (isExactSlotSelected.value) {
         return Boolean(bookingForm.capacity_window_id);
     }
 
-    if (bookingForm.mode === 'appointment_request' && bookingForm.request_type === 'preferred_period') {
+    if (bookingForm.request_type === 'preferred_period') {
         return Boolean(bookingForm.preferred_option_id);
     }
 
-    if (bookingForm.mode === 'appointment_request' && bookingForm.request_type === 'general') {
+    if (bookingForm.request_type === 'general') {
         return Boolean(bookingForm.preferred_date);
     }
 
@@ -301,8 +320,8 @@ const canSubmit = computed(() => {
 });
 
 const submitButtonLabel = computed(() => {
-    if (bookingForm.mode === 'exact_slot') {
-        return 'Rezervovať termín';
+    if (isExactSlotSelected.value && props.isDirectBookingEligible) {
+        return 'Potvrdiť rezerváciu';
     }
 
     if (bookingForm.request_type === 'preferred_period') {
@@ -313,10 +332,8 @@ const submitButtonLabel = computed(() => {
 });
 
 const availabilityHeading = computed(() => {
-    if (canSwitchAvailabilityMode.value && availabilityPanel.value === 'appointment_request') {
-        return hasPreferredOptions.value
-            ? 'Vyberte deň a časť dňa'
-            : 'Odoslať požiadavku';
+    if (hasExactSlots.value && hasRequestAvailability.value) {
+        return 'Vyberte termín alebo odošlite požiadavku';
     }
 
     if (hasExactSlots.value) {
@@ -335,14 +352,8 @@ const availabilityHeading = computed(() => {
 });
 
 const availabilityText = computed(() => {
-    if (canSwitchAvailabilityMode.value && availabilityPanel.value === 'appointment_request') {
-        return hasPreferredOptions.value
-            ? 'Vyberte dostupný deň a časť dňa. Presný čas vám následne potvrdíme.'
-            : 'Pre vybrané služby nie je dostupný online výber termínu. Môžete nám poslať požiadavku.';
-    }
-
     if (hasExactSlots.value) {
-        return 'Tento termín si môžete rezervovať hneď.';
+        return 'Vyberte termín. Systém automaticky rozhodne, či bude termín potvrdený okamžite alebo vytvorí požiadavku.';
     }
 
     if (hasPreferredOptions.value) {
@@ -354,6 +365,14 @@ const availabilityText = computed(() => {
     }
 
     return 'Skúste zmeniť dátum alebo vybrať inú kombináciu služieb.';
+});
+
+const submissionInfoText = computed(() => {
+    if (isExactSlotSelected.value && props.isDirectBookingEligible) {
+        return props.flowInfoText?.verified_direct || '';
+    }
+
+    return props.flowInfoText?.anonymous_request || '';
 });
 
 const pagination = computed(() => {
@@ -390,21 +409,19 @@ watch(selectedServiceIds, (value) => {
 watch(
     () => [hasExactSlots.value, hasRequestAvailability.value],
     ([exactSlotsAvailable, requestAvailable]) => {
-        if (exactSlotsAvailable && !requestAvailable) {
+        if (exactSlotsAvailable) {
             availabilityPanel.value = 'exact_slot';
 
             return;
         }
 
-        if (!exactSlotsAvailable && requestAvailable) {
+        if (requestAvailable) {
             availabilityPanel.value = 'appointment_request';
 
             return;
         }
 
-        if (!exactSlotsAvailable && !requestAvailable) {
-            availabilityPanel.value = 'exact_slot';
-        }
+        availabilityPanel.value = 'exact_slot';
     },
     { immediate: true },
 );
@@ -466,7 +483,6 @@ const formatTime = (value) => {
 };
 
 const clearAvailabilitySelection = () => {
-    bookingForm.mode = '';
     bookingForm.request_type = '';
     bookingForm.capacity_window_id = '';
     bookingForm.preferred_option_id = '';
@@ -539,7 +555,6 @@ const onPageChange = (event) => {
 const selectCapacityWindow = (capacityWindow) => {
     availabilityPanel.value = 'exact_slot';
 
-    bookingForm.mode = 'exact_slot';
     bookingForm.request_type = '';
     bookingForm.capacity_window_id = capacityWindow.capacity_window_id ?? capacityWindow.id;
     bookingForm.preferred_option_id = '';
@@ -550,7 +565,6 @@ const selectCapacityWindow = (capacityWindow) => {
 const selectOption = (option) => {
     availabilityPanel.value = 'appointment_request';
 
-    bookingForm.mode = 'appointment_request';
     bookingForm.request_type = 'preferred_period';
     bookingForm.preferred_option_id = option.id;
     bookingForm.preferred_date = option.date;
@@ -567,25 +581,11 @@ const selectGeneralRequest = () => {
 
     availabilityPanel.value = 'appointment_request';
 
-    bookingForm.mode = 'appointment_request';
     bookingForm.request_type = 'general';
     bookingForm.capacity_window_id = '';
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = preferredDate;
     bookingForm.preferred_period = '';
-};
-
-const switchAvailabilityPanel = (panel) => {
-    if (!['exact_slot', 'appointment_request'].includes(panel)) {
-        return;
-    }
-
-    if (availabilityPanel.value === panel) {
-        return;
-    }
-
-    availabilityPanel.value = panel;
-    clearAvailabilitySelection();
 };
 
 const resetBookingFlow = () => {
@@ -595,7 +595,6 @@ const resetBookingFlow = () => {
     clearAvailabilitySelection();
 
     bookingForm.reset(
-        'mode',
         'request_type',
         'service_ids',
         'capacity_window_id',
@@ -607,6 +606,7 @@ const resetBookingFlow = () => {
         'patient_phone',
         'patient_birth_number',
         'patient_note',
+        'privacy_consent',
         'website',
         'form_started_at',
     );
@@ -616,7 +616,10 @@ const resetBookingFlow = () => {
 const submitBooking = () => {
     bookingForm.service_ids = selectedServiceIds.value;
 
-    bookingForm.post(route('public.branch.booking.store', props.branch.slug), {
+    bookingForm.transform((data) => ({
+        ...data,
+        mode: data.capacity_window_id ? 'exact_slot' : 'appointment_request',
+    })).post(route('public.branch.booking.store', props.branch.slug), {
         preserveScroll: true,
         preserveState: true,
         onSuccess: () => {
@@ -740,32 +743,9 @@ const submitBooking = () => {
                             </p>
                         </div>
 
-                        <div
-                            v-if="canSwitchAvailabilityMode"
-                            class="grid grid-cols-2 gap-2 rounded-md border border-soft bg-white p-1"
-                        >
-                            <button
-                                type="button"
-                                class="rounded-md px-3 py-2 text-sm font-medium transition"
-                                :class="availabilityPanel === 'exact_slot' ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
-                                @click="switchAvailabilityPanel('exact_slot')"
-                            >
-                                Priama rezervácia
-                            </button>
-
-                            <button
-                                type="button"
-                                class="rounded-md px-3 py-2 text-sm font-medium transition"
-                                :class="availabilityPanel === 'appointment_request' ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
-                                @click="switchAvailabilityPanel('appointment_request')"
-                            >
-                                Požiadavka na termín
-                            </button>
-                        </div>
-
                         <div class="space-y-3">
                             <div
-                                v-if="hasExactSlots && (!canSwitchAvailabilityMode || availabilityPanel === 'exact_slot')"
+                                v-if="hasExactSlots"
                                 class="space-y-3"
                             >
                                 <button
@@ -812,7 +792,7 @@ const submitBooking = () => {
                             </div>
 
                             <div
-                                v-if="hasRequestAvailability && (!canSwitchAvailabilityMode || availabilityPanel === 'appointment_request')"
+                                v-if="hasRequestAvailability"
                                 class="space-y-3"
                             >
                                 <div
@@ -969,6 +949,13 @@ const submitBooking = () => {
                             class="space-y-5"
                             @submit.prevent="submitBooking"
                         >
+                            <p
+                                v-if="submissionInfoText"
+                                class="rounded-md border border-soft bg-soft px-4 py-3 text-sm text-accent"
+                            >
+                                {{ submissionInfoText }}
+                            </p>
+
                             <div
                                 class="absolute left-[-9999px] top-auto h-px w-px overflow-hidden"
                                 aria-hidden="true"
@@ -1023,13 +1010,20 @@ const submitBooking = () => {
 
                                 <div>
                                     <label class="mb-2 block text-sm font-medium text-dark">
-                                        Telefón
+                                        Telefón <span class="text-red-500">*</span>
                                     </label>
 
                                     <InputText
                                         v-model="bookingForm.patient_phone"
                                         class="w-full"
                                     />
+
+                                    <small
+                                        v-if="bookingForm.errors.patient_phone"
+                                        class="text-red-600"
+                                    >
+                                        {{ bookingForm.errors.patient_phone }}
+                                    </small>
                                 </div>
 
                                 <div>
@@ -1058,19 +1052,33 @@ const submitBooking = () => {
                                 />
                             </div>
 
+                            <div class="space-y-2">
+                                <label class="inline-flex items-start gap-2 text-sm text-dark">
+                                    <input
+                                        v-model="bookingForm.privacy_consent"
+                                        type="checkbox"
+                                        class="mt-1"
+                                    >
+
+                                    <span>
+                                        Súhlasím so spracovaním osobných údajov na účely vybavenia objednania. <span class="text-red-500">*</span>
+                                    </span>
+                                </label>
+
+                                <small
+                                    v-if="bookingForm.errors.privacy_consent"
+                                    class="block text-red-600"
+                                >
+                                    {{ bookingForm.errors.privacy_consent }}
+                                </small>
+                            </div>
+
                             <div class="space-y-1">
                                 <small
                                     v-if="bookingForm.errors.form"
                                     class="block text-red-600"
                                 >
                                     {{ bookingForm.errors.form }}
-                                </small>
-
-                                <small
-                                    v-if="bookingForm.errors.mode"
-                                    class="block text-red-600"
-                                >
-                                    {{ bookingForm.errors.mode }}
                                 </small>
 
                                 <small

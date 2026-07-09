@@ -22,12 +22,24 @@ const props = defineProps({
         type: Number,
         default: null,
     },
+    countOccurrenceLabel: {
+        type: String,
+        default: null,
+    },
     countFromDate: {
         type: Number,
         default: null,
     },
+    countFromDateLabel: {
+        type: String,
+        default: null,
+    },
     countSeries: {
         type: Number,
+        default: null,
+    },
+    countSeriesLabel: {
+        type: String,
         default: null,
     },
     messageOccurrence: {
@@ -41,6 +53,10 @@ const props = defineProps({
     messageSeries: {
         type: String,
         default: null,
+    },
+    loading: {
+        type: Boolean,
+        default: false,
     },
 });
 
@@ -107,23 +123,35 @@ const getOccurrenceWord = (count) => {
     return 'výskytov';
 };
 
-const formatCountLabel = (count) => {
-    const number = Number(count);
+const formatCountLabel = (label, fallbackCount = null) => {
+    const normalized = String(label ?? '').trim();
+
+    if (normalized === '') {
+        const number = Number(fallbackCount);
+
+        if (!Number.isFinite(number) || number <= 0) {
+            return null;
+        }
+
+        return `${number} ${getOccurrenceWord(number)}`;
+    }
+
+    if (normalized.endsWith('+')) {
+        return `${normalized} výskytov`;
+    }
+
+    const number = Number(normalized);
 
     if (!Number.isFinite(number) || number <= 0) {
         return null;
     }
 
-    if (number > 50) {
-        return '50+';
-    }
-
     return `${number} ${getOccurrenceWord(number)}`;
 };
 
-const occurrenceCountLabel = computed(() => formatCountLabel(props.countOccurrence));
-const fromDateCountLabel = computed(() => formatCountLabel(props.countFromDate));
-const seriesCountLabel = computed(() => formatCountLabel(props.countSeries));
+const occurrenceCountLabel = computed(() => formatCountLabel(props.countOccurrenceLabel, props.countOccurrence));
+const fromDateCountLabel = computed(() => formatCountLabel(props.countFromDateLabel, props.countFromDate));
+const seriesCountLabel = computed(() => formatCountLabel(props.countSeriesLabel, props.countSeries));
 
 const scopeOptions = computed(() => [
     {
@@ -153,10 +181,13 @@ const scopeOptions = computed(() => [
 ]);
 
 const choose = (scope) => {
+    if (props.loading) {
+        return;
+    }
+
     suppressCancel.value = true;
 
     emit('select', scope);
-    emit('update:visible', false);
 
     nextTick(() => {
         suppressCancel.value = false;
@@ -168,10 +199,18 @@ const cancelDialog = () => {
         return;
     }
 
+    if (props.loading) {
+        return;
+    }
+
     emit('cancel');
 };
 
 const closeDialog = () => {
+    if (props.loading) {
+        return;
+    }
+
     emit('update:visible', false);
     emit('cancel');
 };
@@ -196,10 +235,11 @@ const closeDialog = () => {
                     v-for="option in scopeOptions"
                     :key="option.scope"
                     type="button"
+                    :disabled="loading"
                     class="grid w-full grid-cols-[2.5rem_1fr] items-center gap-3 rounded-md border bg-white p-3 text-left transition"
                     :class="option.danger
-                        ? 'border-red-100 hover:border-red-300 hover:bg-red-50'
-                        : 'border-soft hover:border-accent hover:bg-soft'"
+                        ? 'border-red-100 hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60'
+                        : 'border-soft hover:border-accent hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60'"
                     @click="choose(option.scope)"
                 >
                     <div

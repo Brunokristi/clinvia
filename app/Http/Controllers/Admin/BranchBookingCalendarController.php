@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Events\BranchCalendarUpdated;
+use App\Models\AppointmentRequestAuditLog;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
 use App\Models\Branch;
 use App\Models\BranchInboxMessage;
+use App\Models\Patient;
 use App\Models\Service;
 use App\Modules\Calendar\Actions\ConvertAppointmentRequestToEventAction;
 use App\Modules\Calendar\Services\EventReadAdapterService;
 use App\Modules\Calendar\Services\RecurringImpactService;
+use App\Services\PatientMatchingService;
 use App\Services\DisabledDayService;
 use App\Services\EmailNotificationService;
 use App\Services\PatientDirectoryService;
@@ -19,6 +22,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -222,7 +226,11 @@ class BranchBookingCalendarController extends Controller
 
             'pendingAppointmentRequestsCount' => AppointmentRequest::query()
                 ->where('branch_id', $branch->id)
-                ->where('status', 'pending')
+                ->whereIn('status', [
+                    AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
+                    AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+                    AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+                ])
                 ->count(),
 
             'unreadMessagesCount' => BranchInboxMessage::query()
@@ -291,6 +299,8 @@ class BranchBookingCalendarController extends Controller
         AppointmentRequest $appointmentRequest,
         ConvertAppointmentRequestToEventAction $convertAppointmentRequestToEventAction,
         EmailNotificationService $emailNotificationService,
+        PatientDirectoryService $patientDirectoryService,
+        PatientMatchingService $patientMatchingService,
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
@@ -298,18 +308,134 @@ class BranchBookingCalendarController extends Controller
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
+            'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'force_create_patient' => ['nullable', 'boolean'],
+            'override_unverified' => ['nullable', 'boolean'],
+            'manual_verification_reason' => ['nullable', 'string', 'max:1000'],
+            'update_existing_patient_contact' => ['nullable', 'boolean'],
             'selected_patient' => ['nullable', 'array'],
+            'selected_patient.patient_id' => ['nullable', 'integer', 'exists:patients,id'],
             'selected_patient.patient_name' => ['nullable', 'string', 'max:255'],
             'selected_patient.patient_email' => ['nullable', 'email', 'max:255'],
             'selected_patient.patient_phone' => ['nullable', 'string', 'max:255'],
             'selected_patient.patient_birth_number' => ['nullable', 'string', 'max:255'],
         ]);
 
+        if (! in_array($appointmentRequest->status, [
+            AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+            AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
+            AppointmentRequest::STATUS_EXPIRED,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'appointment_request' => 'Túto požiadavku už nie je možné potvrdiť.',
+            ]);
+        }
+
+        if (! $appointmentRequest->isEmailVerifiedOrManuallyVerified()) {
+            if (! $request->boolean('override_unverified')) {
+                throw ValidationException::withMessages([
+                    'override_unverified' => 'Požiadavka musí byť emailovo overená alebo manuálne overená.',
+                ]);
+            }
+
+            if (! filled($validated['manual_verification_reason'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'manual_verification_reason' => 'Pri manuálnom overení je potrebné uviesť dôvod.',
+                ]);
+            }
+
+            $appointmentRequest->forceFill([
+                'status' => AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+                'manually_verified_at' => now(),
+                'manually_verified_by' => $request->user()?->id,
+                'manual_verification_reason' => $validated['manual_verification_reason'],
+            ])->save();
+        }
+
+        $selectedPatientId = data_get($validated, 'selected_patient.patient_id');
+        $resolvedPatientId = (int) ($validated['patient_id'] ?? $selectedPatientId ?? 0);
+        $forceCreatePatient = $request->boolean('force_create_patient', false);
+
+        if ($resolvedPatientId <= 0) {
+            if (! $forceCreatePatient) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať existujúceho pacienta alebo explicitne vytvoriť nového.',
+                ]);
+            }
+
+            $matches = $patientMatchingService->findMatchesForRequest($appointmentRequest);
+            $hasStrongMatch = $matches->contains(fn (array $match): bool => in_array($match['confidence'], [
+                'exact_email',
+                'exact_phone',
+                'name_and_birth_date',
+                'name_and_email',
+                'name_and_phone',
+            ], true));
+
+            if ($hasStrongMatch && ! $forceCreatePatient) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Našli sa silné zhody s existujúcim pacientom. Vyberte pacienta alebo potvrďte vytvorenie nového.',
+                ]);
+            }
+
+            $createdPatient = $patientDirectoryService->savePatient(
+                branch: $branch,
+                name: data_get($validated, 'selected_patient.patient_name') ?: $appointmentRequest->patient_name,
+                email: data_get($validated, 'selected_patient.patient_email') ?: $appointmentRequest->patient_email,
+                phone: data_get($validated, 'selected_patient.patient_phone') ?: $appointmentRequest->patient_phone,
+                birthNumber: data_get($validated, 'selected_patient.patient_birth_number') ?: $appointmentRequest->patient_birth_number,
+            );
+
+            if (! $createdPatient) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať alebo vytvoriť pacienta.',
+                ]);
+            }
+
+            $resolvedPatientId = (int) $createdPatient->id;
+        }
+
+        $patient = Patient::query()
+            ->where('branch_id', $branch->id)
+            ->whereKey($resolvedPatientId)
+            ->first();
+
+        if (! $patient) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Vybraný pacient nepatrí do tejto pobočky.',
+            ]);
+        }
+
+        if ($request->boolean('update_existing_patient_contact') && data_get($validated, 'selected_patient')) {
+            $before = $patient->only(['patient_email', 'patient_phone', 'patient_birth_number']);
+
+            $patient->update([
+                'patient_email' => data_get($validated, 'selected_patient.patient_email') ?: $patient->patient_email,
+                'patient_phone' => data_get($validated, 'selected_patient.patient_phone') ?: $patient->patient_phone,
+                'patient_birth_number' => data_get($validated, 'selected_patient.patient_birth_number') ?: $patient->patient_birth_number,
+                'last_used_at' => now(),
+            ]);
+
+            AppointmentRequestAuditLog::query()->create([
+                'appointment_request_id' => $appointmentRequest->id,
+                'branch_id' => $branch->id,
+                'action' => 'patient_contact_updated',
+                'reason' => 'explicit_admin_action',
+                'payload' => [
+                    'before' => $before,
+                    'after' => $patient->fresh()->only(['patient_email', 'patient_phone', 'patient_birth_number']),
+                ],
+                'performed_by' => $request->user()?->id,
+            ]);
+        }
+
         $startsAt = Carbon::parse($validated['starts_at']);
 
         $event = $convertAppointmentRequestToEventAction->execute($branch, $appointmentRequest, [
             'starts_at' => $startsAt,
             'ends_at' => $startsAt->copy()->addMinutes((int) max(15, $appointmentRequest->total_duration_minutes)),
+            'patient_id' => $resolvedPatientId,
             'patient_name' => data_get($validated, 'selected_patient.patient_name') ?: $appointmentRequest->patient_name,
             'patient_email' => data_get($validated, 'selected_patient.patient_email') ?: $appointmentRequest->patient_email,
             'patient_phone' => data_get($validated, 'selected_patient.patient_phone') ?: $appointmentRequest->patient_phone,
@@ -346,8 +472,17 @@ class BranchBookingCalendarController extends Controller
             'notification_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $requireRejectionReason = (bool) data_get($branch->booking_settings ?? [], 'require_rejection_reason', false);
+
+        if ($requireRejectionReason && ! filled($validated['notification_reason'] ?? null)) {
+            throw ValidationException::withMessages([
+                'notification_reason' => 'Dôvod zamietnutia je povinný.',
+            ]);
+        }
+
         $appointmentRequest->update([
-            'status' => 'cancelled',
+            'status' => AppointmentRequest::STATUS_REJECTED,
+            'rejected_reason' => $validated['notification_reason'] ?? null,
         ]);
 
         if ($request->boolean('notify_patient', true)) {
@@ -366,11 +501,47 @@ class BranchBookingCalendarController extends Controller
         return back()->with('success', 'Žiadosť bola zrušená.');
     }
 
+    public function manuallyVerifyAppointmentRequest(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $appointmentRequest->forceFill([
+            'status' => AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+            'manually_verified_at' => now(),
+            'manually_verified_by' => $request->user()?->id,
+            'manual_verification_reason' => $validated['reason'],
+        ])->save();
+
+        AppointmentRequestAuditLog::query()->create([
+            'appointment_request_id' => $appointmentRequest->id,
+            'branch_id' => $branch->id,
+            'action' => 'manual_verification',
+            'reason' => $validated['reason'],
+            'payload' => null,
+            'performed_by' => $request->user()?->id,
+        ]);
+
+        return back()->with('success', 'Požiadavka bola manuálne overená.');
+    }
+
     private function getPendingAppointmentRequests(Branch $branch)
     {
         return AppointmentRequest::query()
             ->where('branch_id', $branch->id)
-            ->where('status', 'pending')
+            ->whereIn('status', [
+                AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
+                AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+                AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+                AppointmentRequest::STATUS_EXPIRED,
+            ])
             ->with('services')
             ->orderByRaw('preferred_date is null')
             ->orderBy('preferred_date')
@@ -381,12 +552,19 @@ class BranchBookingCalendarController extends Controller
                 'request_type' => $appointmentRequest->request_type ?? 'preferred_period',
                 'preferred_date' => $appointmentRequest->preferred_date?->toDateString(),
                 'preferred_period' => $appointmentRequest->preferred_period,
+                'preferred_starts_at' => $appointmentRequest->preferred_starts_at?->toIso8601String(),
+                'preferred_time_note' => $appointmentRequest->preferred_time_note,
                 'total_duration_minutes' => $appointmentRequest->total_duration_minutes,
+                'status' => $appointmentRequest->status,
+                'email_verified_at' => $appointmentRequest->email_verified_at?->toIso8601String(),
+                'manually_verified_at' => $appointmentRequest->manually_verified_at?->toIso8601String(),
+                'manual_verification_reason' => $appointmentRequest->manual_verification_reason,
                 'patient_name' => $appointmentRequest->patient_name,
                 'patient_email' => $appointmentRequest->patient_email,
                 'patient_phone' => $appointmentRequest->patient_phone,
                 'patient_birth_number' => $appointmentRequest->patient_birth_number,
                 'patient_note' => $appointmentRequest->patient_note,
+                'matches' => app(PatientMatchingService::class)->findMatchesForRequest($appointmentRequest)->values()->all(),
                 'services' => $appointmentRequest->services
                     ->map(fn (Service $service): array => [
                         'id' => $service->id,

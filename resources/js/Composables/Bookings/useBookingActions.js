@@ -1,27 +1,13 @@
 import { router } from '@inertiajs/vue3';
-import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
 import { isRecurringEntity } from './recurrencePolicy';
 import { useRecurringImpactPreview } from './useRecurringImpactPreview';
+import { scopeSuccessMessage, useCalendarActionFeedback } from './useCalendarActionFeedback';
 
 export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventId, restoreCalendarEventId, reloadCalendarData }) {
-    const toast = useToast();
+    const feedback = useCalendarActionFeedback();
     const { toLocalDateTimeString } = dateTime;
-
-    // Success notifications are shown centrally from flash messages in AdminLayout.
-    const showSuccess = () => { };
-
-    const showError = (fallback, errors = {}) => {
-        const firstError = Object.values(errors ?? {})?.[0];
-
-        toast.add({
-            severity: 'error',
-            summary: 'Chyba',
-            detail: Array.isArray(firstError) ? firstError[0] : firstError || fallback,
-            life: 5000,
-        });
-    };
 
     const {
         bookingDialogVisible,
@@ -37,6 +23,8 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
     const bookingNotes = ref({});
     const pendingBookingReschedule = ref(null);
+    const pendingBookingScopeSubmit = ref(false);
+    const bookingMutationPending = ref(false);
     const {
         impactPreview: bookingRescheduleImpactPreview,
         fetchImpactPreview: fetchBookingRescheduleImpactPreview,
@@ -107,11 +95,18 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     };
 
     const createAdminBooking = (data = {}) => {
+        if (bookingMutationPending.value) {
+            return;
+        }
+
+        bookingMutationPending.value = true;
+
         router.post(route('branches.booking.bookings.store', props.branch.id), {
             service_id: data.service_id ?? null,
             service_ids: data.service_ids ?? (data.service_id ? [data.service_id] : []),
             starts_at: data.starts_at ?? getSelectionStartsAt(),
             ends_at: data.ends_at ?? getSelectionEndsAt(),
+            patient_id: data.patient_id ?? null,
             patient_name: data.patient_name,
             patient_email: data.patient_email,
             patient_phone: data.patient_phone,
@@ -135,16 +130,25 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
                 createBookingDialogVisible.value = false;
                 pendingCalendarSelection.value = null;
-                showSuccess('Rezervácia bola vytvorená.');
+                feedback.success(data.recurrence ? 'Opakovaná rezervácia bola vytvorená.' : 'Rezervácia bola vytvorená.');
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
-                showError('Rezerváciu sa nepodarilo vytvoriť.', errors);
+                feedback.error(errors, 'Rezerváciu sa nepodarilo vytvoriť.');
+            },
+            onFinish: () => {
+                bookingMutationPending.value = false;
             },
         });
     };
 
     const updateBooking = (booking, status, options = {}) => {
+        if (bookingMutationPending.value) {
+            return;
+        }
+
+        bookingMutationPending.value = true;
+
         router.put(route('branches.booking.bookings.update', [
             props.branch.id,
             getBookingRecordId(booking),
@@ -156,16 +160,25 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             preserveState: true,
             onSuccess: () => {
                 closeBookingDialogs();
-                showSuccess('Rezervácia bola upravená.');
+                feedback.success('Rezervácia bola upravená.');
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
-                showError('Rezerváciu sa nepodarilo upraviť.', errors);
+                feedback.error(errors, 'Rezerváciu sa nepodarilo upraviť.');
+            },
+            onFinish: () => {
+                bookingMutationPending.value = false;
             },
         });
     };
 
     const cancelBooking = (booking, options = {}) => {
+        if (bookingMutationPending.value) {
+            return;
+        }
+
+        bookingMutationPending.value = true;
+
         const eventId = booking?.calendar_event_id ?? `booking-${getBookingRecordId(booking)}`;
         const capacityWindowId = booking?.capacity_window_id ?? null;
 
@@ -185,12 +198,15 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                 preserveState: true,
                 onSuccess: () => {
                     closeBookingDialogs();
-                    showSuccess('Pacient bol odstránený zo skupinového termínu.');
+                    feedback.success('Pacient bol odstránený zo skupinového termínu.');
                     reloadCalendarDataInternal();
                 },
                 onError: (errors) => {
                     restoreCalendarEventId?.(eventId);
-                    showError('Pacienta sa nepodarilo odstrániť zo skupinového termínu.', errors);
+                    feedback.error(errors, 'Pacienta sa nepodarilo odstrániť zo skupinového termínu.');
+                },
+                onFinish: () => {
+                    bookingMutationPending.value = false;
                 },
             });
 
@@ -209,12 +225,15 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             preserveState: true,
             onSuccess: () => {
                 closeBookingDialogs();
-                showSuccess('Rezervácia bola zrušená.');
+                feedback.success(scopeSuccessMessage({ action: 'delete', scope: options.delete_scope ?? 'occurrence' }));
                 reloadCalendarDataInternal();
             },
             onError: (errors) => {
                 restoreCalendarEventId?.(eventId);
-                showError('Rezerváciu sa nepodarilo zrušiť.', errors);
+                feedback.error(errors, 'Termín sa nepodarilo zrušiť. Skúste to znova.');
+            },
+            onFinish: () => {
+                bookingMutationPending.value = false;
             },
         });
     };
@@ -244,6 +263,12 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     };
 
     const rescheduleBooking = (booking, data = {}, options = {}) => {
+        if (bookingMutationPending.value) {
+            return;
+        }
+
+        bookingMutationPending.value = true;
+
         const serviceIds = getBookingServiceIds(booking, data);
         const inferredRecurringScope = isBookingRepeatable(booking)
             ? (data.date || booking.occurrence_original_date || booking.occurrence_date ? 'occurrence' : 'series')
@@ -258,7 +283,6 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             service_id: serviceIds[0] ?? data.service_id ?? booking.service_id,
             service_ids: serviceIds,
             starts_at: data.starts_at ?? null,
-            ends_at: data.ends_at ?? null,
             patient_name: data.patient_name ?? booking.patient_name ?? null,
             patient_email: data.patient_email ?? booking.patient_email ?? null,
             patient_phone: data.patient_phone ?? booking.patient_phone ?? null,
@@ -278,7 +302,10 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             preserveState: true,
             onSuccess: () => {
                 closeBookingDialogs();
-                showSuccess('Rezervácia bola presunutá.');
+                const successDetail = options.successMessage
+                    ?? scopeSuccessMessage({ action: 'reschedule', scope: requestedScope });
+
+                feedback.success(successDetail);
                 reloadCalendarDataInternal();
                 options.onSuccess?.({
                     booking,
@@ -287,8 +314,11 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                 });
             },
             onError: (errors) => {
-                showError('Rezerváciu sa nepodarilo presunúť.', errors);
+                feedback.error(errors, 'Rezerváciu sa nepodarilo presunúť.');
                 options.onError?.(errors);
+            },
+            onFinish: () => {
+                bookingMutationPending.value = false;
             },
         });
     };
@@ -319,6 +349,13 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
 
         if (!booking) {
             changeInfo.revert();
+
+            return;
+        }
+
+        if (bookingMutationPending.value) {
+            changeInfo.revert();
+            feedback.info('Počkajte na dokončenie predchádzajúcej zmeny.');
 
             return;
         }
@@ -391,7 +428,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             preserveState: true,
             onError: (errors) => {
                 changeInfo.revert();
-                showError('Rezerváciu sa nepodarilo presunúť.', errors);
+                feedback.error(errors, 'Rezerváciu sa nepodarilo presunúť.');
                 options.onError?.(errors);
             },
             onSuccess: () => {
@@ -403,7 +440,7 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
                     ends_datetime: payload.ends_at,
                     occurrence_date: payload.date,
                 });
-                showSuccess('Rezervácia bola presunutá.');
+                feedback.success('Rezervácia bola presunutá.');
                 options.onSuccess?.({
                     booking,
                     payload,
@@ -418,23 +455,42 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
     };
 
     const submitPendingBookingRescheduleScope = (scope) => {
-        if (!pendingBookingReschedule.value) {
+        if (!pendingBookingReschedule.value || pendingBookingScopeSubmit.value) {
             return;
         }
 
         const { booking, payload } = pendingBookingReschedule.value;
+        const previewKey = scope === 'series' ? 'series' : (scope === 'from_date' ? 'from_date' : 'occurrence');
+        const affectedCount = bookingRescheduleImpactPreview.value?.[previewKey]?.count ?? null;
+
+        pendingBookingScopeSubmit.value = true;
 
         rescheduleBooking(booking, {
             ...payload,
             reschedule_scope: scope,
+        }, {
+            successMessage: scopeSuccessMessage({
+                action: 'reschedule',
+                scope,
+                affectedCount,
+            }),
+            onSuccess: () => {
+                pendingBookingReschedule.value = null;
+                bookingRescheduleScopeDialogVisible.value = false;
+                clearBookingRescheduleImpactPreview();
+                pendingBookingScopeSubmit.value = false;
+            },
+            onError: () => {
+                pendingBookingScopeSubmit.value = false;
+            },
         });
-
-        pendingBookingReschedule.value = null;
-        bookingRescheduleScopeDialogVisible.value = false;
-        clearBookingRescheduleImpactPreview();
     };
 
     const cancelPendingBookingReschedule = () => {
+        if (pendingBookingScopeSubmit.value) {
+            return;
+        }
+
         pendingBookingReschedule.value = null;
         bookingRescheduleScopeDialogVisible.value = false;
         clearBookingRescheduleImpactPreview();
@@ -459,10 +515,10 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
             preserveState: true,
             onError: (errors) => {
                 receiveInfo.revert();
-                showError('Žiadosť sa nepodarilo premeniť na rezerváciu.', errors);
+                feedback.error(errors, 'Žiadosť sa nepodarilo premeniť na rezerváciu.');
             },
             onSuccess: () => {
-                showSuccess('Žiadosť bola premenená na rezerváciu.');
+                feedback.success('Požiadavka bola potvrdená ako rezervácia.');
                 reloadCalendarDataInternal();
             },
             onFinish: () => {
@@ -480,6 +536,8 @@ export function useBookingActions({ props, dateTime, dialogs, hideCalendarEventI
         rescheduleBooking,
         rescheduleBookingByCalendarChange,
         bookingRescheduleImpactPreview,
+        pendingBookingScopeSubmit,
+        bookingMutationPending,
         submitPendingBookingRescheduleScope,
         cancelPendingBookingReschedule,
         updateBooking,

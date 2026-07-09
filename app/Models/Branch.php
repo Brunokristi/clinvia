@@ -32,6 +32,8 @@ class Branch extends Model
         'sort_order',
         'booking_settings',
         'notification_settings',
+        'contracted_insurance_companies',
+        'show_other_branches_in_footer',
     ];
 
     protected function casts(): array
@@ -43,6 +45,8 @@ class Branch extends Model
             'longitude' => 'decimal:7',
             'booking_settings' => 'array',
             'notification_settings' => 'array',
+            'contracted_insurance_companies' => 'array',
+            'show_other_branches_in_footer' => 'boolean',
         ];
     }
 

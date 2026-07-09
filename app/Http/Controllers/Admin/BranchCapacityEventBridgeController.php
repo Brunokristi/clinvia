@@ -38,9 +38,10 @@ class BranchCapacityEventBridgeController extends Controller
         $validated = $request->validate([
             'service_id' => ['required', 'integer', 'exists:services,id'],
             'starts_at' => ['required', 'date'],
-            'ends_at' => ['required', 'date', 'after:starts_at'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'capacity' => ['required', 'integer', 'min:1'],
             'admin_note' => ['nullable', 'string'],
+            'staff_id' => ['prohibited'],
             'repeats' => ['nullable', 'boolean'],
             'repeat_every' => ['nullable', 'integer', 'min:1'],
             'repeat_unit' => ['nullable', 'in:days,weeks,months'],
@@ -72,11 +73,14 @@ class BranchCapacityEventBridgeController extends Controller
         }
 
         $event = DB::transaction(function () use ($createEventAction, $branch, $validated, $service, $request): Event {
+            $startsAt = Carbon::parse($validated['starts_at']);
+            $endsAt = $this->resolveEndsAtFromService($startsAt, $service);
+
             return $createEventAction->execute($branch, [
                 'type' => EventType::GroupEvent->value,
                 'status' => 'confirmed',
-                'starts_at' => Carbon::parse($validated['starts_at']),
-                'ends_at' => Carbon::parse($validated['ends_at']),
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
                 'timezone' => config('app.timezone'),
                 'recurrence_rule' => $this->extractRecurrence($validated),
                 'services' => [[
@@ -119,6 +123,7 @@ class BranchCapacityEventBridgeController extends Controller
             'admin_note' => ['nullable', 'string'],
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'staff_id' => ['prohibited'],
             'update_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'from_date' => ['nullable', 'date'],
             'recurrence' => ['nullable', 'array'],
@@ -138,6 +143,16 @@ class BranchCapacityEventBridgeController extends Controller
             ->whereKey($validated['service_id'])
             ->firstOrFail();
 
+        $confirmedParticipantsCount = (int) $event->participants()
+            ->where('status', 'confirmed')
+            ->count();
+
+        if ((int) $validated['capacity'] < $confirmedParticipantsCount) {
+            throw ValidationException::withMessages([
+                'capacity' => 'Kapacita nemoze byt mensia ako aktualny pocet pacientov v skupinovom termine.',
+            ]);
+        }
+
         $scope = $this->mapScope($validated['update_scope'] ?? (
             $event->is_recurring && $event->recurrence_parent_id === null
                 ? 'series'
@@ -153,9 +168,14 @@ class BranchCapacityEventBridgeController extends Controller
             ? Carbon::parse($validated['from_date'])
             : $event->starts_at;
 
+        $startsAt = filled($validated['starts_at'] ?? null)
+            ? Carbon::parse($validated['starts_at'])
+            : $event->starts_at;
+        $endsAt = $this->resolveEndsAtFromService($startsAt, $service, $event->ends_at);
+
         $payload = [
-            'starts_at' => $validated['starts_at'] ?? $event->starts_at,
-            'ends_at' => $validated['ends_at'] ?? $event->ends_at,
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
             'occurrence_date' => $occurrenceDate?->toDateString(),
             'services' => [[
                 'service_id' => (int) $service->id,
@@ -219,12 +239,20 @@ class BranchCapacityEventBridgeController extends Controller
 
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
-            'ends_at' => ['required', 'date', 'after:starts_at'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'staff_id' => ['prohibited'],
             'reschedule_scope' => ['nullable', 'in:occurrence,from_date,series,this,this_and_following,all'],
             'occurrence_starts_at' => ['nullable', 'date'],
             'from_date' => ['nullable', 'date'],
             'date' => ['nullable', 'date'],
         ]);
+
+        $service = $event->services()
+            ->orderBy('event_service.sort_order')
+            ->first();
+
+        $startsAt = Carbon::parse($validated['starts_at']);
+        $endsAt = $this->resolveEndsAtFromService($startsAt, $service, $event->ends_at);
 
         $occurrenceDateRaw = filled($validated['occurrence_starts_at'] ?? null)
             ? Carbon::parse($validated['occurrence_starts_at'])->toDateString()
@@ -238,8 +266,8 @@ class BranchCapacityEventBridgeController extends Controller
 
         $rescheduleEventAction->execute(
             event: $event,
-            startsAt: Carbon::parse($validated['starts_at']),
-            endsAt: Carbon::parse($validated['ends_at']),
+            startsAt: $startsAt,
+            endsAt: $endsAt,
             actorId: $request->user()?->id,
             scope: $scope,
             occurrenceDate: filled($occurrenceDateRaw) ? Carbon::parse($occurrenceDateRaw) : null,
@@ -511,6 +539,21 @@ class BranchCapacityEventBridgeController extends Controller
             'all', 'series' => 'series',
             default => 'series',
         };
+    }
+
+    private function resolveEndsAtFromService(?Carbon $startsAt, ?Service $service, ?Carbon $fallback = null): ?Carbon
+    {
+        if (! $startsAt) {
+            return $fallback;
+        }
+
+        $durationMinutes = max(1, (int) ($service?->duration_minutes ?? 0));
+
+        if ($durationMinutes <= 0) {
+            return $fallback;
+        }
+
+        return $startsAt->copy()->addMinutes($durationMinutes);
     }
 
     private function authorizeAccess(Request $request, Branch $branch): void

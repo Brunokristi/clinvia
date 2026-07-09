@@ -40,6 +40,7 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
 
         $validated = $request->validate([
             'rules' => ['required', 'array'],
+            'staff_id' => ['prohibited'],
             'rules.*.id' => ['nullable', 'integer'],
             'rules.*.date' => ['required', 'date'],
             'rules.*.starts_at' => ['required', 'date_format:H:i'],
@@ -172,6 +173,7 @@ class BranchAvailabilityRuleEventBridgeController extends Controller
             'date' => ['required', 'date'],
             'starts_at' => ['required', 'date_format:H:i'],
             'ends_at' => ['required', 'date_format:H:i', 'after:starts_at'],
+            'staff_id' => ['prohibited'],
             'reschedule_scope' => ['required', 'in:occurrence,series,from_date,this,this_and_following,all'],
         ]);
 

@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\Booking;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
 
 class BookingCalendarInvite
 {
@@ -17,7 +16,9 @@ class BookingCalendarInvite
         Booking $booking,
         Carbon $startsAt,
         ?Carbon $endsAt = null,
-        string $method = 'PUBLISH',
+        string $method = 'REQUEST',
+        string $status = 'CONFIRMED',
+        int $sequence = 0,
     ): string {
         $timezone = self::timezone();
 
@@ -25,11 +26,7 @@ class BookingCalendarInvite
         $endsAt ??= $startsAt->copy()->addMinutes(30);
         $endsAt = $endsAt->copy();
 
-        $uid = sprintf(
-            'booking-%d-%s@clinvia.local',
-            (int) $booking->id,
-            Str::lower($startsAt->format('YmdHis')),
-        );
+        $uid = sprintf('booking-%d@clinvia.local', (int) $booking->id);
 
         $summary = self::escapeText(self::serviceName($booking));
         $location = self::escapeText($booking->branch?->name ?? '');
@@ -41,6 +38,8 @@ class BookingCalendarInvite
         $dtStamp = now()->utc()->format('Ymd\THis\Z');
         $dtStart = $startsAt->format('Ymd\THis');
         $dtEnd = $endsAt->format('Ymd\THis');
+        $sequence = max(0, (int) $sequence);
+        $status = strtoupper($status);
 
         return implode("\r\n", [
             'BEGIN:VCALENDAR',
@@ -52,12 +51,13 @@ class BookingCalendarInvite
             'BEGIN:VEVENT',
             'UID:' . $uid,
             'DTSTAMP:' . $dtStamp,
+            'SEQUENCE:' . $sequence,
             'DTSTART;TZID=' . $timezone . ':' . $dtStart,
             'DTEND;TZID=' . $timezone . ':' . $dtEnd,
             'SUMMARY:' . $summary,
             'LOCATION:' . $location,
             'DESCRIPTION:' . $description,
-            'STATUS:CONFIRMED',
+            'STATUS:' . $status,
             'END:VEVENT',
             'END:VCALENDAR',
             '',
