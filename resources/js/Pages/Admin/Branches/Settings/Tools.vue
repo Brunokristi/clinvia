@@ -33,6 +33,9 @@ const props = defineProps({
 
 const publicSite = props.branch.public_site ?? {};
 const bookingSettings = props.branch.booking_settings ?? {};
+const normalizedBookingMode = bookingSettings.booking_mode === 'verified_patients_only'
+    ? 'verified_patients_direct'
+    : (bookingSettings.booking_mode ?? 'requests_only');
 const notificationSettings = props.branch.notification_settings ?? {};
 const contractedInsuranceCompanies = props.branch.contracted_insurance_companies ?? [];
 
@@ -50,8 +53,8 @@ const bookingModeOptions = [
         value: 'requests_only',
     },
     {
-        label: 'Len overení pacienti',
-        value: 'verified_patients_only',
+        label: 'Overení pacienti môžu potvrdiť termín priamo',
+        value: 'verified_patients_direct',
     },
     {
         label: 'Len administrátor',
@@ -75,7 +78,7 @@ const form = useForm({
         is_enabled: bookingSettings.is_enabled ?? false,
         allow_service_selection: bookingSettings.allow_service_selection ?? true,
         allow_appointment_requests: bookingSettings.allow_appointment_requests ?? true,
-        booking_mode: bookingSettings.booking_mode ?? 'requests_only',
+        booking_mode: normalizedBookingMode,
         intro_text: bookingSettings.intro_text ?? '',
         success_message: bookingSettings.success_message ?? '',
     },
@@ -334,7 +337,7 @@ const publicUrl = `/p/${props.branch.slug}`;
                     />
 
                     <p class="mt-2 text-sm text-accent">
-                        Tento režim riadi, či sa verejné odoslanie vytvorí ako požiadavka alebo môže potvrdiť termín okamžite.
+                        Systém podľa tohto režimu rozhoduje, či verejné odoslanie ostane ako požiadavka alebo sa pri overenom pacientovi potvrdí priamo.
                     </p>
                 </FormField>
 

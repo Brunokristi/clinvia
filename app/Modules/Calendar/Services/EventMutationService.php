@@ -421,6 +421,7 @@ class EventMutationService
             }
 
             $participant = $event->participants()->create([
+                'source_request_id' => $payload['source_request_id'] ?? null,
                 'patient_id' => $payload['patient_id'] ?? null,
                 'status' => $payload['status'] ?? 'confirmed',
                 'booked_at' => now(),

@@ -52,13 +52,8 @@ const emit = defineEmits([
 
 const createTypeOptions = [
     { label: 'Rezervácia', value: 'booking' },
-    { label: 'Pravidlo online rezervácií', value: 'rule' },
+    { label: 'Pravidlo rezervácií', value: 'rule' },
     { label: 'Skupinový termín', value: 'group_event' },
-];
-
-const bookingModeOptions = [
-    { label: 'Okamžitá rezervácia', value: 'immediate_booking' },
-    { label: 'Rezervácia na schválenie', value: 'appointment_request' },
 ];
 
 const phoneCountries = [
@@ -392,7 +387,7 @@ const isRecurringScopedEdit = computed(() => {
 
 const currentEntityLabel = computed(() => {
     if (isRuleType.value) {
-        return 'pravidlo online rezervácií';
+        return 'pravidlo rezervácií';
     }
 
     if (isGroupEventType.value) {
@@ -557,14 +552,12 @@ const canCreateSubmit = computed(() => {
     }
 
     if (isRuleType.value) {
-        return Boolean(form.service_ids.length)
-            && Boolean(form.public_booking_type);
+        return Boolean(form.service_ids.length);
     }
 
     if (isGroupEventType.value) {
         return Boolean(form.service_ids.length)
-            && Number(form.capacity ?? 0) > 0
-            && Boolean(form.public_booking_type);
+            && Number(form.capacity ?? 0) > 0;
     }
 
     if (isBookingEditMode.value) {
@@ -603,23 +596,11 @@ const eventTypeHint = computed(() => {
     }
 
     if (isRuleType.value) {
-        return 'Pravidlo online rezervácií určuje, kedy sa môžu pacienti objednávať cez verejnú rezervačnú stránku. Nejde o konkrétneho pacienta, ale o dostupný čas, ktorý sa môže podľa potreby opakovať.';
+        return 'Pravidlo rezervácií určuje, kedy sa môžu pacienti objednávať cez verejnú rezervačnú stránku. Nejde o konkrétny termín, ale o dostupný čas, ktorý sa môže podľa potreby opakovať.';
     }
 
     if (isGroupEventType.value) {
         return 'Skupinový termín je jeden spoločný termín pre viacerých pacientov. Použite ho napríklad pri skupinových vyšetreniach, kurzoch alebo termínoch s obmedzenou kapacitou.';
-    }
-
-    return null;
-});
-
-const bookingModeHint = computed(() => {
-    if (form.public_booking_type === 'immediate_booking') {
-        return 'Pri okamžitej rezervácii sa pacient po výbere voľného termínu automaticky objedná. Termín sa hneď zapíše do kalendára bez dodatočného schvaľovania.';
-    }
-
-    if (form.public_booking_type === 'appointment_request') {
-        return 'Pri rezervácii na schválenie pacient odošle žiadosť o termín. Termín sa potvrdí až po tom, ako ho ambulancia schváli.';
     }
 
     return null;
@@ -1206,7 +1187,7 @@ const submitCreate = (saveScope = null) => {
 
             <template v-else-if="isRuleType">
                 <FormSection
-                    title="Pravidlo online rezervácií"
+                    title="Pravidlo rezervácií"
                     description="Nastavte dostupnosť, do ktorej sa pacienti môžu objednávať cez online rezervácie."
                     columns="md:grid-cols-2"
                 >
@@ -1230,34 +1211,6 @@ const submitCreate = (saveScope = null) => {
                         />
                     </FormField>
 
-                    <FormField
-                        label="Spôsob rezervácie"
-                        for="rule_public_booking_type"
-                        required
-                        span="space-y-1 md:col-span-2"
-                    >
-                        <Select
-                            id="rule_public_booking_type"
-                            v-model="form.public_booking_type"
-                            :options="bookingModeOptions"
-                            option-label="label"
-                            option-value="value"
-                            class="w-full"
-                        />
-
-                        <div
-                            v-if="bookingModeHint"
-                            class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 text-xs text-accent"
-                        >
-                            <div class="flex h-full min-h-8 items-center justify-center rounded-md bg-soft text-dark">
-                                <i class="pi pi-info-circle text-base" />
-                            </div>
-
-                            <p class="flex min-w-0 items-center font-medium leading-relaxed">
-                                {{ bookingModeHint }}
-                            </p>
-                        </div>
-                    </FormField>
                 </FormSection>
             </template>
 
@@ -1300,34 +1253,6 @@ const submitCreate = (saveScope = null) => {
                         />
                     </FormField>
 
-                    <FormField
-                        label="Spôsob rezervácie"
-                        for="group_public_booking_type"
-                        required
-                        span="space-y-1 md:col-span-2"
-                    >
-                        <Select
-                            id="group_public_booking_type"
-                            v-model="form.public_booking_type"
-                            :options="bookingModeOptions"
-                            option-label="label"
-                            option-value="value"
-                            class="w-full"
-                        />
-
-                        <div
-                            v-if="bookingModeHint"
-                            class="grid grid-cols-[2.5rem_1fr] items-stretch gap-3 text-xs text-accent"
-                        >
-                            <div class="flex h-full min-h-8 items-center justify-center rounded-md bg-soft text-dark">
-                                <i class="pi pi-info-circle text-base" />
-                            </div>
-
-                            <p class="flex min-w-0 items-center font-medium leading-relaxed">
-                                {{ bookingModeHint }}
-                            </p>
-                        </div>
-                    </FormField>
                 </FormSection>
 
                 <FormSection

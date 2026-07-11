@@ -49,6 +49,8 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $this->assertDatabaseHas('appointment_requests', [
             'branch_id' => $branch->id,
             'patient_email' => 'anon@example.com',
+            'request_type' => 'group_event_request',
+            'group_event_id' => $capacityWindow->id,
         ]);
     }
 
@@ -61,6 +63,50 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $response->assertOk();
         $response->assertDontSee('Spôsob rezervácie');
         $response->assertDontSee('Okamžitá rezervácia');
+    }
+
+    public function test_public_booking_page_handles_availability_rule_datetime_without_double_date_parse_error(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $rule = Event::query()->create([
+            'branch_id' => $branch->id,
+            'type' => EventType::AvailabilityRule->value,
+            'status' => 'confirmed',
+            'starts_at' => Carbon::parse('2026-07-06 07:00:00'),
+            'ends_at' => Carbon::parse('2026-07-06 09:00:00'),
+            'timezone' => config('app.timezone'),
+            'is_recurring' => true,
+            'recurrence_rule' => [
+                'frequency' => 'daily',
+                'interval' => 1,
+                'weekdays' => [],
+                'ends' => [
+                    'type' => 'on',
+                    'until' => '2026-07-31',
+                ],
+            ],
+            'metadata' => [],
+        ]);
+
+        $rule->availabilityRuleDetail()->create([
+            'slot_interval_minutes' => 15,
+        ]);
+
+        $rule->services()->sync([
+            $service->id => [
+                'duration_minutes_snapshot' => (int) $service->duration_minutes,
+                'price_snapshot' => $service->self_pay_amount,
+                'sort_order' => 0,
+                'quantity' => 1,
+            ],
+        ]);
+
+        $this->get(route('public.branch.booking', [
+            'branch' => $branch->slug,
+            'services' => [$service->id],
+            'date' => '2026-07-09',
+        ]))->assertOk();
     }
 
     public function test_public_request_creates_pending_email_verification_request(): void
@@ -77,7 +123,9 @@ class AppointmentRequestIdentityFlowTest extends TestCase
 
         $this->assertNotNull($request);
         $this->assertSame(AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION, $request->status);
+        $this->assertSame('appointment_request', $request->request_type);
         $this->assertNull($request->email_verified_at);
+        $this->assertNull($request->patient_id);
     }
 
     public function test_verification_email_is_sent_after_public_request_submission(): void
@@ -89,6 +137,160 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), $this->publicPayload($service));
 
         Notification::assertSentOnDemand(RequestVerificationNotification::class);
+    }
+
+    public function test_relative_request_persists_requester_fields_and_uses_requester_email_for_verification(): void
+    {
+        Notification::fake();
+
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $payload = $this->publicPayload($service);
+        unset($payload['patient_email'], $payload['patient_phone']);
+
+        $payload = array_merge($payload, [
+            'is_for_someone_else' => true,
+            'requester_name' => 'Relative Requester',
+            'requester_email' => 'relative.requester@example.com',
+            'requester_phone' => '+421901001001',
+            'patient_name' => 'Patient Relative',
+        ]);
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), $payload)
+            ->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertTrue((bool) $request->is_for_someone_else);
+        $this->assertSame('Relative Requester', $request->requester_name);
+        $this->assertSame('relative.requester@example.com', $request->requester_email);
+        $this->assertSame('+421901001001', $request->requester_phone);
+        $this->assertNull($request->patient_email);
+        $this->assertNull($request->patient_phone);
+        $this->assertSame('relative.requester@example.com', $request->normalized_email);
+
+        Notification::assertSentOnDemand(
+            RequestVerificationNotification::class,
+            function (RequestVerificationNotification $notification, array $channels, object $notifiable): bool {
+                return ($notifiable->routes['mail'] ?? null) === 'relative.requester@example.com';
+            }
+        );
+    }
+
+    public function test_relative_request_requires_requester_contact_fields(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $payload = $this->publicPayload($service);
+        unset($payload['patient_email'], $payload['patient_phone']);
+
+        $payload = array_merge($payload, [
+            'is_for_someone_else' => true,
+            'requester_name' => '',
+            'requester_email' => '',
+            'requester_phone' => '',
+            'patient_name' => 'Patient Relative',
+        ]);
+
+        $response = $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), $payload);
+
+        $response->assertSessionHasErrors([
+            'requester_name',
+            'requester_email',
+            'requester_phone',
+        ]);
+    }
+
+    public function test_public_request_accepts_canonical_alias_payload_fields(): void
+    {
+        Notification::fake();
+
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'branch_id' => $branch->id,
+            'service_id' => $service->id,
+            'requested_starts_at' => '2026-07-21 09:00:00',
+            'requester_name' => 'Canonical Self',
+            'requester_email' => 'canonical.self@example.com',
+            'requester_phone' => '0900 111 222',
+            'patient_name' => 'Canonical Self',
+            'consent' => '1',
+            'note' => 'Need morning slot',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertSame($branch->id, $request->branch_id);
+        $this->assertSame('Canonical Self', $request->requester_name);
+        $this->assertSame('canonical.self@example.com', $request->requester_email);
+        $this->assertSame('+421900111222', $request->requester_phone);
+        $this->assertSame('canonical.self@example.com', $request->patient_email);
+        $this->assertSame('+421900111222', $request->patient_phone);
+        $this->assertSame('Need morning slot', $request->patient_note);
+        $this->assertSame('2026-07-21', optional($request->preferred_date)->toDateString());
+
+        Notification::assertSentOnDemand(RequestVerificationNotification::class, function (RequestVerificationNotification $notification, array $channels, object $notifiable): bool {
+            return ($notifiable->routes['mail'] ?? null) === 'canonical.self@example.com';
+        });
+    }
+
+    public function test_public_request_validation_errors_are_returned_with_expected_field_keys(): void
+    {
+        ['branch' => $branch] = $this->createPublicFixture();
+
+        $response = $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'branch_id' => $branch->id,
+            'requested_starts_at' => '2026-07-21 09:00:00',
+            'requester_name' => '',
+            'requester_email' => 'not-an-email',
+            'requester_phone' => '',
+            'patient_name' => '',
+            'consent' => '',
+        ]);
+
+        $response->assertSessionHasErrors([
+            'requester_email',
+        ]);
+    }
+
+    public function test_public_request_missing_consent_returns_consent_error_key(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $response = $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'branch_id' => $branch->id,
+            'service_id' => $service->id,
+            'requested_starts_at' => '2026-07-21 09:00:00',
+            'requester_name' => 'Canonical Self',
+            'requester_email' => 'canonical.self@example.com',
+            'requester_phone' => '0900 111 222',
+            'patient_name' => 'Canonical Self',
+            'consent' => '',
+        ]);
+
+        $response->assertSessionHasErrors('consent');
+    }
+
+    public function test_public_request_missing_canonical_service_id_returns_service_error_key(): void
+    {
+        ['branch' => $branch] = $this->createPublicFixture();
+
+        $response = $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'branch_id' => $branch->id,
+            'requested_starts_at' => '2026-07-21 09:00:00',
+            'requester_name' => 'Canonical Self',
+            'requester_email' => 'canonical.self@example.com',
+            'requester_phone' => '0900 111 222',
+            'patient_name' => 'Canonical Self',
+            'consent' => '1',
+        ]);
+
+        $response->assertSessionHasErrors('service_id');
     }
 
     public function test_request_stores_verification_token_hash_not_raw_token(): void
@@ -129,6 +331,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
 
         $this->assertSame(AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW, $request->status);
         $this->assertNotNull($request->email_verified_at);
+    $this->assertNull($request->patient_id);
     }
 
     public function test_expired_token_does_not_verify_request(): void
@@ -375,12 +578,12 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         ]);
     }
 
-    public function test_verified_patient_can_create_direct_public_booking_when_patient_id_is_known(): void
+    public function test_verified_patient_can_create_direct_public_booking_when_verified_email_has_single_match(): void
     {
         ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
         $branch->update([
             'booking_settings' => array_merge($branch->booking_settings ?? [], [
-                'booking_mode' => 'verified_patients_only',
+                'booking_mode' => 'verified_patients_direct',
             ]),
         ]);
 
@@ -401,7 +604,6 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'mode' => 'exact_slot',
             'service_ids' => [$service->id],
             'capacity_window_id' => $capacityWindow->id,
-            'patient_id' => $patient->id,
             'verified_patient_email' => 'verified@example.com',
             'patient_name' => 'Verified Patient',
             'patient_email' => 'verified@example.com',
@@ -421,7 +623,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
         $branch->update([
             'booking_settings' => array_merge($branch->booking_settings ?? [], [
-                'booking_mode' => 'verified_patients_only',
+                'booking_mode' => 'verified_patients_direct',
             ]),
         ]);
 
@@ -488,12 +690,9 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'privacy_consent' => '1',
         ]);
 
-        $response->assertRedirect();
+        $response->assertSessionHasErrors('patient_id');
         $this->assertDatabaseCount('group_event_participants', 0);
-        $this->assertDatabaseHas('appointment_requests', [
-            'branch_id' => $branch->id,
-            'patient_email' => 'anonymous.force@example.com',
-        ]);
+        $this->assertDatabaseCount('appointment_requests', 0);
     }
 
     public function test_verified_patient_falls_back_to_request_when_direct_conditions_fail(): void
@@ -501,7 +700,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
         $branch->update([
             'booking_settings' => array_merge($branch->booking_settings ?? [], [
-                'booking_mode' => 'verified_patients_only',
+                'booking_mode' => 'verified_patients_direct',
             ]),
         ]);
 
@@ -522,7 +721,6 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'mode' => 'exact_slot',
             'service_ids' => [$service->id],
             'capacity_window_id' => $capacityWindow->id,
-            'patient_id' => $patient->id,
             'verified_patient_email' => 'different@example.com',
             'patient_name' => 'Mismatch Patient',
             'patient_email' => 'different@example.com',
@@ -564,7 +762,6 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'mode' => 'exact_slot',
             'service_ids' => [$service->id],
             'capacity_window_id' => $capacityWindow->id,
-            'patient_id' => $patient->id,
             'verified_patient_email' => 'known@example.com',
             'patient_name' => 'Known Patient',
             'patient_email' => 'known@example.com',
@@ -596,7 +793,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
 
         $branch->update([
             'booking_settings' => array_merge($branch->booking_settings ?? [], [
-                'booking_mode' => 'verified_patients_only',
+                'booking_mode' => 'verified_patients_direct',
             ]),
         ]);
 
@@ -614,7 +811,6 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $response = $this->get(route('public.branch.booking', [
             'branch' => $branch->slug,
             'services' => [$service->id],
-            'patient_id' => $patient->id,
             'verified_patient_email' => 'eligible@example.com',
         ]));
 
@@ -650,6 +846,34 @@ class AppointmentRequestIdentityFlowTest extends TestCase
 
         $request->refresh();
         $this->assertSame($patient->id, $request->patient_id);
+    }
+
+    public function test_public_request_with_patient_id_is_rejected_with_public_matching_message(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Forced Patient',
+            'patient_email' => 'forced@example.com',
+        ]);
+
+        $response = $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'service_ids' => [$service->id],
+            'preferred_date' => '2026-07-21',
+            'patient_id' => $patient->id,
+            'patient_name' => 'Forced Patient',
+            'patient_email' => 'forced@example.com',
+            'patient_phone' => '0900111222',
+            'privacy_consent' => '1',
+        ]);
+
+        $response->assertSessionHasErrors([
+            'patient_id' => 'Pacient sa pri verejnej požiadavke priraďuje až po overení a kontrole administrátorom.',
+        ]);
+
+        $this->assertDatabaseCount('appointment_requests', 0);
     }
 
     public function test_admin_can_create_new_patient_from_request(): void
@@ -717,6 +941,106 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $this->assertDatabaseHas('booking_event_details', [
             'event_id' => $request->accepted_booking_id,
             'patient_id' => $patient->id,
+            'source_request_id' => $request->id,
+        ]);
+    }
+
+    public function test_appointment_request_cannot_be_added_to_group_event_endpoint(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'request_type' => 'appointment_request',
+            'group_event_id' => null,
+        ], $service);
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Group Endpoint Patient',
+            'patient_email' => 'group.endpoint@example.com',
+        ]);
+
+        $this->actingAs($admin)->post(route('branches.booking.requests.add-to-requested-group-event', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'patient_id' => $patient->id,
+        ])->assertSessionHasErrors('appointment_request_id');
+    }
+
+    public function test_group_event_request_cannot_be_accepted_as_booking(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+        $groupEvent = $this->createGroupCapacityWindow($branch, $service);
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'request_type' => 'group_event_request',
+            'group_event_id' => $groupEvent->id,
+            'requested_group_event_starts_at' => $groupEvent->starts_at,
+            'requested_group_event_ends_at' => $groupEvent->ends_at,
+        ], $service);
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Booking Endpoint Patient',
+            'patient_email' => 'booking.endpoint@example.com',
+        ]);
+
+        $this->actingAs($admin)->post(route('branches.booking.appointment-requests.convert', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'starts_at' => '2026-07-22 16:00:00',
+            'patient_id' => $patient->id,
+        ])->assertSessionHasErrors('appointment_request_id');
+    }
+
+    public function test_group_event_request_adds_participant_and_does_not_create_booking(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+        $groupEvent = $this->createGroupCapacityWindow($branch, $service);
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'request_type' => 'group_event_request',
+            'group_event_id' => $groupEvent->id,
+            'requested_group_event_starts_at' => $groupEvent->starts_at,
+            'requested_group_event_ends_at' => $groupEvent->ends_at,
+        ], $service);
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Participant Patient',
+            'patient_email' => 'participant.patient@example.com',
+        ]);
+
+        $this->actingAs($admin)->post(route('branches.booking.requests.add-to-requested-group-event', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'patient_id' => $patient->id,
+        ])->assertRedirect();
+
+        $request->refresh();
+
+        $this->assertSame(AppointmentRequest::STATUS_ACCEPTED, $request->status);
+        $this->assertSame($groupEvent->id, $request->accepted_group_event_id);
+        $this->assertNotNull($request->accepted_group_event_participation_id);
+        $this->assertNull($request->accepted_booking_id);
+
+        $this->assertDatabaseHas('group_event_participants', [
+            'id' => $request->accepted_group_event_participation_id,
+            'event_id' => $groupEvent->id,
+            'patient_id' => $patient->id,
+            'source_request_id' => $request->id,
+        ]);
+
+        $this->assertDatabaseMissing('booking_event_details', [
             'source_request_id' => $request->id,
         ]);
     }
@@ -1018,4 +1342,5 @@ class AppointmentRequestIdentityFlowTest extends TestCase
 
         return $event->fresh(['groupDetail', 'services']);
     }
+
 }

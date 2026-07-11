@@ -85,11 +85,6 @@ const emit = defineEmits([
     'cancel-booking',
 ]);
 
-const bookingModeOptions = [
-    { label: 'Priama rezervácia', value: 'immediate_booking' },
-    { label: 'Len cez žiadosť', value: 'appointment_request' },
-];
-
 const phoneCountries = [
     { value: 'SK', dialCode: '+421' },
     { value: 'CZ', dialCode: '+420' },
@@ -213,10 +208,6 @@ const normalizeRepeatDefaults = () => {
 watch(() => props.createEditVisible, (visible) => {
     if (visible) {
         normalizeRepeatDefaults();
-
-        if (props.groupEvent && !props.groupEvent.public_booking_type) {
-            props.groupEvent.public_booking_type = 'immediate_booking';
-        }
     }
 });
 
@@ -351,7 +342,6 @@ const canSave = computed(() => {
         && Boolean(props.groupEvent.date)
         && Boolean(props.groupEvent.starts_at)
         && Boolean(props.groupEvent.ends_at)
-        && Boolean(props.groupEvent.public_booking_type)
         && Number(props.groupEvent.capacity ?? props.groupEvent.bookable_places ?? 0) > 0
         && hasValidRepeatSettings.value;
 });
@@ -1452,16 +1442,6 @@ const submitPatientFromMiniDialog = () => {
                     />
                 </FormField>
 
-                <FormField label="Spôsob rezervácie" for="group_public_booking_type" required>
-                    <Select
-                        id="group_public_booking_type"
-                        v-model="groupEvent.public_booking_type"
-                        :options="bookingModeOptions"
-                        option-label="label"
-                        option-value="value"
-                        class="w-full"
-                    />
-                </FormField>
             </FormSection>
 
             <RepeatingSection

@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -215,7 +216,6 @@ class PublicBranchSiteController extends Controller
                 'verified_direct' => 'Po potvrdení sa termín okamžite zapíše do kalendára.',
             ],
             'verifiedPatientContext' => [
-                'patient_id' => (int) $request->integer('patient_id'),
                 'verified_patient_email' => $patientMatchingService->normalizeEmail(
                     $request->string('verified_patient_email')->toString(),
                 ),
@@ -236,14 +236,26 @@ class PublicBranchSiteController extends Controller
 
         $bookingSettings = $this->bookingSettings($branch);
 
+        if (filled($request->input('patient_id'))) {
+            throw ValidationException::withMessages([
+                'patient_id' => 'Pacient sa pri verejnej požiadavke priraďuje až po overení a kontrole administrátorom.',
+            ]);
+        }
+
         $validated = $request->validate([
-            'mode' => ['nullable', 'in:exact_slot,appointment_request'],
-            'request_type' => ['nullable', 'string', 'in:preferred_period,general'],
-            'service_ids' => ['required', 'array', 'min:1'],
+            'request_type' => ['nullable', 'string', 'in:appointment_request,group_event_request,preferred_period,general'],
+            'branch_id' => ['nullable', 'integer'],
+            'service_id' => ['nullable', 'integer', 'exists:services,id'],
+            'service_ids' => ['nullable', 'array', 'min:1'],
             'service_ids.*' => ['integer', 'exists:services,id'],
             'capacity_window_id' => ['nullable', 'integer', 'exists:events,id'],
-            'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'starts_at' => ['nullable', 'date'],
+            'requested_starts_at' => ['nullable', 'date'],
             'verified_patient_email' => ['nullable', 'email', 'max:255'],
+            'is_for_someone_else' => ['nullable', 'boolean'],
+            'requester_name' => ['nullable', 'string', 'max:255', Rule::requiredIf(fn () => $request->boolean('is_for_someone_else') || ! filled($request->input('patient_name')))],
+            'requester_email' => ['nullable', 'email', 'max:255', Rule::requiredIf(fn () => $request->boolean('is_for_someone_else') || ! filled($request->input('patient_email')))],
+            'requester_phone' => ['nullable', 'string', 'max:255', Rule::requiredIf(fn () => $request->boolean('is_for_someone_else') || ! filled($request->input('patient_phone')))],
             'preferred_option_id' => ['nullable', 'string'],
             'preferred_date' => ['nullable', 'date'],
             'preferred_period' => ['nullable', 'string', 'in:morning,forenoon,afternoon,evening'],
@@ -251,23 +263,72 @@ class PublicBranchSiteController extends Controller
             'preferred_time_note' => ['nullable', 'string', 'max:500'],
             'first_name' => ['required_without:patient_name', 'nullable', 'string', 'max:255'],
             'last_name' => ['required_without:patient_name', 'nullable', 'string', 'max:255'],
-            'patient_name' => ['required', 'string', 'max:255'],
-            'patient_email' => ['required', 'email', 'max:255'],
-            'patient_phone' => ['required', 'string', 'max:255'],
+            'patient_name' => ['required_without:requester_name', 'nullable', 'string', 'max:255'],
+            'patient_email' => ['nullable', 'email', 'max:255'],
+            'patient_phone' => ['nullable', 'string', 'max:255'],
             'date_of_birth' => ['nullable', 'date'],
+            'patient_date_of_birth' => ['nullable', 'date'],
             'patient_birth_number' => ['nullable', 'string', 'max:255'],
             'patient_note' => ['nullable', 'string', 'max:2000'],
+            'note' => ['nullable', 'string', 'max:2000'],
             'message' => ['nullable', 'string', 'max:2000'],
-            'privacy_consent' => ['required', 'accepted'],
+            'privacy_consent' => ['nullable'],
+            'consent' => ['nullable'],
             'website' => ['nullable', 'string', 'max:255'],
             'form_started_at' => ['nullable'],
         ]);
 
+        if (filled($validated['branch_id'] ?? null) && (int) $validated['branch_id'] !== (int) $branch->id) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Vybraná pobočka nie je platná.',
+            ]);
+        }
+
+        if (empty($validated['service_ids']) && filled($validated['service_id'] ?? null)) {
+            $validated['service_ids'] = [(int) $validated['service_id']];
+        }
+
+        if (empty($validated['service_ids'])) {
+            throw ValidationException::withMessages([
+                'service_id' => 'Vyberte aspoň jednu službu.',
+            ]);
+        }
+
+        if (! ($request->boolean('privacy_consent') || $request->boolean('consent'))) {
+            throw ValidationException::withMessages([
+                'consent' => 'Musíte súhlasiť so spracovaním osobných údajov.',
+            ]);
+        }
+
+        $validated['privacy_consent'] = true;
+        $validated['patient_note'] = $validated['patient_note'] ?? ($validated['note'] ?? null);
+        $validated['date_of_birth'] = $validated['date_of_birth'] ?? ($validated['patient_date_of_birth'] ?? null);
+        $validated['preferred_starts_at'] = $validated['preferred_starts_at']
+            ?? ($validated['requested_starts_at'] ?? null)
+            ?? ($validated['starts_at'] ?? null);
+
+        if (empty($validated['preferred_date']) && ! empty($validated['preferred_starts_at'])) {
+            $validated['preferred_date'] = Carbon::parse($validated['preferred_starts_at'])->toDateString();
+        }
+
+        $isForSomeoneElse = (bool) ($validated['is_for_someone_else'] ?? false);
+
         $validated['patient_email'] = $patientMatchingService->normalizeEmail($validated['patient_email'] ?? null);
         $validated['patient_phone'] = $patientMatchingService->normalizePhone($validated['patient_phone'] ?? null);
+        $validated['requester_email'] = $patientMatchingService->normalizeEmail($validated['requester_email'] ?? null);
+        $validated['requester_phone'] = $patientMatchingService->normalizePhone($validated['requester_phone'] ?? null);
 
         if (! filled($validated['patient_name'] ?? null)) {
             $validated['patient_name'] = trim(($validated['first_name'] ?? '') . ' ' . ($validated['last_name'] ?? ''));
+        }
+
+        if (! $isForSomeoneElse) {
+            $validated['requester_name'] = $validated['requester_name'] ?? $validated['patient_name'];
+            $validated['requester_email'] = $validated['requester_email'] ?? $validated['patient_email'];
+            $validated['requester_phone'] = $validated['requester_phone'] ?? $validated['patient_phone'];
+            $validated['patient_name'] = $validated['patient_name'] ?? $validated['requester_name'];
+            $validated['patient_email'] = $validated['patient_email'] ?? $validated['requester_email'];
+            $validated['patient_phone'] = $validated['patient_phone'] ?? $validated['requester_phone'];
         }
 
         if (! empty($validated['website'])) {
@@ -300,7 +361,7 @@ class PublicBranchSiteController extends Controller
 
         if (! $bookingSettings['allow_appointment_requests']) {
             throw ValidationException::withMessages([
-                'mode' => 'Požiadavky na termín sú momentálne vypnuté.',
+                'service_ids' => 'Požiadavky na termín sú momentálne vypnuté.',
             ]);
         }
 
@@ -604,8 +665,8 @@ class PublicBranchSiteController extends Controller
             return 0;
         }
 
-        $ruleStartsAt = Carbon::parse($date->toDateString() . ' ' . $rule->starts_at);
-        $ruleEndsAt = Carbon::parse($date->toDateString() . ' ' . $rule->ends_at);
+        $ruleStartsAt = Carbon::parse($date->toDateString() . ' ' . $this->timeValue($rule->starts_at));
+        $ruleEndsAt = Carbon::parse($date->toDateString() . ' ' . $this->timeValue($rule->ends_at));
 
         if ($ruleEndsAt->lessThanOrEqualTo($ruleStartsAt)) {
             return 0;
@@ -651,6 +712,15 @@ class PublicBranchSiteController extends Controller
         );
 
         return max(0, $availableMinutes - $usedBookingMinutes - $pendingRequestMinutes);
+    }
+
+    private function timeValue(mixed $value): string
+    {
+        if ($value instanceof \Carbon\CarbonInterface) {
+            return $value->format('H:i:s');
+        }
+
+        return Carbon::parse((string) $value)->format('H:i:s');
     }
 
     private function periodFromRuleStart(Carbon $startsAt): string
@@ -1052,11 +1122,10 @@ class PublicBranchSiteController extends Controller
         array $validated,
         PatientMatchingService $patientMatchingService,
     ): array {
-        $bookingMode = (string) ($bookingSettings['booking_mode'] ?? 'requests_only');
-        $requestedMode = (string) ($validated['mode']
-            ?? (filled($validated['capacity_window_id'] ?? null) ? 'exact_slot' : 'appointment_request'));
+        $bookingMode = $this->normalizePublicBookingMode((string) ($bookingSettings['booking_mode'] ?? 'requests_only'));
+        $requestedMode = filled($validated['capacity_window_id'] ?? null) ? 'exact_slot' : 'appointment_request';
 
-        if ($bookingMode !== 'verified_patients_only') {
+        if ($bookingMode !== 'verified_patients_direct') {
             return [
                 'type' => 'appointment_request',
                 'resolved_patient_id' => null,
@@ -1101,28 +1170,70 @@ class PublicBranchSiteController extends Controller
     {
         $validated['mode'] = 'appointment_request';
 
-        if (($validated['request_type'] ?? null) === 'preferred_period' || ($validated['request_type'] ?? null) === 'general') {
+        $selectedGroupEvent = null;
+        $selectedGroupEventId = (int) ($validated['capacity_window_id'] ?? 0);
+
+        if ($selectedGroupEventId > 0) {
+            $selectedGroupEvent = Event::query()
+                ->where('branch_id', $branch->id)
+                ->where('type', EventType::GroupEvent)
+                ->whereKey($selectedGroupEventId)
+                ->first();
+
+            if (! $selectedGroupEvent) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Vybraný skupinový termín nie je dostupný.',
+                ]);
+            }
+        }
+
+        $incomingType = (string) ($validated['request_type'] ?? '');
+
+        $isGroupRequest = $selectedGroupEvent !== null || $incomingType === 'group_event_request';
+
+        if ($isGroupRequest) {
+            if (! $selectedGroupEvent) {
+                throw ValidationException::withMessages([
+                    'capacity_window_id' => 'Pre prihlásenie na skupinový termín vyberte konkrétny termín.',
+                ]);
+            }
+
+            $validated['request_type'] = 'group_event_request';
+            $validated['source_type'] = 'group_event';
+            $validated['group_event_id'] = $selectedGroupEvent->id;
+            $validated['group_event_occurrence_original_start_at'] = $selectedGroupEvent->recurrence_original_starts_at
+                ? $selectedGroupEvent->recurrence_original_starts_at->toIso8601String()
+                : null;
+            $validated['requested_starts_at'] = $selectedGroupEvent->starts_at?->toIso8601String();
+            $validated['requested_ends_at'] = $selectedGroupEvent->ends_at?->toIso8601String();
+            $validated['requested_group_event_starts_at'] = $selectedGroupEvent->starts_at?->toIso8601String();
+            $validated['requested_group_event_ends_at'] = $selectedGroupEvent->ends_at?->toIso8601String();
+            $validated['preferred_starts_at'] = $validated['preferred_starts_at']
+                ?? $selectedGroupEvent->starts_at?->toDateTimeString();
+            $validated['preferred_date'] = $selectedGroupEvent->starts_at?->toDateString() ?? now()->toDateString();
+            $validated['preferred_period'] = null;
+
             return $validated;
         }
+
+        $validated['request_type'] = 'appointment_request';
+        $validated['source_type'] = 'reservation_rule';
 
         $preferredDate = ! empty($validated['preferred_date'])
             ? Carbon::parse($validated['preferred_date'])->toDateString()
             : null;
 
-        if (! $preferredDate && ! empty($validated['capacity_window_id'])) {
-            $capacityWindowStartsAt = Event::query()
-                ->where('branch_id', $branch->id)
-                ->where('type', EventType::GroupEvent)
-                ->whereKey((int) $validated['capacity_window_id'])
-                ->value('starts_at');
-
-            if ($capacityWindowStartsAt) {
-                $preferredDate = Carbon::parse($capacityWindowStartsAt)->toDateString();
-            }
+        if (! $preferredDate && ! empty($validated['preferred_starts_at'])) {
+            $preferredDate = Carbon::parse($validated['preferred_starts_at'])->toDateString();
         }
 
-        $validated['request_type'] = 'general';
         $validated['preferred_date'] = $preferredDate ?: now()->toDateString();
+        $validated['requested_starts_at'] = $validated['requested_starts_at']
+            ?? ($validated['preferred_starts_at'] ?? ($validated['preferred_date'] . ' 00:00:00'));
+        $validated['group_event_id'] = null;
+        $validated['group_event_occurrence_original_start_at'] = null;
+        $validated['requested_group_event_starts_at'] = null;
+        $validated['requested_group_event_ends_at'] = null;
 
         return $validated;
     }
@@ -1161,39 +1272,22 @@ class PublicBranchSiteController extends Controller
         array $validated,
         PatientMatchingService $patientMatchingService,
     ): ?int {
-        $requestedPatientId = (int) ($validated['patient_id'] ?? 0);
-
-        if ($requestedPatientId <= 0) {
-            return null;
-        }
-
-        if ($request->user() && $request->user()->canAccessBranch($branch)) {
-            $exists = Patient::query()
-                ->where('branch_id', $branch->id)
-                ->whereKey($requestedPatientId)
-                ->exists();
-
-            return $exists ? $requestedPatientId : null;
-        }
-
         $verifiedEmail = $patientMatchingService->normalizeEmail($validated['verified_patient_email'] ?? null);
 
         if (! $verifiedEmail) {
             return null;
         }
 
-        $patient = Patient::query()
+        $matchedPatients = Patient::query()
             ->where('branch_id', $branch->id)
-            ->whereKey($requestedPatientId)
-            ->first();
+            ->whereRaw('LOWER(patient_email) = ?', [$verifiedEmail])
+            ->get(['id']);
 
-        if (! $patient) {
+        if ($matchedPatients->count() !== 1) {
             return null;
         }
 
-        return $patientMatchingService->normalizeEmail($patient->patient_email) === $verifiedEmail
-            ? (int) $patient->id
-            : null;
+        return (int) $matchedPatients->first()->id;
     }
 
     private function isDirectBookingEligibleContext(
@@ -1203,17 +1297,11 @@ class PublicBranchSiteController extends Controller
         PatientMatchingService $patientMatchingService,
         array $selectedServiceIds,
     ): bool {
-        if (($bookingSettings['booking_mode'] ?? 'requests_only') !== 'verified_patients_only') {
+        if ($this->normalizePublicBookingMode((string) ($bookingSettings['booking_mode'] ?? 'requests_only')) !== 'verified_patients_direct') {
             return false;
         }
 
         if (! $this->servicesAllowDirectBooking($branch, $selectedServiceIds)) {
-            return false;
-        }
-
-        $patientId = (int) $request->integer('patient_id');
-
-        if ($patientId <= 0) {
             return false;
         }
 
@@ -1223,16 +1311,10 @@ class PublicBranchSiteController extends Controller
             return false;
         }
 
-        $patient = Patient::query()
+        return Patient::query()
             ->where('branch_id', $branch->id)
-            ->whereKey($patientId)
-            ->first();
-
-        if (! $patient) {
-            return false;
-        }
-
-        return $patientMatchingService->normalizeEmail($patient->patient_email) === $verifiedEmail;
+            ->whereRaw('LOWER(patient_email) = ?', [$verifiedEmail])
+            ->count() === 1;
     }
 
     private function storeAppointmentRequest(
@@ -1270,15 +1352,15 @@ class PublicBranchSiteController extends Controller
             ]);
         }
 
-        $requestType = $validated['request_type'] ?? null;
+        $requestType = (string) ($validated['request_type'] ?? 'appointment_request');
 
-        if (! $requestType) {
-            $requestType = ! empty($validated['preferred_date']) && ! empty($validated['preferred_period'])
-                ? 'preferred_period'
-                : 'general';
+        if ($requestType === 'group_event_request' && empty($validated['group_event_id'])) {
+            throw ValidationException::withMessages([
+                'group_event_id' => 'Prihlásenie na skupinový termín vyžaduje konkrétny skupinový termín.',
+            ]);
         }
 
-        if ($requestType === 'preferred_period') {
+        if ($requestType === 'appointment_request' && ! empty($validated['preferred_period'])) {
             if (empty($validated['preferred_date']) || empty($validated['preferred_period'])) {
                 throw ValidationException::withMessages([
                     'preferred_option_id' => 'Vyberte dostupnú možnosť.',
@@ -1300,7 +1382,7 @@ class PublicBranchSiteController extends Controller
             }
         }
 
-        if ($requestType === 'general' && empty($validated['preferred_date'])) {
+        if ($requestType === 'appointment_request' && empty($validated['preferred_date'])) {
             throw ValidationException::withMessages([
                 'preferred_date' => 'Vyberte preferovaný dátum.',
             ]);
@@ -1310,9 +1392,17 @@ class PublicBranchSiteController extends Controller
             ? Carbon::parse($validated['preferred_date'])->toDateString()
             : null;
 
-        $preferredPeriod = $requestType === 'preferred_period'
-            ? $validated['preferred_period']
+        $preferredPeriod = $requestType === 'appointment_request'
+            ? ($validated['preferred_period'] ?? null)
             : null;
+
+        $requestedStartsAt = ! empty($validated['requested_starts_at'])
+            ? Carbon::parse($validated['requested_starts_at'])
+            : (! empty($validated['preferred_starts_at']) ? Carbon::parse($validated['preferred_starts_at']) : null);
+
+        $requestedEndsAt = ! empty($validated['requested_ends_at'])
+            ? Carbon::parse($validated['requested_ends_at'])
+            : ($requestedStartsAt ? $requestedStartsAt->copy()->addMinutes(max(15, $totalDurationMinutes)) : null);
 
         $appointmentRequest = DB::transaction(function () use (
             $branch,
@@ -1322,19 +1412,34 @@ class PublicBranchSiteController extends Controller
             $requestType,
             $preferredDate,
             $preferredPeriod,
+            $requestedStartsAt,
+            $requestedEndsAt,
         ): AppointmentRequest {
             $appointmentRequest = AppointmentRequest::create([
                 'branch_id' => $branch->id,
+                'service_id' => (int) ($validated['service_id'] ?? ($services->first()?->id ?? 0)) ?: null,
+                'group_event_id' => (int) ($validated['group_event_id'] ?? 0) ?: null,
+                'source_type' => $validated['source_type'] ?? null,
+                'reservation_rule_id' => (int) ($validated['reservation_rule_id'] ?? 0) ?: null,
+                'group_event_occurrence_original_start_at' => $validated['group_event_occurrence_original_start_at'] ?? null,
+                'requested_starts_at' => $requestedStartsAt,
+                'requested_ends_at' => $requestedEndsAt,
+                'requested_group_event_starts_at' => $validated['requested_group_event_starts_at'] ?? null,
+                'requested_group_event_ends_at' => $validated['requested_group_event_ends_at'] ?? null,
                 'first_name' => $validated['first_name'] ?? null,
                 'last_name' => $validated['last_name'] ?? null,
+                'is_for_someone_else' => (bool) ($validated['is_for_someone_else'] ?? false),
+                'requester_name' => $validated['requester_name'] ?? null,
+                'requester_email' => $validated['requester_email'] ?? null,
+                'requester_phone' => $validated['requester_phone'] ?? null,
                 'preferred_date' => $preferredDate,
                 'preferred_period' => $preferredPeriod,
                 'preferred_starts_at' => $validated['preferred_starts_at'] ?? null,
                 'preferred_time_note' => $validated['preferred_time_note'] ?? null,
                 'total_duration_minutes' => $totalDurationMinutes,
                 'patient_name' => $validated['patient_name'],
-                'patient_email' => $validated['patient_email'],
-                'normalized_email' => $validated['patient_email'] ?? null,
+                'patient_email' => $validated['patient_email'] ?? null,
+                'normalized_email' => $validated['requester_email'] ?? ($validated['patient_email'] ?? null),
                 'patient_phone' => $validated['patient_phone'] ?? null,
                 'normalized_phone' => $validated['patient_phone'] ?? null,
                 'patient_birth_number' => $validated['patient_birth_number'] ?? null,
@@ -1365,19 +1470,36 @@ class PublicBranchSiteController extends Controller
             'token' => $verificationToken,
         ]);
 
-        $emailNotificationService->dispatch('request.verification', [
-            'appointment_request' => $appointmentRequest,
-            'verification_url' => $verificationUrl,
-        ]);
+        $verificationEmailFailed = false;
+
+        try {
+            $emailNotificationService->dispatch('request.verification', [
+                'appointment_request' => $appointmentRequest,
+                'verification_url' => $verificationUrl,
+            ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+            $verificationEmailFailed = true;
+        }
 
         return redirect()
             ->route('public.branch.booking', ['branch' => $branch->slug])
-            ->with('success', 'Požiadavka bola odoslaná. Prosím potvrďte ju cez odkaz v emaile.');
+            ->with('success', $verificationEmailFailed
+                ? 'Požiadavka bola odoslaná. Overovací email sa nepodarilo odoslať, skúste to prosím znova neskôr.'
+                : 'Požiadavka bola odoslaná. Prosím potvrďte ju cez odkaz v emaile.');
+    }
+
+    private function normalizePublicBookingMode(string $mode): string
+    {
+        return match ($mode) {
+            'verified_patients_only' => 'verified_patients_direct',
+            default => $mode,
+        };
     }
 
     private function bookingSettings(Branch $branch): array
     {
-        return array_merge([
+        $settings = array_merge([
             'is_enabled' => false,
             'allow_service_selection' => true,
             'allow_appointment_requests' => true,
@@ -1385,6 +1507,10 @@ class PublicBranchSiteController extends Controller
             'intro_text' => null,
             'success_message' => null,
         ], $branch->booking_settings ?? []);
+
+        $settings['booking_mode'] = $this->normalizePublicBookingMode((string) ($settings['booking_mode'] ?? 'requests_only'));
+
+        return $settings;
     }
 
     private function notificationSettings(Branch $branch): array

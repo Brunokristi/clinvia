@@ -293,6 +293,26 @@ Route::middleware(['auth', 'active'])->group(function () {
                     'convertAppointmentRequest',
                 ])->name('booking.appointment-requests.convert');
 
+                Route::post('/booking/requests/{appointmentRequest}/accept-as-booking', [
+                    BranchBookingCalendarController::class,
+                    'acceptAppointmentRequestAsBooking',
+                ])->name('booking.requests.accept-as-booking');
+
+                Route::post('/booking/requests/{appointmentRequest}/add-to-requested-group-event', [
+                    BranchBookingCalendarController::class,
+                    'addGroupEventRequestToRequestedEvent',
+                ])->name('booking.requests.add-to-requested-group-event');
+
+                Route::post('/booking/requests/{appointmentRequest}/add-to-different-group-event', [
+                    BranchBookingCalendarController::class,
+                    'addGroupEventRequestToDifferentEvent',
+                ])->name('booking.requests.add-to-different-group-event');
+
+                Route::post('/booking/requests/{appointmentRequest}/reject', [
+                    BranchBookingCalendarController::class,
+                    'rejectRequest',
+                ])->name('booking.requests.reject');
+
                 Route::post('/booking/appointment-requests/{appointmentRequest}/manual-verify', [
                     BranchBookingCalendarController::class,
                     'manuallyVerifyAppointmentRequest',

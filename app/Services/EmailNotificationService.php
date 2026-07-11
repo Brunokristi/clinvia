@@ -355,19 +355,20 @@ class EmailNotificationService
         /** @var AppointmentRequest|null $request */
         $request = $payload['appointment_request'] ?? null;
         $verificationUrl = Arr::get($payload, 'verification_url');
+        $recipientEmail = $request?->requester_email ?: $request?->patient_email;
 
-        if (! $request || ! $request->patient_email || ! $verificationUrl) {
+        if (! $request || ! $recipientEmail || ! $verificationUrl) {
             return;
         }
 
         $request->loadMissing(['branch', 'services']);
 
         $this->sendOnce(
-            dedupeKey: sprintf('request:%d:verification:%s', $request->id, md5((string) $request->patient_email)),
+            dedupeKey: sprintf('request:%d:verification:%s', $request->id, md5((string) $recipientEmail)),
             notificationType: 'request.verification',
             recipientType: 'patient',
             recipientId: null,
-            recipientEmail: $request->patient_email,
+            recipientEmail: $recipientEmail,
             notifiableType: AppointmentRequest::class,
             notifiableId: $request->id,
             rootEventId: null,
@@ -377,7 +378,7 @@ class EmailNotificationService
                 'request_id' => $request->id,
                 'status' => $request->status,
             ],
-            sender: fn () => Notification::route('mail', $request->patient_email)
+            sender: fn () => Notification::route('mail', $recipientEmail)
                 ->notify(new RequestVerificationNotification($request, (string) $verificationUrl)),
         );
     }

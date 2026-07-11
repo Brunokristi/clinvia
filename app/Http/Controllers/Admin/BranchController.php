@@ -407,7 +407,7 @@ class BranchController extends Controller
             'booking.is_enabled' => ['boolean'],
             'booking.allow_service_selection' => ['boolean'],
             'booking.allow_appointment_requests' => ['boolean'],
-            'booking.booking_mode' => ['nullable', 'string', 'in:requests_only,verified_patients_only,admin_only'],
+            'booking.booking_mode' => ['nullable', 'string', 'in:requests_only,verified_patients_direct,verified_patients_only,admin_only'],
             'booking.intro_text' => ['nullable', 'string', 'max:2000'],
             'booking.success_message' => ['nullable', 'string', 'max:2000'],
 
@@ -436,6 +436,10 @@ class BranchController extends Controller
         if (! ($validated['booking']['is_enabled'] ?? false)) {
             $validated['notifications']['notify_new_appointment_request'] = false;
             $validated['notifications']['notify_new_booking'] = false;
+        }
+
+        if (($validated['booking']['booking_mode'] ?? null) === 'verified_patients_only') {
+            $validated['booking']['booking_mode'] = 'verified_patients_direct';
         }
 
         $branch->update([

@@ -27,13 +27,51 @@ class RequestVerificationNotification extends Notification
         $this->appointmentRequest->loadMissing(['branch', 'services']);
 
         return (new MailMessage())
-            ->subject('Potvrďte požiadavku na rezerváciu')
-            ->greeting('Dobrý deň ' . ($this->appointmentRequest->patient_name ?: '') . ',')
-            ->line('Prišla nám požiadavka na rezerváciu.')
-            ->line('Služba: ' . $this->serviceLabel())
-            ->line('Preferovaný termín: ' . ($this->preferredLabel() ?? 'Neuvedené'))
-            ->action('Potvrdiť požiadavku', $this->verificationUrl)
-            ->line('Ak ste túto požiadavku nevytvorili, tento email môžete ignorovať.');
+            ->subject('Potvrďte požiadavku na termín')
+            ->view('emails.appointments.request_verification', [
+                'contactName' => $this->contactName(),
+                'serviceLabel' => $this->serviceLabel(),
+                'preferredLabel' => $this->preferredLabel() ?? 'Neuvedené',
+                'patientName' => $this->appointmentRequest->patient_name ?: 'Neuvedené',
+                'contactLabel' => $this->contactLabel(),
+                'verificationUrl' => $this->verificationUrl,
+            ]);
+    }
+
+    private function contactName(): string
+    {
+        return (string) ($this->appointmentRequest->requester_name
+            ?: $this->appointmentRequest->patient_name
+            ?: '');
+    }
+
+    private function contactLabel(): string
+    {
+        $contact = [
+            $this->appointmentRequest->requester_name,
+            $this->appointmentRequest->requester_email,
+            $this->appointmentRequest->requester_phone,
+        ];
+
+        $normalized = collect($contact)
+            ->filter(fn ($value) => filled($value))
+            ->values()
+            ->all();
+
+        if ($normalized !== []) {
+            return implode(' · ', $normalized);
+        }
+
+        $fallback = [
+            $this->appointmentRequest->patient_name,
+            $this->appointmentRequest->patient_email,
+            $this->appointmentRequest->patient_phone,
+        ];
+
+        return collect($fallback)
+            ->filter(fn ($value) => filled($value))
+            ->values()
+            ->implode(' · ') ?: 'Neuvedené';
     }
 
     private function serviceLabel(): string

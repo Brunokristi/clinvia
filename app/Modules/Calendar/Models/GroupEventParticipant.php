@@ -14,6 +14,7 @@ class GroupEventParticipant extends Model
 
     protected $fillable = [
         'event_id',
+        'source_request_id',
         'patient_id',
         'status',
         'booked_at',
@@ -28,6 +29,7 @@ class GroupEventParticipant extends Model
     protected function casts(): array
     {
         return [
+            'source_request_id' => 'integer',
             'booked_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];

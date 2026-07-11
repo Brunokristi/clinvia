@@ -11,9 +11,22 @@ class AppointmentRequest extends Model
 {
     protected $fillable = [
         'branch_id',
+        'service_id',
         'booking_id',
+        'group_event_id',
+        'source_type',
+        'reservation_rule_id',
+        'group_event_occurrence_original_start_at',
+        'requested_starts_at',
+        'requested_ends_at',
+        'requested_group_event_starts_at',
+        'requested_group_event_ends_at',
         'first_name',
         'last_name',
+        'is_for_someone_else',
+        'requester_name',
+        'requester_email',
+        'requester_phone',
         'preferred_date',
         'preferred_period',
         'preferred_starts_at',
@@ -35,6 +48,9 @@ class AppointmentRequest extends Model
         'email_verified_at',
         'patient_id',
         'accepted_booking_id',
+        'accepted_group_event_id',
+        'accepted_group_event_participation_id',
+        'accepted_group_event_occurrence_original_start_at',
         'rejected_reason',
         'manually_verified_at',
         'manually_verified_by',
@@ -43,7 +59,14 @@ class AppointmentRequest extends Model
 
     protected $casts = [
         'preferred_date' => 'date',
+        'is_for_someone_else' => 'boolean',
         'preferred_starts_at' => 'datetime',
+        'requested_starts_at' => 'datetime',
+        'requested_ends_at' => 'datetime',
+        'requested_group_event_starts_at' => 'datetime',
+        'requested_group_event_ends_at' => 'datetime',
+        'group_event_occurrence_original_start_at' => 'datetime',
+        'accepted_group_event_occurrence_original_start_at' => 'datetime',
         'date_of_birth' => 'date',
         'privacy_consent_accepted_at' => 'datetime',
         'verification_expires_at' => 'datetime',
@@ -98,6 +121,27 @@ class AppointmentRequest extends Model
                 'price_snapshot',
             ])
             ->withTimestamps();
+    }
+
+    public function requestedService(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'service_id');
+    }
+
+    public function requestedGroupEvent(): BelongsTo
+    {
+        return $this->belongsTo(
+            \App\Modules\Calendar\Models\Event::class,
+            'group_event_id'
+        );
+    }
+
+    public function acceptedGroupEventParticipant(): BelongsTo
+    {
+        return $this->belongsTo(
+            \App\Modules\Calendar\Models\GroupEventParticipant::class,
+            'accepted_group_event_participation_id'
+        );
     }
 
     public function isEmailVerifiedOrManuallyVerified(): bool

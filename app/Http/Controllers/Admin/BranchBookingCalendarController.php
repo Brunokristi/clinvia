@@ -10,7 +10,10 @@ use App\Models\Branch;
 use App\Models\BranchInboxMessage;
 use App\Models\Patient;
 use App\Models\Service;
+use App\Modules\Calendar\Actions\AddGroupEventParticipantAction;
 use App\Modules\Calendar\Actions\ConvertAppointmentRequestToEventAction;
+use App\Modules\Calendar\Enums\EventType;
+use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Services\EventReadAdapterService;
 use App\Modules\Calendar\Services\RecurringImpactService;
 use App\Services\PatientMatchingService;
@@ -305,6 +308,12 @@ class BranchBookingCalendarController extends Controller
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
 
+        if (! $this->isAppointmentRequest($appointmentRequest)) {
+            throw ValidationException::withMessages([
+                'appointment_request_id' => 'Tento request nie je požiadavka na termín.',
+            ]);
+        }
+
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
@@ -458,6 +467,211 @@ class BranchBookingCalendarController extends Controller
         return back()->with('success', 'Ziadost bola presunuta do kalendara.');
     }
 
+    public function acceptAppointmentRequestAsBooking(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        ConvertAppointmentRequestToEventAction $convertAppointmentRequestToEventAction,
+        EmailNotificationService $emailNotificationService,
+        PatientDirectoryService $patientDirectoryService,
+        PatientMatchingService $patientMatchingService,
+    ): RedirectResponse {
+        return $this->convertAppointmentRequest(
+            $request,
+            $branch,
+            $appointmentRequest,
+            $convertAppointmentRequestToEventAction,
+            $emailNotificationService,
+            $patientDirectoryService,
+            $patientMatchingService,
+        );
+    }
+
+    public function addGroupEventRequestToRequestedEvent(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        AddGroupEventParticipantAction $addGroupEventParticipantAction,
+        EmailNotificationService $emailNotificationService,
+        PatientDirectoryService $patientDirectoryService,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        if (! $this->isGroupEventRequest($appointmentRequest)) {
+            throw ValidationException::withMessages([
+                'appointment_request_id' => 'Tento request nie je skupinová požiadavka.',
+            ]);
+        }
+
+        $this->ensureRequestCanBeAccepted($appointmentRequest);
+
+        $validated = $request->validate([
+            'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'force_create_patient' => ['nullable', 'boolean'],
+            'selected_patient' => ['nullable', 'array'],
+            'selected_patient.patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'selected_patient.patient_name' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_email' => ['nullable', 'email', 'max:255'],
+            'selected_patient.patient_phone' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_birth_number' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $resolvedPatientId = (int) ($validated['patient_id'] ?? data_get($validated, 'selected_patient.patient_id') ?? 0);
+
+        if ($resolvedPatientId <= 0) {
+            if (! $request->boolean('force_create_patient')) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať existujúceho pacienta alebo vytvoriť nového.',
+                ]);
+            }
+
+            $createdPatient = $patientDirectoryService->savePatient(
+                branch: $branch,
+                name: data_get($validated, 'selected_patient.patient_name') ?: $appointmentRequest->patient_name,
+                email: data_get($validated, 'selected_patient.patient_email') ?: $appointmentRequest->patient_email,
+                phone: data_get($validated, 'selected_patient.patient_phone') ?: $appointmentRequest->patient_phone,
+                birthNumber: data_get($validated, 'selected_patient.patient_birth_number') ?: $appointmentRequest->patient_birth_number,
+            );
+
+            if (! $createdPatient) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať existujúceho pacienta alebo vytvoriť nového.',
+                ]);
+            }
+
+            $resolvedPatientId = (int) $createdPatient->id;
+        }
+
+        $event = $this->resolveRequestedGroupEvent($branch, $appointmentRequest);
+
+        $participant = $addGroupEventParticipantAction->execute($event, [
+            'patient_id' => $resolvedPatientId,
+            'source_request_id' => $appointmentRequest->id,
+            'participant_name' => $appointmentRequest->patient_name,
+            'participant_email' => $appointmentRequest->patient_email,
+            'participant_phone' => $appointmentRequest->patient_phone,
+            'participant_birth_number' => $appointmentRequest->patient_birth_number,
+            'notes' => $appointmentRequest->patient_note,
+            'status' => 'confirmed',
+            'occurrence_starts_at' => $appointmentRequest->group_event_occurrence_original_start_at?->toIso8601String()
+                ?? $appointmentRequest->requested_group_event_starts_at?->toIso8601String(),
+            'occurrence_ends_at' => $appointmentRequest->requested_group_event_ends_at?->toIso8601String(),
+        ]);
+
+        $appointmentRequest->forceFill([
+            'status' => AppointmentRequest::STATUS_ACCEPTED,
+            'patient_id' => $resolvedPatientId,
+            'accepted_group_event_id' => $event->id,
+            'accepted_group_event_participation_id' => $participant->id,
+            'accepted_group_event_occurrence_original_start_at' => $appointmentRequest->group_event_occurrence_original_start_at,
+        ])->save();
+
+        $emailNotificationService->dispatch('event_participant_added', [
+            'event' => $event->fresh(['branch', 'groupDetail', 'participants']),
+            'participant' => $participant,
+            'recipient_emails' => [$participant->participant_email],
+            'occurrence_display_key' => sprintf('%d:%s', $event->root_event_id ?? $event->id, $event->starts_at?->utc()->format('Y-m-d\TH:i:s')),
+        ]);
+
+        return back()->with('success', 'Pacient bol prihlásený na skupinový termín.');
+    }
+
+    public function addGroupEventRequestToDifferentEvent(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        AddGroupEventParticipantAction $addGroupEventParticipantAction,
+        EmailNotificationService $emailNotificationService,
+        PatientDirectoryService $patientDirectoryService,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        if (! $this->isGroupEventRequest($appointmentRequest)) {
+            throw ValidationException::withMessages([
+                'appointment_request_id' => 'Tento request nie je skupinová požiadavka.',
+            ]);
+        }
+
+        $this->ensureRequestCanBeAccepted($appointmentRequest);
+
+        $validated = $request->validate([
+            'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'group_event_id' => ['required', 'integer', 'exists:events,id'],
+            'occurrence_original_start_at' => ['nullable', 'date'],
+            'force_create_patient' => ['nullable', 'boolean'],
+            'selected_patient' => ['nullable', 'array'],
+            'selected_patient.patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'selected_patient.patient_name' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_email' => ['nullable', 'email', 'max:255'],
+            'selected_patient.patient_phone' => ['nullable', 'string', 'max:255'],
+            'selected_patient.patient_birth_number' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $resolvedPatientId = (int) ($validated['patient_id'] ?? data_get($validated, 'selected_patient.patient_id') ?? 0);
+
+        if ($resolvedPatientId <= 0) {
+            if (! $request->boolean('force_create_patient')) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať existujúceho pacienta alebo vytvoriť nového.',
+                ]);
+            }
+
+            $createdPatient = $patientDirectoryService->savePatient(
+                branch: $branch,
+                name: data_get($validated, 'selected_patient.patient_name') ?: $appointmentRequest->patient_name,
+                email: data_get($validated, 'selected_patient.patient_email') ?: $appointmentRequest->patient_email,
+                phone: data_get($validated, 'selected_patient.patient_phone') ?: $appointmentRequest->patient_phone,
+                birthNumber: data_get($validated, 'selected_patient.patient_birth_number') ?: $appointmentRequest->patient_birth_number,
+            );
+
+            if (! $createdPatient) {
+                throw ValidationException::withMessages([
+                    'patient_id' => 'Pred potvrdením je potrebné vybrať existujúceho pacienta alebo vytvoriť nového.',
+                ]);
+            }
+
+            $resolvedPatientId = (int) $createdPatient->id;
+        }
+
+        $event = Event::query()
+            ->where('branch_id', $branch->id)
+            ->where('type', EventType::GroupEvent)
+            ->whereKey((int) $validated['group_event_id'])
+            ->firstOrFail();
+
+        $participant = $addGroupEventParticipantAction->execute($event, [
+            'patient_id' => $resolvedPatientId,
+            'source_request_id' => $appointmentRequest->id,
+            'participant_name' => $appointmentRequest->patient_name,
+            'participant_email' => $appointmentRequest->patient_email,
+            'participant_phone' => $appointmentRequest->patient_phone,
+            'participant_birth_number' => $appointmentRequest->patient_birth_number,
+            'notes' => $appointmentRequest->patient_note,
+            'status' => 'confirmed',
+            'occurrence_starts_at' => $validated['occurrence_original_start_at'] ?? $appointmentRequest->group_event_occurrence_original_start_at?->toIso8601String(),
+            'occurrence_ends_at' => $appointmentRequest->requested_group_event_ends_at?->toIso8601String(),
+        ]);
+
+        $appointmentRequest->forceFill([
+            'status' => AppointmentRequest::STATUS_ACCEPTED,
+            'patient_id' => $resolvedPatientId,
+            'accepted_group_event_id' => $event->id,
+            'accepted_group_event_participation_id' => $participant->id,
+            'accepted_group_event_occurrence_original_start_at' => $validated['occurrence_original_start_at'] ?? $appointmentRequest->group_event_occurrence_original_start_at,
+        ])->save();
+
+        $emailNotificationService->dispatch('event_participant_added', [
+            'event' => $event->fresh(['branch', 'groupDetail', 'participants']),
+            'participant' => $participant,
+            'recipient_emails' => [$participant->participant_email],
+            'occurrence_display_key' => sprintf('%d:%s', $event->root_event_id ?? $event->id, $event->starts_at?->utc()->format('Y-m-d\TH:i:s')),
+        ]);
+
+        return back()->with('success', 'Pacient bol prihlásený na vybraný skupinový termín.');
+    }
+
     public function cancelAppointmentRequest(
         Request $request,
         Branch $branch,
@@ -466,6 +680,12 @@ class BranchBookingCalendarController extends Controller
     ): RedirectResponse {
         abort_if(! $request->user()->canAccessBranch($branch), 403);
         abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        if (! $this->isRequestOnBranch($appointmentRequest, $branch)) {
+            throw ValidationException::withMessages([
+                'appointment_request_id' => 'Request nepatri branchi.',
+            ]);
+        }
 
         $validated = $request->validate([
             'notify_patient' => ['nullable', 'boolean'],
@@ -499,6 +719,15 @@ class BranchBookingCalendarController extends Controller
         );
 
         return back()->with('success', 'Žiadosť bola zrušená.');
+    }
+
+    public function rejectRequest(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        EmailNotificationService $emailNotificationService,
+    ): RedirectResponse {
+        return $this->cancelAppointmentRequest($request, $branch, $appointmentRequest, $emailNotificationService);
     }
 
     public function manuallyVerifyAppointmentRequest(
@@ -542,29 +771,61 @@ class BranchBookingCalendarController extends Controller
                 AppointmentRequest::STATUS_MANUALLY_VERIFIED,
                 AppointmentRequest::STATUS_EXPIRED,
             ])
-            ->with('services')
+            ->with(['services', 'requestedService', 'requestedGroupEvent.groupDetail', 'requestedGroupEvent.branch'])
             ->orderByRaw('preferred_date is null')
             ->orderBy('preferred_date')
             ->orderBy('created_at')
             ->get()
             ->map(fn (AppointmentRequest $appointmentRequest): array => [
                 'id' => $appointmentRequest->id,
-                'request_type' => $appointmentRequest->request_type ?? 'preferred_period',
+                'request_type' => $this->normalizeRequestType($appointmentRequest->request_type, $appointmentRequest),
+                'source_type' => $appointmentRequest->source_type,
+                'reservation_rule_id' => $appointmentRequest->reservation_rule_id,
+                'service_id' => $appointmentRequest->service_id,
                 'preferred_date' => $appointmentRequest->preferred_date?->toDateString(),
                 'preferred_period' => $appointmentRequest->preferred_period,
                 'preferred_starts_at' => $appointmentRequest->preferred_starts_at?->toIso8601String(),
                 'preferred_time_note' => $appointmentRequest->preferred_time_note,
+                'requested_starts_at' => $appointmentRequest->requested_starts_at?->toIso8601String(),
+                'requested_ends_at' => $appointmentRequest->requested_ends_at?->toIso8601String(),
+                'requested_group_event_starts_at' => $appointmentRequest->requested_group_event_starts_at?->toIso8601String(),
+                'requested_group_event_ends_at' => $appointmentRequest->requested_group_event_ends_at?->toIso8601String(),
+                'group_event_id' => $appointmentRequest->group_event_id,
+                'group_event_occurrence_original_start_at' => $appointmentRequest->group_event_occurrence_original_start_at?->toIso8601String(),
                 'total_duration_minutes' => $appointmentRequest->total_duration_minutes,
                 'status' => $appointmentRequest->status,
+                'patient_id' => $appointmentRequest->patient_id,
                 'email_verified_at' => $appointmentRequest->email_verified_at?->toIso8601String(),
                 'manually_verified_at' => $appointmentRequest->manually_verified_at?->toIso8601String(),
                 'manual_verification_reason' => $appointmentRequest->manual_verification_reason,
+                'is_for_someone_else' => (bool) $appointmentRequest->is_for_someone_else,
+                'requester_name' => $appointmentRequest->requester_name,
+                'requester_email' => $appointmentRequest->requester_email,
+                'requester_phone' => $appointmentRequest->requester_phone,
                 'patient_name' => $appointmentRequest->patient_name,
                 'patient_email' => $appointmentRequest->patient_email,
                 'patient_phone' => $appointmentRequest->patient_phone,
                 'patient_birth_number' => $appointmentRequest->patient_birth_number,
                 'patient_note' => $appointmentRequest->patient_note,
+                'accepted_booking_id' => $appointmentRequest->accepted_booking_id,
+                'accepted_group_event_id' => $appointmentRequest->accepted_group_event_id,
+                'accepted_group_event_participation_id' => $appointmentRequest->accepted_group_event_participation_id,
+                'accepted_group_event_occurrence_original_start_at' => $appointmentRequest->accepted_group_event_occurrence_original_start_at?->toIso8601String(),
                 'matches' => app(PatientMatchingService::class)->findMatchesForRequest($appointmentRequest)->values()->all(),
+                'service' => $appointmentRequest->requestedService ? [
+                    'id' => $appointmentRequest->requestedService->id,
+                    'name' => $appointmentRequest->requestedService->name,
+                    'duration_minutes' => $appointmentRequest->requestedService->duration_minutes,
+                ] : null,
+                'group_event' => $appointmentRequest->requestedGroupEvent ? [
+                    'id' => $appointmentRequest->requestedGroupEvent->id,
+                    'title' => $appointmentRequest->requestedGroupEvent->display_title,
+                    'starts_at' => $appointmentRequest->requestedGroupEvent->starts_at?->toIso8601String(),
+                    'ends_at' => $appointmentRequest->requestedGroupEvent->ends_at?->toIso8601String(),
+                    'capacity' => $appointmentRequest->requestedGroupEvent->groupDetail?->capacity,
+                    'reserved_places' => $appointmentRequest->requestedGroupEvent->groupDetail?->reserved_places,
+                    'branch_name' => $appointmentRequest->requestedGroupEvent->branch?->name,
+                ] : null,
                 'services' => $appointmentRequest->services
                     ->map(fn (Service $service): array => [
                         'id' => $service->id,
@@ -575,6 +836,73 @@ class BranchBookingCalendarController extends Controller
                     ->all(),
             ])
             ->values();
+    }
+
+    private function normalizeRequestType(?string $requestType, AppointmentRequest $appointmentRequest): string
+    {
+        if ($requestType === 'group_event_request') {
+            return 'group_event_request';
+        }
+
+        if ($appointmentRequest->group_event_id !== null || $appointmentRequest->accepted_group_event_id !== null) {
+            return 'group_event_request';
+        }
+
+        return 'appointment_request';
+    }
+
+    private function isAppointmentRequest(AppointmentRequest $appointmentRequest): bool
+    {
+        return $this->normalizeRequestType($appointmentRequest->request_type, $appointmentRequest) === 'appointment_request';
+    }
+
+    private function isGroupEventRequest(AppointmentRequest $appointmentRequest): bool
+    {
+        return $this->normalizeRequestType($appointmentRequest->request_type, $appointmentRequest) === 'group_event_request';
+    }
+
+    private function isRequestOnBranch(AppointmentRequest $appointmentRequest, Branch $branch): bool
+    {
+        return (int) $appointmentRequest->branch_id === (int) $branch->id;
+    }
+
+    private function resolveRequestedGroupEvent(Branch $branch, AppointmentRequest $appointmentRequest): Event
+    {
+        $eventId = (int) ($appointmentRequest->group_event_id ?? 0);
+
+        if ($eventId <= 0) {
+            throw ValidationException::withMessages([
+                'group_event_id' => 'Požadovaný skupinový termín chýba.',
+            ]);
+        }
+
+        $event = Event::query()
+            ->where('branch_id', $branch->id)
+            ->where('type', EventType::GroupEvent)
+            ->whereKey($eventId)
+            ->first();
+
+        if (! $event) {
+            throw ValidationException::withMessages([
+                'group_event_id' => 'Požadovaný skupinový termín nebol nájdený.',
+            ]);
+        }
+
+        return $event;
+    }
+
+    private function ensureRequestCanBeAccepted(AppointmentRequest $appointmentRequest): void
+    {
+        if (! in_array($appointmentRequest->status, [
+            AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            AppointmentRequest::STATUS_MANUALLY_VERIFIED,
+            AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
+            AppointmentRequest::STATUS_EXPIRED,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'appointment_request' => 'Túto požiadavku už nie je možné potvrdiť.',
+            ]);
+        }
     }
 
 }

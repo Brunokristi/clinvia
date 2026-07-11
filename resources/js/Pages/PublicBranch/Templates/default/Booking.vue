@@ -8,6 +8,7 @@ import MultiSelect from 'primevue/multiselect';
 import Paginator from 'primevue/paginator';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
+import { useToast } from 'primevue/usetoast';
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -61,25 +62,43 @@ const props = defineProps({
     verifiedPatientContext: {
         type: Object,
         default: () => ({
-            patient_id: null,
             verified_patient_email: '',
         }),
     },
 });
 
 const page = usePage();
+const toast = useToast();
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
 const currentStep = ref(1);
 const submittedSuccessfully = ref(false);
+const submittedRequestSummary = ref(null);
 const dateValue = ref(null);
 const selectedServiceIds = ref([...props.selectedServiceIds]);
 const availabilityPanel = ref('exact_slot');
 
 const visibleAvailabilityLimit = ref(5);
 const availabilityBatchSize = 5;
+
+const serviceErrorKeys = ['service_id', 'service_ids'];
+const availabilityErrorKeys = [
+    'branch_id',
+    'starts_at',
+    'requested_starts_at',
+    'preferred_starts_at',
+    'capacity_window_id',
+    'preferred_option_id',
+    'preferred_date',
+    'preferred_period',
+    'request_type',
+];
+const consentErrorKeys = ['consent', 'privacy_consent'];
+const selfNameErrorKeys = ['requester_name', 'patient_name'];
+const selfEmailErrorKeys = ['requester_email', 'patient_email'];
+const selfPhoneErrorKeys = ['requester_phone', 'patient_phone'];
 
 const bookingForm = useForm({
     request_type: '',
@@ -88,10 +107,13 @@ const bookingForm = useForm({
     preferred_option_id: '',
     preferred_date: '',
     preferred_period: '',
+    is_for_someone_else: false,
+    requester_name: '',
+    requester_email: '',
+    requester_phone: '',
     patient_name: '',
     patient_email: '',
     patient_phone: '',
-    patient_id: props.verifiedPatientContext?.patient_id ?? null,
     verified_patient_email: props.verifiedPatientContext?.verified_patient_email ?? '',
     patient_birth_number: '',
     patient_note: '',
@@ -304,6 +326,10 @@ const canSubmit = computed(() => {
         return false;
     }
 
+    if (!bookingForm.privacy_consent) {
+        return false;
+    }
+
     if (!canContinueFromAvailability.value) {
         return false;
     }
@@ -312,12 +338,109 @@ const canSubmit = computed(() => {
         return false;
     }
 
+    if (bookingForm.is_for_someone_else) {
+        if (!bookingForm.requester_name.trim()) {
+            return false;
+        }
+
+        if (!bookingForm.requester_email.trim()) {
+            return false;
+        }
+
+        if (!bookingForm.requester_phone.trim()) {
+            return false;
+        }
+
+        return true;
+    }
+
     if (!bookingForm.patient_email.trim()) {
+        return false;
+    }
+
+    if (!bookingForm.patient_phone.trim()) {
         return false;
     }
 
     return true;
 });
+
+const normalizedErrorEntries = computed(() => {
+    return Object.entries(bookingForm.errors ?? {}).flatMap(([field, value]) => {
+        if (Array.isArray(value)) {
+            return value.map((message) => [field, String(message)]);
+        }
+
+        if (typeof value === 'string' && value.trim() !== '') {
+            return [[field, value]];
+        }
+
+        return [];
+    });
+});
+
+const firstValidationError = computed(() => {
+    return normalizedErrorEntries.value[0]?.[1] ?? '';
+});
+
+const findFirstError = (keys) => {
+    for (const key of keys) {
+        const message = bookingForm.errors[key];
+
+        if (typeof message === 'string' && message.trim() !== '') {
+            return message;
+        }
+    }
+
+    return '';
+};
+
+const serviceError = computed(() => findFirstError(serviceErrorKeys));
+const availabilityError = computed(() => findFirstError(availabilityErrorKeys));
+const selfNameError = computed(() => findFirstError(selfNameErrorKeys));
+const selfEmailError = computed(() => findFirstError(selfEmailErrorKeys));
+const selfPhoneError = computed(() => findFirstError(selfPhoneErrorKeys));
+const consentError = computed(() => findFirstError(consentErrorKeys));
+
+const generalErrorEntries = computed(() => {
+    const inlineKeys = new Set([
+        ...serviceErrorKeys,
+        ...availabilityErrorKeys,
+        ...consentErrorKeys,
+        'requester_name',
+        'requester_email',
+        'requester_phone',
+        'patient_name',
+        'patient_email',
+        'patient_phone',
+        'patient_birth_number',
+        'patient_note',
+        'note',
+        'form',
+    ]);
+
+    return normalizedErrorEntries.value.filter(([field]) => !inlineKeys.has(field));
+});
+
+const syncStepWithErrors = (errors = bookingForm.errors ?? {}) => {
+    const fields = Object.keys(errors ?? {});
+
+    if (fields.some((field) => serviceErrorKeys.includes(field))) {
+        currentStep.value = 1;
+
+        return;
+    }
+
+    if (fields.some((field) => availabilityErrorKeys.includes(field))) {
+        currentStep.value = 2;
+
+        return;
+    }
+
+    if (fields.length > 0) {
+        currentStep.value = 3;
+    }
+};
 
 const submitButtonLabel = computed(() => {
     if (isExactSlotSelected.value && props.isDirectBookingEligible) {
@@ -555,7 +678,7 @@ const onPageChange = (event) => {
 const selectCapacityWindow = (capacityWindow) => {
     availabilityPanel.value = 'exact_slot';
 
-    bookingForm.request_type = '';
+    bookingForm.request_type = 'group_event_request';
     bookingForm.capacity_window_id = capacityWindow.capacity_window_id ?? capacityWindow.id;
     bookingForm.preferred_option_id = '';
     bookingForm.preferred_date = '';
@@ -601,6 +724,10 @@ const resetBookingFlow = () => {
         'preferred_option_id',
         'preferred_date',
         'preferred_period',
+        'is_for_someone_else',
+        'requester_name',
+        'requester_email',
+        'requester_phone',
         'patient_name',
         'patient_email',
         'patient_phone',
@@ -613,21 +740,126 @@ const resetBookingFlow = () => {
     bookingForm.form_started_at = Date.now();
 };
 
+const selectedRequestDateTimeLabel = computed(() => {
+    if (selectedCapacityWindowLabel.value) {
+        return selectedCapacityWindowLabel.value;
+    }
+
+    if (selectedOptionLabel.value) {
+        return selectedOptionLabel.value;
+    }
+
+    if (selectedRequestDateLabel.value) {
+        return `${selectedRequestDateLabel.value}`;
+    }
+
+    return 'Neuvedené';
+});
+
 const submitBooking = () => {
     bookingForm.service_ids = selectedServiceIds.value;
 
+    const inferredRequestType = selectedCapacityWindow.value
+        ? 'group_event_request'
+        : 'appointment_request';
+
+    const inferredSourceType = inferredRequestType === 'group_event_request'
+        ? 'group_event'
+        : 'reservation_rule';
+
+    const selectedCapacityWindowId = selectedCapacityWindow.value
+        ? Number(selectedCapacityWindow.value.capacity_window_id ?? selectedCapacityWindow.value.id)
+        : null;
+
+    const selectedCapacityWindowStartsAt = selectedCapacityWindow.value?.starts_at ?? null;
+    const selectedCapacityWindowEndsAt = selectedCapacityWindow.value?.ends_at ?? null;
+
     bookingForm.transform((data) => ({
         ...data,
-        mode: data.capacity_window_id ? 'exact_slot' : 'appointment_request',
+        request_type: inferredRequestType,
+        source_type: inferredSourceType,
+        branch_id: props.branch.id,
+        service_id: selectedServiceIds.value.length === 1
+            ? Number(selectedServiceIds.value[0])
+            : null,
+        service_ids: selectedServiceIds.value.map((id) => Number(id)),
+        starts_at: selectedCapacityWindowStartsAt,
+        capacity_window_id: selectedCapacityWindowId,
+        group_event_id: inferredRequestType === 'group_event_request' ? selectedCapacityWindowId : null,
+        reservation_rule_id: null,
+        group_event_occurrence_original_start_at: selectedCapacityWindow.value?.recurrence_original_starts_at ?? null,
+        requested_starts_at: selectedCapacityWindowStartsAt
+            ?? (data.preferred_date ? `${data.preferred_date} 00:00:00` : null),
+        requested_ends_at: selectedCapacityWindowEndsAt,
+        requested_group_event_starts_at: inferredRequestType === 'group_event_request' ? selectedCapacityWindowStartsAt : null,
+        requested_group_event_ends_at: inferredRequestType === 'group_event_request' ? selectedCapacityWindowEndsAt : null,
+        consent: data.privacy_consent,
+        note: data.patient_note,
+        requester_name: data.is_for_someone_else
+            ? data.requester_name
+            : data.patient_name,
+        requester_email: data.is_for_someone_else
+            ? data.requester_email
+            : data.patient_email,
+        requester_phone: data.is_for_someone_else
+            ? data.requester_phone
+            : data.patient_phone,
     })).post(route('public.branch.booking.store', props.branch.slug), {
         preserveScroll: true,
         preserveState: true,
         onSuccess: () => {
+            const confirmationEmail = bookingForm.is_for_someone_else
+                ? (bookingForm.requester_email || bookingForm.patient_email || '')
+                : (bookingForm.patient_email || bookingForm.requester_email || '');
+
+            submittedRequestSummary.value = {
+                serviceLabel: selectedServicesLabel.value,
+                dateTimeLabel: selectedRequestDateTimeLabel.value,
+                confirmationEmail,
+                isForSomeoneElse: Boolean(bookingForm.is_for_someone_else),
+            };
+
+            toast.add({
+                severity: 'success',
+                summary: 'Požiadavka odoslaná',
+                detail: 'Požiadavka bola odoslaná. Skontrolujte si email a potvrďte ju.',
+                life: 5000,
+            });
+
             submittedSuccessfully.value = true;
             resetBookingFlow();
         },
+        onError: (errors) => {
+            syncStepWithErrors(errors);
+
+            const firstError = Object.values(errors ?? {}).find((value) => {
+                return typeof value === 'string' && value.trim() !== '';
+            });
+
+            if (!errors || Object.keys(errors).length === 0) {
+                toast.add({
+                    severity: 'error',
+                    summary: 'Požiadavku sa nepodarilo odoslať',
+                    detail: 'Skontrolujte údaje a skúste to prosím znova.',
+                    life: 5000,
+                });
+
+                return;
+            }
+
+            toast.add({
+                severity: 'warn',
+                summary: 'Formulár obsahuje chyby',
+                detail: firstError || 'Opravte vyznačené polia a skúste odoslať formulár znova.',
+                life: 5000,
+            });
+        },
     });
 };
+
+watch(() => bookingForm.errors, (errors) => {
+    syncStepWithErrors(errors);
+}, { deep: true });
 </script>
 
 <template>
@@ -646,11 +878,41 @@ const submitBooking = () => {
 
                     <div class="space-y-2">
                         <h1 class="text-heading font-semibold text-dark">
-                            Ďakujeme, vašu požiadavku spracujeme v čo najkratšom čase.
+                            Požiadavka bola odoslaná
                         </h1>
 
                         <p class="text-normal leading-7 text-accent">
-                            {{ flashSuccess || 'Vaše objednanie sme prijali. Potvrdenie vám pošleme podľa zvoleného typu termínu.' }}
+                            {{ flashSuccess || 'Na zadaný email sme Vám poslali potvrdzovací odkaz. Prosím, otvorte email a potvrďte požiadavku. Po potvrdení ju skontrolujeme a termín Vám potvrdíme.' }}
+                        </p>
+
+                        <p
+                            v-if="submittedRequestSummary?.isForSomeoneElse"
+                            class="text-sm text-accent"
+                        >
+                            Potvrdzovací email sme poslali kontaktnej osobe.
+                        </p>
+                    </div>
+
+                    <div class="mx-auto w-full max-w-xl rounded-md border border-soft bg-soft p-4 text-left">
+                        <dl class="space-y-2 text-sm text-accent">
+                            <div>
+                                <dt class="font-semibold text-dark">Služba / požiadavka</dt>
+                                <dd>{{ submittedRequestSummary?.serviceLabel || selectedServicesLabel }}</dd>
+                            </div>
+
+                            <div>
+                                <dt class="font-semibold text-dark">Požadovaný termín</dt>
+                                <dd>{{ submittedRequestSummary?.dateTimeLabel || selectedRequestDateTimeLabel }}</dd>
+                            </div>
+
+                            <div>
+                                <dt class="font-semibold text-dark">Email pre potvrdenie</dt>
+                                <dd>{{ submittedRequestSummary?.confirmationEmail || 'Neuvedené' }}</dd>
+                            </div>
+                        </dl>
+
+                        <p class="mt-3 text-xs text-accent">
+                            Ak email nevidíte, skontrolujte priečinok Spam alebo Nevyžiadaná pošta.
                         </p>
                     </div>
 
@@ -717,6 +979,13 @@ const submitBooking = () => {
                                         </div>
                                     </template>
                                 </MultiSelect>
+
+                                <small
+                                    v-if="serviceError"
+                                    class="mt-2 block text-red-600"
+                                >
+                                    {{ serviceError }}
+                                </small>
                             </div>
                         </div>
 
@@ -768,12 +1037,19 @@ const submitBooking = () => {
                                                 class="mt-1 block text-xs"
                                                 :class="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'text-white/80' : 'text-accent'"
                                             >
+                                                Prihlásiť sa na skupinový termín.
+                                            </span>
+
+                                            <span
+                                                class="mt-1 block text-xs"
+                                                :class="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'text-white/80' : 'text-accent'"
+                                            >
                                                 {{ capacityWindow.free_capacity ?? capacityWindow.available_count }} voľné miesta z {{ capacityWindow.capacity }}
                                             </span>
                                         </span>
 
                                         <Tag
-                                            :value="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'Vybrané' : 'Vybrať'"
+                                            :value="Number(bookingForm.capacity_window_id) === Number(capacityWindow.capacity_window_id ?? capacityWindow.id) ? 'Vybrané' : 'Prihlásiť sa'"
                                         />
                                     </span>
                                 </button>
@@ -789,6 +1065,13 @@ const submitBooking = () => {
                                         @click="showMoreAvailability"
                                     />
                                 </div>
+
+                                <small
+                                    v-if="availabilityError && isExactSlotSelected"
+                                    class="block text-red-600"
+                                >
+                                    {{ availabilityError }}
+                                </small>
                             </div>
 
                             <div
@@ -823,12 +1106,12 @@ const submitBooking = () => {
                                                     class="mt-1 block text-xs"
                                                     :class="bookingForm.preferred_option_id === option.id ? 'text-white/80' : 'text-accent'"
                                                 >
-                                                    Presný čas vám potvrdíme.
+                                                    Požiadať o termín podľa preferencie.
                                                 </span>
                                             </span>
 
                                             <Tag
-                                                :value="bookingForm.preferred_option_id === option.id ? 'Vybrané' : 'Vybrať'"
+                                                :value="bookingForm.preferred_option_id === option.id ? 'Vybrané' : 'Požiadať o termín'"
                                             />
                                         </span>
                                     </button>
@@ -901,11 +1184,25 @@ const submitBooking = () => {
                                                     placeholder="Vyberte dátum"
                                                     @date-select="selectGeneralRequest"
                                                 />
+
+                                                <small
+                                                    v-if="availabilityError && isGeneralRequestSelected"
+                                                    class="mt-2 block text-red-600"
+                                                >
+                                                    {{ availabilityError }}
+                                                </small>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+
+                            <small
+                                v-if="availabilityError && !isGeneralRequestSelected && !isExactSlotSelected"
+                                class="block text-red-600"
+                            >
+                                {{ availabilityError }}
+                            </small>
 
                             <p
                                 v-if="!hasExactSlots && !hasRequestAvailability"
@@ -957,6 +1254,24 @@ const submitBooking = () => {
                             </p>
 
                             <div
+                                v-if="generalErrorEntries.length"
+                                class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                            >
+                                <p class="font-medium">
+                                    Niektoré chyby sa nepodarilo priradiť ku konkrétnemu poľu:
+                                </p>
+
+                                <ul class="mt-2 list-disc pl-5">
+                                    <li
+                                        v-for="([field, message], index) in generalErrorEntries"
+                                        :key="`${field}-${index}`"
+                                    >
+                                        {{ message }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
                                 class="absolute left-[-9999px] top-auto h-px w-px overflow-hidden"
                                 aria-hidden="true"
                             >
@@ -972,7 +1287,90 @@ const submitBooking = () => {
 
                             <div>
                                 <label class="mb-2 block text-sm font-medium text-dark">
-                                    Meno <span class="text-red-500">*</span>
+                                    Objednávam
+                                </label>
+
+                                <div class="grid grid-cols-2 gap-2 rounded-md border border-soft bg-white p-1">
+                                    <button
+                                        type="button"
+                                        class="rounded px-3 py-2 text-sm font-medium transition"
+                                        :class="!bookingForm.is_for_someone_else ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
+                                        @click="bookingForm.is_for_someone_else = false"
+                                    >
+                                        Seba
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="rounded px-3 py-2 text-sm font-medium transition"
+                                        :class="bookingForm.is_for_someone_else ? 'bg-accent text-white' : 'text-dark hover:bg-soft'"
+                                        @click="bookingForm.is_for_someone_else = true"
+                                    >
+                                        Inú osobu
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div v-if="bookingForm.is_for_someone_else" class="grid gap-4 md:grid-cols-3">
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-dark">
+                                        Vaše meno <span class="text-red-500">*</span>
+                                    </label>
+
+                                    <InputText
+                                        v-model="bookingForm.requester_name"
+                                        class="w-full"
+                                    />
+
+                                    <small
+                                        v-if="bookingForm.errors.requester_name"
+                                        class="text-red-600"
+                                    >
+                                        {{ bookingForm.errors.requester_name }}
+                                    </small>
+                                </div>
+
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-dark">
+                                        Váš email <span class="text-red-500">*</span>
+                                    </label>
+
+                                    <InputText
+                                        v-model="bookingForm.requester_email"
+                                        type="email"
+                                        class="w-full"
+                                    />
+
+                                    <small
+                                        v-if="bookingForm.errors.requester_email"
+                                        class="text-red-600"
+                                    >
+                                        {{ bookingForm.errors.requester_email }}
+                                    </small>
+                                </div>
+
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-dark">
+                                        Váš telefón <span class="text-red-500">*</span>
+                                    </label>
+
+                                    <InputText
+                                        v-model="bookingForm.requester_phone"
+                                        class="w-full"
+                                    />
+
+                                    <small
+                                        v-if="bookingForm.errors.requester_phone"
+                                        class="text-red-600"
+                                    >
+                                        {{ bookingForm.errors.requester_phone }}
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="mb-2 block text-sm font-medium text-dark">
+                                    Meno pacienta <span class="text-red-500">*</span>
                                 </label>
 
                                 <InputText
@@ -981,15 +1379,15 @@ const submitBooking = () => {
                                 />
 
                                 <small
-                                    v-if="bookingForm.errors.patient_name"
+                                    v-if="bookingForm.is_for_someone_else ? bookingForm.errors.patient_name : selfNameError"
                                     class="text-red-600"
                                 >
-                                    {{ bookingForm.errors.patient_name }}
+                                    {{ bookingForm.is_for_someone_else ? bookingForm.errors.patient_name : selfNameError }}
                                 </small>
                             </div>
 
                             <div class="grid gap-4 md:grid-cols-2">
-                                <div>
+                                <div v-if="!bookingForm.is_for_someone_else">
                                     <label class="mb-2 block text-sm font-medium text-dark">
                                         Email <span class="text-red-500">*</span>
                                     </label>
@@ -1001,14 +1399,14 @@ const submitBooking = () => {
                                     />
 
                                     <small
-                                        v-if="bookingForm.errors.patient_email"
+                                        v-if="selfEmailError"
                                         class="text-red-600"
                                     >
-                                        {{ bookingForm.errors.patient_email }}
+                                        {{ selfEmailError }}
                                     </small>
                                 </div>
 
-                                <div>
+                                <div v-if="!bookingForm.is_for_someone_else">
                                     <label class="mb-2 block text-sm font-medium text-dark">
                                         Telefón <span class="text-red-500">*</span>
                                     </label>
@@ -1019,10 +1417,10 @@ const submitBooking = () => {
                                     />
 
                                     <small
-                                        v-if="bookingForm.errors.patient_phone"
+                                        v-if="selfPhoneError"
                                         class="text-red-600"
                                     >
-                                        {{ bookingForm.errors.patient_phone }}
+                                        {{ selfPhoneError }}
                                     </small>
                                 </div>
 
@@ -1066,10 +1464,10 @@ const submitBooking = () => {
                                 </label>
 
                                 <small
-                                    v-if="bookingForm.errors.privacy_consent"
+                                    v-if="consentError"
                                     class="block text-red-600"
                                 >
-                                    {{ bookingForm.errors.privacy_consent }}
+                                    {{ consentError }}
                                 </small>
                             </div>
 
@@ -1089,24 +1487,10 @@ const submitBooking = () => {
                                 </small>
 
                                 <small
-                                    v-if="bookingForm.errors.service_ids"
+                                    v-if="firstValidationError && !bookingForm.errors.form"
                                     class="block text-red-600"
                                 >
-                                    {{ bookingForm.errors.service_ids }}
-                                </small>
-
-                                <small
-                                    v-if="bookingForm.errors.capacity_window_id"
-                                    class="block text-red-600"
-                                >
-                                    {{ bookingForm.errors.capacity_window_id }}
-                                </small>
-
-                                <small
-                                    v-if="bookingForm.errors.preferred_option_id"
-                                    class="block text-red-600"
-                                >
-                                    {{ bookingForm.errors.preferred_option_id }}
+                                    {{ firstValidationError }}
                                 </small>
                             </div>
 

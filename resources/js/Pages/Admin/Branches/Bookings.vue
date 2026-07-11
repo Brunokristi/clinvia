@@ -456,6 +456,14 @@ const periodLabels = {
 
 const pendingRequests = computed(() => props.pendingAppointmentRequests ?? []);
 
+const appointmentRequests = computed(() => {
+    return pendingRequests.value.filter((request) => !isGroupEventRequest(request));
+});
+
+const groupEventRequests = computed(() => {
+    return pendingRequests.value.filter((request) => isGroupEventRequest(request));
+});
+
 const getBufferedReloadRange = () => {
     const visibleStart = currentCalendarRange.value?.start
         ? new Date(currentCalendarRange.value.start)
@@ -501,6 +509,19 @@ useBranchBroadcasting(props.branch.id, reloadCalendarData);
 const requestToCancel = ref(null);
 const pendingRequestConversion = ref(null);
 const selectedPatientCandidateKey = ref('new');
+const groupEventPickerVisible = ref(false);
+const pendingGroupEventRequest = ref(null);
+const selectedDifferentGroupEventId = ref(null);
+
+const groupEventPickerOptions = computed(() => {
+    return props.calendarCapacityWindows ?? [];
+});
+
+const selectedDifferentGroupEvent = computed(() => {
+    return groupEventPickerOptions.value.find((candidate) => {
+        return Number(candidate?.id ?? candidate?.event_id ?? candidate?.capacity_window_id ?? 0) === Number(selectedDifferentGroupEventId.value);
+    }) ?? null;
+});
 
 const normalizeSearchValue = (value) => {
     return String(value ?? '')
@@ -536,24 +557,36 @@ const toLocalDateTimeString = (value) => {
     return `${year}-${month}-${day} ${hours}:${minutes}:00`;
 };
 
-const hasExactPatientIdentifierMatch = (appointmentRequest, patient) => {
+const getPatientMatchReason = (appointmentRequest, patient) => {
     const requestBirthNumber = normalizeBirthNumberValue(appointmentRequest?.patient_birth_number);
     const requestEmail = normalizeSearchValue(appointmentRequest?.patient_email);
     const requestPhone = normalizePhoneValue(appointmentRequest?.patient_phone);
 
     if (requestBirthNumber && requestBirthNumber === normalizeBirthNumberValue(patient?.patient_birth_number)) {
-        return true;
+        return 'Zhoda rodného čísla';
     }
 
     if (requestEmail && requestEmail === normalizeSearchValue(patient?.patient_email)) {
-        return true;
+        return 'Zhoda emailu';
     }
 
     if (requestPhone && requestPhone === normalizePhoneValue(patient?.patient_phone)) {
-        return true;
+        return 'Zhoda telefónu';
     }
 
-    return false;
+    return 'Zhoda mena';
+};
+
+const isGroupEventRequest = (request) => {
+    return request?.request_type === 'group_event_request';
+};
+
+const isDraggableAppointmentRequest = (request) => {
+    return !isGroupEventRequest(request);
+};
+
+const requiresPatientResolution = (request) => {
+    return !Number(request?.patient_id ?? 0);
 };
 
 const getSimilarPatientsForRequest = (appointmentRequest) => {
@@ -567,23 +600,17 @@ const getSimilarPatientsForRequest = (appointmentRequest) => {
         return normalizeSearchValue(patient?.patient_name) === requestName;
     });
 
-    if (!sameNamePatients.length) {
-        return [];
-    }
-
-    if (sameNamePatients.some((patient) => hasExactPatientIdentifierMatch(appointmentRequest, patient))) {
-        return [];
-    }
-
     return sameNamePatients
         .map((patient, index) => ({
             ...patient,
             __candidateKey: String(patient?.id ?? `similar-${index}`),
+            __matchReason: getPatientMatchReason(appointmentRequest, patient),
         }));
 };
 
 const formatPatientCandidateDetails = (patient) => {
     const details = [
+        patient?.__matchReason,
         patient?.patient_birth_number,
         patient?.patient_email,
         patient?.patient_phone,
@@ -615,7 +642,27 @@ const requestConversionDialogMessage = computed(() => {
         return '';
     }
 
+    const actionLabel = pendingRequestConversion.value.actionKind === 'group_add_requested'
+        ? 'požiadavka na skupinový termín'
+        : (pendingRequestConversion.value.actionKind === 'group_add_different' ? 'požiadavka na iný skupinový termín' : 'požiadavka na termín');
+
+    if (!similarPatientCandidates.value.length) {
+        return `${actionLabel} pre ${pendingRequestConversion.value.appointmentRequest.patient_name} zatiaľ nemá priradeného pacienta. Pred potvrdením vyberte existujúceho pacienta alebo pokračujte vytvorením nového profilu.`;
+    }
+
     return `Našli sme podobných pacientov s menom ${pendingRequestConversion.value.appointmentRequest.patient_name}. Vyberte, či chcete použiť existujúci profil alebo ponechať údaje zo žiadosti.`;
+});
+
+const requestConversionDialogTitle = computed(() => {
+    return 'Priradiť pacienta';
+});
+
+const requestConversionConfirmLabel = computed(() => {
+    if (selectedPatientCandidate.value) {
+        return 'Priradiť a potvrdiť';
+    }
+
+    return 'Vytvoriť pacienta a potvrdiť';
 });
 
 const closeRequestConversionDialog = () => {
@@ -623,13 +670,15 @@ const closeRequestConversionDialog = () => {
     selectedPatientCandidateKey.value = 'new';
 };
 
-const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatient = null }) => {
-    if (!appointmentRequestId || !startsAt) {
-        return;
-    }
+const closeGroupEventPickerDialog = () => {
+    groupEventPickerVisible.value = false;
+    pendingGroupEventRequest.value = null;
+    selectedDifferentGroupEventId.value = null;
+};
 
+const buildRequestActionPayload = (selectedPatient = null) => {
     const payload = {
-        starts_at: startsAt,
+        patient_id: selectedPatient?.id ?? selectedPatient?.patient_id ?? null,
     };
 
     if (selectedPatient) {
@@ -640,7 +689,142 @@ const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatie
             patient_phone: selectedPatient.patient_phone ?? null,
             patient_birth_number: selectedPatient.patient_birth_number ?? null,
         };
-    } else {
+    }
+
+    return payload;
+};
+
+const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatient = null, actionKind = 'appointment_accept' }) => {
+    if (!appointmentRequestId) {
+        return;
+    }
+
+    const pending = pendingRequestConversion.value?.appointmentRequest ?? null;
+    const basePayload = buildRequestActionPayload(selectedPatient);
+
+    if (actionKind === 'appointment_accept') {
+        if (!startsAt) {
+            return;
+        }
+
+        const payload = {
+            ...basePayload,
+            starts_at: startsAt,
+        };
+
+        if (!selectedPatient) {
+            payload.force_create_patient = true;
+        }
+
+        router.post(route('branches.booking.appointment-requests.convert', [
+            props.branch.id,
+            appointmentRequestId,
+        ]), payload, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                showReservations.value = true;
+                feedback.success('Požiadavka bola potvrdená ako rezervácia.');
+                reloadCalendarData();
+                closeRequestConversionDialog();
+            },
+            onError: (errors) => {
+                feedback.error(errors, 'Žiadosť sa nepodarilo premeniť na rezerváciu.');
+
+                reloadCalendarData();
+            },
+        });
+
+        return;
+    }
+
+    if (actionKind === 'group_add_requested') {
+        const payload = {
+            ...basePayload,
+        };
+
+        if (!selectedPatient) {
+            payload.force_create_patient = true;
+        }
+
+        router.post(route('branches.booking.requests.add-to-requested-group-event', [
+            props.branch.id,
+            appointmentRequestId,
+        ]), payload, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                showReservations.value = true;
+                feedback.success('Pacient bol prihlásený na skupinový termín.');
+                reloadCalendarData();
+                closeRequestConversionDialog();
+            },
+            onError: (errors) => {
+                if (errors?.capacity) {
+                    feedback.error(errors, 'Kapacita skupinového termínu je naplnená.');
+                    return;
+                }
+
+                feedback.error(errors, 'Požiadavku sa nepodarilo pridať do skupinového termínu.');
+                reloadCalendarData();
+            },
+        });
+
+        return;
+    }
+
+    if (actionKind === 'group_add_different') {
+        if (!pendingGroupEventRequest.value || !selectedDifferentGroupEventId.value) {
+            return;
+        }
+
+        const payload = {
+            ...basePayload,
+            group_event_id: selectedDifferentGroupEventId.value,
+            occurrence_original_start_at: pendingGroupEventRequest.value.occurrence_original_start_at ?? null,
+        };
+
+        if (!selectedPatient) {
+            payload.force_create_patient = true;
+        }
+
+        router.post(route('branches.booking.requests.add-to-different-group-event', [
+            props.branch.id,
+            appointmentRequestId,
+        ]), payload, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                showReservations.value = true;
+                feedback.success('Pacient bol prihlásený na vybraný skupinový termín.');
+                reloadCalendarData();
+                closeRequestConversionDialog();
+                closeGroupEventPickerDialog();
+            },
+            onError: (errors) => {
+                if (errors?.capacity) {
+                    feedback.error(errors, 'Kapacita skupinového termínu je naplnená.');
+                    return;
+                }
+
+                feedback.error(errors, 'Požiadavku sa nepodarilo pridať do vybraného skupinového termínu.');
+                reloadCalendarData();
+            },
+        });
+
+        return;
+    }
+
+    if (!startsAt) {
+        return;
+    }
+
+    const payload = {
+        ...basePayload,
+        starts_at: startsAt,
+    };
+
+    if (!selectedPatient) {
         payload.force_create_patient = true;
     }
 
@@ -652,7 +836,11 @@ const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatie
         preserveState: true,
         onSuccess: () => {
             showReservations.value = true;
-            feedback.success('Požiadavka bola potvrdená ako rezervácia.');
+            if (selectedPatient) {
+                feedback.success('Pacient bol priradený a požiadavka potvrdená ako rezervácia.');
+            } else {
+                feedback.success('Bol vytvorený nový pacient a požiadavka bola potvrdená ako rezervácia.');
+            }
             reloadCalendarData();
             closeRequestConversionDialog();
         },
@@ -673,7 +861,47 @@ const confirmRequestConversion = () => {
         appointmentRequestId: pendingRequestConversion.value.appointmentRequest.id,
         startsAt: pendingRequestConversion.value.startsAt,
         selectedPatient: selectedPatientCandidate.value,
+        actionKind: pendingRequestConversion.value.actionKind ?? 'appointment_accept',
     });
+};
+
+const openRequestPatientResolution = (request, startsAt = null, actionKind = 'appointment_accept') => {
+    pendingRequestConversion.value = {
+        appointmentRequest: request,
+        startsAt,
+        similarPatients: getSimilarPatientsForRequest(request),
+        actionKind,
+    };
+    selectedPatientCandidateKey.value = 'new';
+};
+
+const openAppointmentRequestConversionDialog = (request, startsAt) => {
+    openRequestPatientResolution(request, startsAt, 'appointment_accept');
+};
+
+const openGroupEventAddDialog = (request, mode = 'requested') => {
+    if (mode === 'requested') {
+        openRequestPatientResolution(request, null, 'group_add_requested');
+        return;
+    }
+
+    pendingGroupEventRequest.value = request;
+    selectedDifferentGroupEventId.value = request.group_event_id ?? null;
+    groupEventPickerVisible.value = true;
+};
+
+const confirmGroupEventPicker = () => {
+    if (!pendingGroupEventRequest.value) {
+        return;
+    }
+
+    if (!selectedDifferentGroupEventId.value) {
+        feedback.error({}, 'Vyberte skupinový termín.');
+        return;
+    }
+
+    groupEventPickerVisible.value = false;
+    openRequestPatientResolution(pendingGroupEventRequest.value, null, 'group_add_different');
 };
 
 const getBookingStartValue = (booking) => {
@@ -738,6 +966,14 @@ const getCapacityWindowEventIdCandidates = (capacityWindow) => {
 const getBookingContactLabel = (booking) => {
     return booking?.patient_phone
         ?? booking?.patient_email
+        ?? '';
+};
+
+const getPendingRequestContactLabel = (request) => {
+    return request?.requester_phone
+        ?? request?.requester_email
+        ?? request?.patient_phone
+        ?? request?.patient_email
         ?? '';
 };
 
@@ -809,6 +1045,9 @@ const requestSearchResults = computed(() => {
         .filter((request) => {
             const searchable = [
                 request?.patient_name,
+                request?.requester_name,
+                request?.requester_email,
+                request?.requester_phone,
                 request?.patient_email,
                 request?.patient_phone,
                 getRequestServicesLabel(request),
@@ -824,7 +1063,7 @@ const requestSearchResults = computed(() => {
                 type: 'request',
                 tagLabel: 'Žiadosť',
                 patientName: request.patient_name ?? 'Žiadosť',
-                contactLabel: request.patient_phone ?? request.patient_email ?? '',
+                contactLabel: getPendingRequestContactLabel(request),
                 serviceLabel: getRequestServicesLabel(request),
                 dateLabel: `${formatDate(getRequestPreferredDate(request))} · ${getRequestPeriodLabel(request)}`,
                 timeLabel: null,
@@ -1272,10 +1511,11 @@ const confirmCancelAppointmentRequest = () => {
         return;
     }
 
-    router.delete(route('branches.booking.appointment-requests.destroy', [
+    router.post(route('branches.booking.requests.reject', [
         props.branch.id,
         requestToCancel.value.id,
     ]), {
+        notification_reason: null,
         preserveScroll: true,
         preserveState: true,
         onSuccess: () => {
@@ -1308,6 +1548,25 @@ const formatDate = (value) => {
     const year = date.getFullYear();
 
     return `${day}.${month}.${year}`;
+};
+
+const formatTime = (value) => {
+    if (!value) {
+        return '—';
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${hours}:${minutes}`;
 };
 
 const getRequestPreferredDate = (request) => {
@@ -1361,13 +1620,13 @@ const calendarOptionsWithReservationHighlight = computed(() => {
                 return;
             }
 
-            const similarPatients = getSimilarPatientsForRequest(appointmentRequest);
-
-            if (!similarPatients.length) {
+            if (!requiresPatientResolution(appointmentRequest)) {
                 originalEventReceive?.(receiveInfo);
 
                 return;
             }
+
+            const similarPatients = getSimilarPatientsForRequest(appointmentRequest);
 
             receiveInfo.revert();
 
@@ -1409,7 +1668,7 @@ onMounted(() => {
 
     if (requestSidebar.value) {
         requestDraggable = new Draggable(requestSidebar.value, {
-            itemSelector: '.appointment-request-card',
+            itemSelector: '.appointment-request-card--draggable',
             eventData: (eventElement) => {
                 const requestId = Number(eventElement.dataset.requestId);
 
@@ -1418,6 +1677,10 @@ onMounted(() => {
                 });
 
                 if (!appointmentRequest) {
+                    return null;
+                }
+
+                if (!isDraggableAppointmentRequest(appointmentRequest)) {
                     return null;
                 }
 
@@ -1594,66 +1857,216 @@ onBeforeUnmount(() => {
                                     v-if="pendingRequests.length"
                                     class="min-h-0 flex-1 overflow-y-auto pr-1"
                                 >
-                                    <div class="space-y-2">
-                                        <article
-                                            v-for="request in pendingRequests"
-                                            :key="request.id"
-                                            :data-request-id="request.id"
-                                            class="appointment-request-card cursor-grab rounded-md border border-soft bg-white p-3 text-left shadow-sm transition hover:border-accent active:cursor-grabbing"
-                                        >
-                                            <div class="flex items-start justify-between gap-3">
-                                                <div class="min-w-0">
-                                                    <div class="mb-2">
-                                                        <p class="truncate text-sm font-semibold text-dark">
-                                                            {{ request.patient_name }}
+                                    <div class="space-y-4">
+                                        <section v-if="appointmentRequests.length" class="space-y-2">
+                                            <div class="flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                                                <span>Požiadavky na termín</span>
+                                                <span>{{ appointmentRequests.length }}</span>
+                                            </div>
+
+                                            <article
+                                                v-for="request in appointmentRequests"
+                                                :key="request.id"
+                                                :data-request-id="request.id"
+                                                class="appointment-request-card rounded-md border border-soft bg-white p-3 text-left shadow-sm transition hover:border-accent"
+                                                :class="{
+                                                    'appointment-request-card--draggable cursor-grab active:cursor-grabbing': isDraggableAppointmentRequest(request),
+                                                }"
+                                            >
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <div class="mb-2">
+                                                            <p class="truncate text-sm font-semibold text-dark">
+                                                                {{ request.patient_name }}
+                                                            </p>
+
+                                                            <p
+                                                                v-if="request.is_for_someone_else && request.requester_name"
+                                                                class="mt-0.5 truncate text-xs text-accent"
+                                                            >
+                                                                Kontakt: {{ request.requester_name }}
+                                                            </p>
+
+                                                            <p class="mt-1 truncate text-xs font-semibold text-accent">
+                                                                {{ formatDate(getRequestPreferredDate(request)) }} · {{ getRequestPeriodLabel(request) }}
+                                                            </p>
+
+                                                            <p class="mt-0.5 text-xs font-semibold text-accent">
+                                                                {{ request.total_duration_minutes }} min
+                                                            </p>
+                                                        </div>
+
+                                                        <p
+                                                            v-if="getPendingRequestContactLabel(request)"
+                                                            class="truncate text-xs text-accent"
+                                                        >
+                                                            {{ getPendingRequestContactLabel(request) }}
                                                         </p>
 
-                                                        <p class="mt-1 truncate text-xs font-semibold text-accent">
-                                                            {{ formatDate(getRequestPreferredDate(request)) }} · {{ getRequestPeriodLabel(request) }}
+                                                        <p class="mt-1 truncate text-xs text-accent">
+                                                            {{ getRequestServicesLabel(request) }}
                                                         </p>
 
-                                                        <p class="mt-0.5 text-xs font-semibold text-accent">
-                                                            {{ request.total_duration_minutes }} min
-                                                        </p>
+                                                        <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-accent">
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">Požiadavka na termín</span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ request.email_verified_at ? 'Email overený' : 'Čaká na overenie emailu' }}
+                                                            </span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ request.matches?.length ? 'Nájdené zhody pacienta' : 'Bez zhôd pacienta' }}
+                                                            </span>
+                                                        </div>
                                                     </div>
 
-                                                    <p
-                                                        v-if="request.patient_phone || request.patient_email"
-                                                        class="truncate text-xs text-accent"
-                                                    >
-                                                        {{ request.patient_phone ?? request.patient_email }}
-                                                    </p>
+                                                    <div class="flex shrink-0 flex-col items-end gap-2">
+                                                        <span class="inline-flex rounded-md bg-soft px-2 py-0.5 text-xs text-accent">
+                                                            Požiadavka na termín
+                                                        </span>
 
-                                                    <p class="mt-1 truncate text-xs text-accent">
-                                                        {{ getRequestServicesLabel(request) }}
-                                                    </p>
+                                                        <button
+                                                            v-if="request.patient_id"
+                                                            type="button"
+                                                            class="rounded-md bg-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-white hover:text-dark"
+                                                            @mousedown.stop
+                                                            @click.stop="openAppointmentRequestConversionDialog(request, request.requested_starts_at || request.preferred_starts_at || null)"
+                                                        >
+                                                            Potvrdiť
+                                                        </button>
+                                                    </div>
                                                 </div>
 
-                                                <div class="flex shrink-0 flex-col items-end">
-                                                <span class="inline-flex rounded-md bg-soft px-2 py-0.5 text-xs text-accent">
-                                                    Žiadosť
-                                                </span>
-                                            </div>
-                                            </div>
-
-                                            <p
-                                                v-if="request.patient_note"
-                                                class="mt-3 rounded-md bg-soft p-2 text-xs leading-5 text-accent"
-                                            >
-                                                {{ request.patient_note }}
-                                            </p>
-
-                                            <div class="mt-3 flex justify-end border-t border-soft pt-3">
-                                                <button
-                                                    type="button"
-                                                    class="rounded-md bg-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-red-50 hover:text-red-700"
-                                                    @mousedown.stop
-                                                    @click.stop="openCancelAppointmentRequestDialog(request)"
+                                                <p
+                                                    v-if="request.patient_note"
+                                                    class="mt-3 rounded-md bg-soft p-2 text-xs leading-5 text-accent"
                                                 >
-                                                    Zrušiť žiadosť
-                                                </button>
+                                                    {{ request.patient_note }}
+                                                </p>
+
+                                                <div class="mt-3 flex flex-wrap justify-end gap-2 border-t border-soft pt-3">
+                                                    <button
+                                                        v-if="!request.patient_id"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="openAppointmentRequestConversionDialog(request, request.requested_starts_at || request.preferred_starts_at || null)"
+                                                    >
+                                                        Vyriešiť pacienta
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-md bg-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-red-50 hover:text-red-700"
+                                                        @mousedown.stop
+                                                        @click.stop="openCancelAppointmentRequestDialog(request)"
+                                                    >
+                                                        Zrušiť žiadosť
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        </section>
+
+                                        <section v-if="groupEventRequests.length" class="space-y-2">
+                                            <div class="flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                                                <span>Skupinové prihlášky</span>
+                                                <span>{{ groupEventRequests.length }}</span>
                                             </div>
-                                        </article>
+
+                                            <article
+                                                v-for="request in groupEventRequests"
+                                                :key="request.id"
+                                                class="group-event-request-card rounded-md border border-soft bg-white p-3 text-left shadow-sm transition hover:border-accent"
+                                            >
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <div class="mb-2">
+                                                            <p class="truncate text-sm font-semibold text-dark">
+                                                                {{ request.patient_name }}
+                                                            </p>
+
+                                                            <p
+                                                                v-if="request.is_for_someone_else && request.requester_name"
+                                                                class="mt-0.5 truncate text-xs text-accent"
+                                                            >
+                                                                Kontakt: {{ request.requester_name }}
+                                                            </p>
+
+                                                            <p class="mt-1 truncate text-xs font-semibold text-accent">
+                                                                {{ formatDate(request.group_event?.starts_at || request.requested_group_event_starts_at || request.requested_starts_at) }} · {{ formatTime(request.group_event?.starts_at || request.requested_group_event_starts_at || request.requested_starts_at) }}
+                                                            </p>
+
+                                                            <p class="mt-0.5 truncate text-xs text-accent">
+                                                                {{ request.group_event?.title || 'Skupinový termín' }}
+                                                            </p>
+                                                        </div>
+
+                                                        <p
+                                                            v-if="getPendingRequestContactLabel(request)"
+                                                            class="truncate text-xs text-accent"
+                                                        >
+                                                            {{ getPendingRequestContactLabel(request) }}
+                                                        </p>
+
+                                                        <p class="mt-1 truncate text-xs text-accent">
+                                                            {{ request.group_event?.branch_name || props.branch.name }} · Kapacita {{ request.group_event?.reserved_places ?? 0 }}/{{ request.group_event?.capacity ?? '—' }}
+                                                        </p>
+
+                                                        <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-accent">
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">Prihlásenie na skupinový termín</span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ request.email_verified_at ? 'Email overený' : 'Čaká na overenie emailu' }}
+                                                            </span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ request.matches?.length ? 'Nájdené zhody pacienta' : 'Bez zhôd pacienta' }}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="flex shrink-0 flex-col items-end gap-2">
+                                                        <span class="inline-flex rounded-md bg-soft px-2 py-0.5 text-xs text-accent">
+                                                            Prihlásenie na skupinový termín
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <p
+                                                    v-if="request.patient_note"
+                                                    class="mt-3 rounded-md bg-soft p-2 text-xs leading-5 text-accent"
+                                                >
+                                                    {{ request.patient_note }}
+                                                </p>
+
+                                                <div class="mt-3 flex flex-wrap justify-end gap-2 border-t border-soft pt-3">
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-soft disabled:text-accent"
+                                                        :disabled="Number(request.group_event?.reserved_places ?? 0) >= Number(request.group_event?.capacity ?? 0)"
+                                                        :title="Number(request.group_event?.reserved_places ?? 0) >= Number(request.group_event?.capacity ?? 0) ? 'Kapacita skupinového termínu je naplnená.' : ''"
+                                                        @mousedown.stop
+                                                        @click.stop="openGroupEventAddDialog(request, 'requested')"
+                                                    >
+                                                        Pridať do eventu
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-md bg-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-red-50 hover:text-red-700"
+                                                        @mousedown.stop
+                                                        @click.stop="openCancelAppointmentRequestDialog(request)"
+                                                    >
+                                                        Odmietnuť
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="openGroupEventAddDialog(request, 'different')"
+                                                    >
+                                                        Pridať do iného eventu
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        </section>
                                     </div>
                                 </div>
 
@@ -1929,9 +2342,9 @@ onBeforeUnmount(() => {
 
         <ConfirmDialog
             :show="requestConversionDialogVisible"
-            title="Podobný pacient už existuje"
+            :title="requestConversionDialogTitle"
             :message="requestConversionDialogMessage"
-            confirm-label="Pokračovať"
+            :confirm-label="requestConversionConfirmLabel"
             cancel-label="Zrušiť"
             confirm-severity="primary"
             @cancel="closeRequestConversionDialog"
@@ -1979,6 +2392,54 @@ onBeforeUnmount(() => {
                         </span>
                     </span>
                 </label>
+            </div>
+        </ConfirmDialog>
+
+        <ConfirmDialog
+            :show="groupEventPickerVisible"
+            title="Vybrať iný skupinový termín"
+            message="Vyberte cieľový skupinový termín pre túto požiadavku."
+            confirm-label="Pokračovať"
+            cancel-label="Zrušiť"
+            confirm-severity="primary"
+            @cancel="closeGroupEventPickerDialog"
+            @confirm="confirmGroupEventPicker"
+        >
+            <div class="mt-4 space-y-2">
+                <label
+                    v-for="option in groupEventPickerOptions"
+                    :key="option.id ?? option.event_id"
+                    class="flex cursor-pointer items-start gap-3 rounded-md border border-soft bg-white p-3 text-sm text-accent"
+                    :class="Number(option.id ?? option.event_id) === Number(selectedDifferentGroupEventId) ? 'border-accent' : ''"
+                >
+                    <input
+                        v-model="selectedDifferentGroupEventId"
+                        type="radio"
+                        :value="Number(option.id ?? option.event_id)"
+                        class="mt-1"
+                    >
+
+                    <span class="min-w-0">
+                        <span class="block truncate font-semibold text-dark">
+                            {{ option.title ?? option.group_title ?? option.service_name ?? 'Skupinový termín' }}
+                        </span>
+
+                        <span class="block text-xs text-accent">
+                            {{ formatDate(option.starts_at) }} · {{ formatTime(option.starts_at) }} – {{ formatTime(option.ends_at) }}
+                        </span>
+
+                        <span class="block text-xs text-accent">
+                            Kapacita {{ option.reserved_places ?? 0 }}/{{ option.capacity ?? '—' }}
+                        </span>
+                    </span>
+                </label>
+
+                <p
+                    v-if="!groupEventPickerOptions.length"
+                    class="rounded-md bg-soft p-3 text-sm text-accent"
+                >
+                    Nie sú k dispozícii žiadne skupinové termíny.
+                </p>
             </div>
         </ConfirmDialog>
     </AdminLayout>
