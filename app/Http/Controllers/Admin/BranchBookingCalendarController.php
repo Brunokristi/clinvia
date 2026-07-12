@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Events\BranchCalendarUpdated;
+use App\Enums\ContactChangeStatus;
+use App\Enums\PatientMatchStatus;
 use App\Models\AppointmentRequestAuditLog;
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentRequest;
@@ -17,6 +19,7 @@ use App\Modules\Calendar\Models\Event;
 use App\Modules\Calendar\Services\EventReadAdapterService;
 use App\Modules\Calendar\Services\RecurringImpactService;
 use App\Services\PatientMatchingService;
+use App\Services\PatientBirthNumberService;
 use App\Services\DisabledDayService;
 use App\Services\EmailNotificationService;
 use App\Services\PatientDirectoryService;
@@ -314,6 +317,9 @@ class BranchBookingCalendarController extends Controller
             ]);
         }
 
+        $this->ensureRequestCanBeAccepted($appointmentRequest);
+        $this->ensureRequestCanBeProcessedByPatientMatch($appointmentRequest);
+
         $validated = $request->validate([
             'starts_at' => ['required', 'date'],
             'notify_patient' => ['nullable', 'boolean'],
@@ -505,6 +511,7 @@ class BranchBookingCalendarController extends Controller
         }
 
         $this->ensureRequestCanBeAccepted($appointmentRequest);
+        $this->ensureRequestCanBeProcessedByPatientMatch($appointmentRequest);
 
         $validated = $request->validate([
             'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
@@ -595,6 +602,7 @@ class BranchBookingCalendarController extends Controller
         }
 
         $this->ensureRequestCanBeAccepted($appointmentRequest);
+        $this->ensureRequestCanBeProcessedByPatientMatch($appointmentRequest);
 
         $validated = $request->validate([
             'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
@@ -730,6 +738,233 @@ class BranchBookingCalendarController extends Controller
         return $this->cancelAppointmentRequest($request, $branch, $appointmentRequest, $emailNotificationService);
     }
 
+    public function resolvePatientMatch(
+        Request $request,
+        Branch $branch,
+        AppointmentRequest $appointmentRequest,
+        PatientDirectoryService $patientDirectoryService,
+        PatientBirthNumberService $birthNumberService,
+    ): RedirectResponse {
+        abort_if(! $request->user()->canAccessBranch($branch), 403);
+        abort_if((int) $appointmentRequest->branch_id !== (int) $branch->id, 404);
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:keep_existing_details,update_patient_details,use_submitted_for_request,manual_link_patient,create_patient_from_request,mark_conflict_reviewed'],
+            'patient_id' => ['nullable', 'integer', 'exists:patients,id'],
+            'note' => ['nullable', 'string', 'max:1000'],
+            'update_fields' => ['nullable', 'array'],
+            'update_fields.*' => ['string', 'in:email,phone'],
+        ]);
+
+        $action = (string) $validated['action'];
+
+        DB::transaction(function () use ($branch, $appointmentRequest, $validated, $action, $request, $patientDirectoryService, $birthNumberService): void {
+            $lockedRequest = AppointmentRequest::query()
+                ->where('branch_id', $branch->id)
+                ->whereKey($appointmentRequest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($action === 'keep_existing_details') {
+                $lockedRequest->forceFill([
+                    'contact_change_status' => ContactChangeStatus::Rejected->value,
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'patient_contact_kept_existing',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => null,
+                    'performed_by' => $request->user()?->id,
+                ]);
+
+                return;
+            }
+
+            if ($action === 'use_submitted_for_request') {
+                $lockedRequest->forceFill([
+                    'contact_change_status' => ContactChangeStatus::Rejected->value,
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'request_submitted_contact_preferred',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => null,
+                    'performed_by' => $request->user()?->id,
+                ]);
+
+                return;
+            }
+
+            if ($action === 'update_patient_details') {
+                if (! $lockedRequest->patient_id) {
+                    throw ValidationException::withMessages([
+                        'patient_id' => 'Požiadavka nie je priradená ku pacientovi.',
+                    ]);
+                }
+
+                $patient = Patient::query()
+                    ->where('branch_id', $branch->id)
+                    ->whereKey($lockedRequest->patient_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $fields = collect($validated['update_fields'] ?? ['email', 'phone'])
+                    ->filter(fn ($field) => in_array($field, ['email', 'phone'], true))
+                    ->values();
+
+                $before = $patient->only(['patient_email', 'patient_phone']);
+
+                if ($fields->contains('email') && filled($lockedRequest->patient_email)) {
+                    $patient->patient_email = $lockedRequest->patient_email;
+                }
+
+                if ($fields->contains('phone') && filled($lockedRequest->patient_phone)) {
+                    $patient->patient_phone = $lockedRequest->patient_phone;
+                }
+
+                $patient->last_used_at = now();
+                $patient->save();
+
+                $lockedRequest->forceFill([
+                    'contact_change_status' => ContactChangeStatus::Accepted->value,
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'patient_contact_updated_from_request',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => [
+                        'before' => $before,
+                        'after' => $patient->only(['patient_email', 'patient_phone']),
+                        'fields' => $fields->all(),
+                    ],
+                    'performed_by' => $request->user()?->id,
+                ]);
+
+                return;
+            }
+
+            if ($action === 'manual_link_patient') {
+                $patientId = (int) ($validated['patient_id'] ?? 0);
+
+                $patient = Patient::query()
+                    ->where('branch_id', $branch->id)
+                    ->whereKey($patientId)
+                    ->first();
+
+                if (! $patient) {
+                    throw ValidationException::withMessages([
+                        'patient_id' => 'Vybraný pacient nepatrí do tejto pobočky.',
+                    ]);
+                }
+
+                $lockedRequest->forceFill([
+                    'patient_id' => $patient->id,
+                    'possible_patient_id' => null,
+                    'patient_match_status' => PatientMatchStatus::ManuallyLinked->value,
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'patient_manually_linked',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => [
+                        'patient_id' => $patient->id,
+                    ],
+                    'performed_by' => $request->user()?->id,
+                ]);
+
+                return;
+            }
+
+            if ($action === 'create_patient_from_request') {
+                $normalizedBirthNumber = $birthNumberService->normalize($lockedRequest->patient_birth_number)
+                    ?? $birthNumberService->decrypt($lockedRequest->submitted_birth_number_encrypted);
+
+                if (! $birthNumberService->isValid($normalizedBirthNumber)) {
+                    throw ValidationException::withMessages([
+                        'appointment_request' => 'Rodné číslo nemá platný formát.',
+                    ]);
+                }
+
+                $patient = $patientDirectoryService->savePatient(
+                    branch: $branch,
+                    name: $lockedRequest->patient_name,
+                    email: $lockedRequest->patient_email,
+                    phone: $lockedRequest->patient_phone,
+                    birthNumber: $normalizedBirthNumber,
+                );
+
+                if (! $patient) {
+                    throw ValidationException::withMessages([
+                        'appointment_request' => 'Pacienta sa nepodarilo vytvoriť.',
+                    ]);
+                }
+
+                $lockedRequest->forceFill([
+                    'patient_id' => $patient->id,
+                    'possible_patient_id' => null,
+                    'patient_match_status' => PatientMatchStatus::ManuallyLinked->value,
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'patient_created_from_request',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => [
+                        'patient_id' => $patient->id,
+                    ],
+                    'performed_by' => $request->user()?->id,
+                ]);
+
+                return;
+            }
+
+            if ($action === 'mark_conflict_reviewed') {
+                $lockedRequest->forceFill([
+                    'patient_match_reviewed_at' => now(),
+                    'patient_match_reviewed_by' => $request->user()?->id,
+                    'patient_match_note' => $validated['note'] ?? null,
+                ])->save();
+
+                AppointmentRequestAuditLog::query()->create([
+                    'appointment_request_id' => $lockedRequest->id,
+                    'branch_id' => $branch->id,
+                    'action' => 'identity_conflict_reviewed',
+                    'reason' => $validated['note'] ?? null,
+                    'payload' => [
+                        'possible_patient_id' => $lockedRequest->possible_patient_id,
+                    ],
+                    'performed_by' => $request->user()?->id,
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Zhoda pacienta bola aktualizovaná.');
+    }
+
     public function manuallyVerifyAppointmentRequest(
         Request $request,
         Branch $branch,
@@ -763,6 +998,8 @@ class BranchBookingCalendarController extends Controller
 
     private function getPendingAppointmentRequests(Branch $branch)
     {
+        $birthNumberService = app(PatientBirthNumberService::class);
+
         return AppointmentRequest::query()
             ->where('branch_id', $branch->id)
             ->whereIn('status', [
@@ -771,7 +1008,7 @@ class BranchBookingCalendarController extends Controller
                 AppointmentRequest::STATUS_MANUALLY_VERIFIED,
                 AppointmentRequest::STATUS_EXPIRED,
             ])
-            ->with(['services', 'requestedService', 'requestedGroupEvent.groupDetail', 'requestedGroupEvent.branch'])
+            ->with(['services', 'requestedService', 'requestedGroupEvent.groupDetail', 'requestedGroupEvent.branch', 'possiblePatient', 'patientMatchReviewedByUser'])
             ->orderByRaw('preferred_date is null')
             ->orderBy('preferred_date')
             ->orderBy('created_at')
@@ -795,6 +1032,18 @@ class BranchBookingCalendarController extends Controller
                 'total_duration_minutes' => $appointmentRequest->total_duration_minutes,
                 'status' => $appointmentRequest->status,
                 'patient_id' => $appointmentRequest->patient_id,
+                'possible_patient_id' => $appointmentRequest->possible_patient_id,
+                'patient_match_status' => $appointmentRequest->patient_match_status instanceof PatientMatchStatus
+                    ? $appointmentRequest->patient_match_status->value
+                    : $appointmentRequest->patient_match_status,
+                'contact_change_status' => $appointmentRequest->contact_change_status instanceof ContactChangeStatus
+                    ? $appointmentRequest->contact_change_status->value
+                    : $appointmentRequest->contact_change_status,
+                'patient_data_differences' => $appointmentRequest->patient_data_differences,
+                'patient_match_reviewed_at' => $appointmentRequest->patient_match_reviewed_at?->toIso8601String(),
+                'patient_match_reviewed_by' => $appointmentRequest->patient_match_reviewed_by,
+                'patient_match_reviewed_by_name' => $appointmentRequest->patientMatchReviewedByUser?->full_name,
+                'patient_match_note' => $appointmentRequest->patient_match_note,
                 'email_verified_at' => $appointmentRequest->email_verified_at?->toIso8601String(),
                 'manually_verified_at' => $appointmentRequest->manually_verified_at?->toIso8601String(),
                 'manual_verification_reason' => $appointmentRequest->manual_verification_reason,
@@ -805,8 +1054,14 @@ class BranchBookingCalendarController extends Controller
                 'patient_name' => $appointmentRequest->patient_name,
                 'patient_email' => $appointmentRequest->patient_email,
                 'patient_phone' => $appointmentRequest->patient_phone,
-                'patient_birth_number' => $appointmentRequest->patient_birth_number,
+                'patient_birth_number' => $birthNumberService->mask($birthNumberService->normalize($appointmentRequest->patient_birth_number)),
                 'patient_note' => $appointmentRequest->patient_note,
+                'possible_patient' => $appointmentRequest->possiblePatient ? [
+                    'id' => $appointmentRequest->possiblePatient->id,
+                    'patient_name' => $appointmentRequest->possiblePatient->patient_name,
+                    'patient_email' => $appointmentRequest->possiblePatient->patient_email,
+                    'patient_phone' => $appointmentRequest->possiblePatient->patient_phone,
+                ] : null,
                 'accepted_booking_id' => $appointmentRequest->accepted_booking_id,
                 'accepted_group_event_id' => $appointmentRequest->accepted_group_event_id,
                 'accepted_group_event_participation_id' => $appointmentRequest->accepted_group_event_participation_id,
@@ -901,6 +1156,37 @@ class BranchBookingCalendarController extends Controller
         ], true)) {
             throw ValidationException::withMessages([
                 'appointment_request' => 'Túto požiadavku už nie je možné potvrdiť.',
+            ]);
+        }
+    }
+
+    private function ensureRequestCanBeProcessedByPatientMatch(AppointmentRequest $appointmentRequest): void
+    {
+        $matchStatus = $appointmentRequest->patient_match_status;
+
+        if ($matchStatus === null) {
+            return;
+        }
+
+        if ($matchStatus instanceof PatientMatchStatus) {
+            $status = $matchStatus;
+        } else {
+            $status = PatientMatchStatus::tryFrom((string) $matchStatus);
+        }
+
+        if ($status === null) {
+            return;
+        }
+
+        if ($status === PatientMatchStatus::IdentityConflict) {
+            throw ValidationException::withMessages([
+                'appointment_request' => 'Túto požiadavku je potrebné manuálne priradiť k pacientovi.',
+            ]);
+        }
+
+        if ($status === PatientMatchStatus::InvalidBirthNumber) {
+            throw ValidationException::withMessages([
+                'appointment_request' => 'Pred vytvorením rezervácie je potrebné vyriešiť zhodu pacienta.',
             ]);
         }
     }

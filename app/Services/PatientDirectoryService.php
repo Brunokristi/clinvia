@@ -4,11 +4,17 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\Patient;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 class PatientDirectoryService
 {
+    public function __construct(
+        private readonly PatientBirthNumberService $birthNumberService,
+    ) {
+    }
+
     public function savePatient(
         Branch $branch,
         ?string $name,
@@ -29,7 +35,7 @@ class PatientDirectoryService
 
         $normalizedEmail = $this->normalizeEmail($email);
         $normalizedPhone = $this->normalizePhone($phone);
-        $normalizedBirthNumber = $this->normalizeBirthNumber($birthNumber);
+        $normalizedBirthNumber = $this->birthNumberService->normalize($birthNumber);
 
         $patient = $this->findExistingPatient(
             $branch,
@@ -50,12 +56,32 @@ class PatientDirectoryService
             $patient->patient_phone = $normalizedPhone;
         }
 
-        if (filled($normalizedBirthNumber)) {
+        if (filled($normalizedBirthNumber) && $this->birthNumberService->isValid($normalizedBirthNumber)) {
             $patient->patient_birth_number = $normalizedBirthNumber;
         }
 
         $patient->last_used_at = now();
-        $patient->save();
+
+        try {
+            $patient->save();
+        } catch (QueryException $exception) {
+            if (! $this->isBirthNumberHashUniqueViolation($exception) || ! filled($normalizedBirthNumber)) {
+                throw $exception;
+            }
+
+            $existingByHash = Patient::query()
+                ->where('birth_number_hash', $this->birthNumberService->hash($normalizedBirthNumber))
+                ->first();
+
+            if (! $existingByHash) {
+                throw $exception;
+            }
+
+            $existingByHash->last_used_at = now();
+            $existingByHash->save();
+
+            return $existingByHash;
+        }
 
         return $patient;
     }
@@ -72,6 +98,17 @@ class PatientDirectoryService
             ->orderByDesc('id')
             ->limit($limit)
             ->get(['id', 'patient_name', 'patient_email', 'patient_phone', 'patient_birth_number'])
+            ->map(function (Patient $patient): array {
+                $normalizedBirthNumber = $this->birthNumberService->normalize($patient->patient_birth_number);
+
+                return [
+                    'id' => $patient->id,
+                    'patient_name' => $patient->patient_name,
+                    'patient_email' => $patient->patient_email,
+                    'patient_phone' => $patient->patient_phone,
+                    'patient_birth_number' => $this->birthNumberService->mask($normalizedBirthNumber),
+                ];
+            })
             ->values();
     }
 
@@ -82,10 +119,11 @@ class PatientDirectoryService
         ?string $phone,
         ?string $birthNumber,
     ): ?Patient {
-        if (filled($birthNumber)) {
+        if (filled($birthNumber) && $this->birthNumberService->isValid($birthNumber)) {
+            $hash = $this->birthNumberService->hash($birthNumber);
+
             $byBirthNumber = Patient::query()
-                ->where('branch_id', $branch->id)
-                ->where('patient_birth_number', $birthNumber)
+                ->where('birth_number_hash', $hash)
                 ->first();
 
             if ($byBirthNumber) {
@@ -140,8 +178,11 @@ class PatientDirectoryService
         return $this->normalizeValue($phone);
     }
 
-    private function normalizeBirthNumber(?string $birthNumber): ?string
+    private function isBirthNumberHashUniqueViolation(QueryException $exception): bool
     {
-        return $this->normalizeValue($birthNumber);
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'patients_birth_number_hash_unique')
+            || str_contains($message, 'birth_number_hash');
     }
 }

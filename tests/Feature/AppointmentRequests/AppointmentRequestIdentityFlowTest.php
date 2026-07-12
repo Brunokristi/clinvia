@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AppointmentRequests;
 
+use App\Enums\PatientMatchStatus;
 use App\Models\AppointmentRequest;
 use App\Models\AppointmentRequestAuditLog;
 use App\Models\Branch;
@@ -41,6 +42,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Anon User',
             'patient_email' => 'anon@example.com',
             'patient_phone' => '0900123123',
+            'patient_birth_number' => '530101123',
             'privacy_consent' => '1',
         ]);
 
@@ -216,6 +218,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'requester_email' => 'canonical.self@example.com',
             'requester_phone' => '0900 111 222',
             'patient_name' => 'Canonical Self',
+            'patient_birth_number' => '530101123',
             'consent' => '1',
             'note' => 'Need morning slot',
         ])->assertRedirect();
@@ -248,6 +251,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'requester_email' => 'not-an-email',
             'requester_phone' => '',
             'patient_name' => '',
+            'patient_birth_number' => '530101123',
             'consent' => '',
         ]);
 
@@ -269,6 +273,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'requester_email' => 'canonical.self@example.com',
             'requester_phone' => '0900 111 222',
             'patient_name' => 'Canonical Self',
+            'patient_birth_number' => '530101123',
             'consent' => '',
         ]);
 
@@ -287,6 +292,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'requester_email' => 'canonical.self@example.com',
             'requester_phone' => '0900 111 222',
             'patient_name' => 'Canonical Self',
+            'patient_birth_number' => '530101123',
             'consent' => '1',
         ]);
 
@@ -608,6 +614,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Verified Patient',
             'patient_email' => 'verified@example.com',
             'patient_phone' => '0900888777',
+            'patient_birth_number' => '530201123',
             'privacy_consent' => '1',
         ])->assertRedirect();
 
@@ -655,6 +662,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Verified Multi',
             'patient_email' => 'multi@example.com',
             'patient_phone' => '0900111222',
+            'patient_birth_number' => '530301123',
             'privacy_consent' => '1',
         ]);
 
@@ -687,6 +695,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Anonymous Force',
             'patient_email' => 'anonymous.force@example.com',
             'patient_phone' => '0900999888',
+            'patient_birth_number' => '530401123',
             'privacy_consent' => '1',
         ]);
 
@@ -725,6 +734,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Mismatch Patient',
             'patient_email' => 'different@example.com',
             'patient_phone' => '0900555666',
+            'patient_birth_number' => '530501123',
             'privacy_consent' => '1',
         ]);
 
@@ -766,6 +776,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Known Patient',
             'patient_email' => 'known@example.com',
             'patient_phone' => '0900222111',
+            'patient_birth_number' => '530601123',
             'privacy_consent' => '1',
         ]);
 
@@ -866,6 +877,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_name' => 'Forced Patient',
             'patient_email' => 'forced@example.com',
             'patient_phone' => '0900111222',
+            'patient_birth_number' => '530701123',
             'privacy_consent' => '1',
         ]);
 
@@ -943,6 +955,159 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'patient_id' => $patient->id,
             'source_request_id' => $request->id,
         ]);
+    }
+
+    public function test_public_request_with_exact_birth_number_match_attaches_patient_id_and_matched_status(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Public Match',
+            'patient_email' => 'public.match@example.com',
+            'patient_phone' => '+421900333444',
+            'patient_birth_number' => '531001123',
+        ]);
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'service_ids' => [$service->id],
+            'preferred_date' => '2026-07-21',
+            'patient_name' => 'Public Match',
+            'patient_email' => 'public.match@example.com',
+            'patient_phone' => '0900 333 444',
+            'patient_birth_number' => '531001123',
+            'privacy_consent' => '1',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertSame($patient->id, $request->patient_id);
+        $this->assertSame(PatientMatchStatus::Matched->value, $request->patient_match_status->value);
+    }
+
+    public function test_public_request_with_contact_differences_stores_difference_snapshot(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Public Diff',
+            'patient_email' => 'old.diff@example.com',
+            'patient_phone' => '+421900555444',
+            'patient_birth_number' => '531101123',
+        ]);
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'service_ids' => [$service->id],
+            'preferred_date' => '2026-07-21',
+            'patient_name' => 'Public Diff',
+            'patient_email' => 'new.diff@example.com',
+            'patient_phone' => '0900 666 777',
+            'patient_birth_number' => '531101123',
+            'privacy_consent' => '1',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertSame($patient->id, $request->patient_id);
+        $this->assertSame(PatientMatchStatus::MatchedWithDifferences->value, $request->patient_match_status->value);
+        $this->assertIsArray($request->patient_data_differences);
+        $this->assertArrayHasKey('email', $request->patient_data_differences);
+        $this->assertArrayHasKey('phone', $request->patient_data_differences);
+    }
+
+    public function test_public_request_identity_conflict_blocks_admin_booking_conversion(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+
+        Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Other Name',
+            'patient_email' => 'other.name@example.com',
+            'patient_phone' => '+421900111333',
+            'patient_birth_number' => '531201123',
+        ]);
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'service_ids' => [$service->id],
+            'preferred_date' => '2026-07-21',
+            'patient_name' => 'Different Person',
+            'patient_email' => 'different.person@example.com',
+            'patient_phone' => '0900 777 888',
+            'patient_birth_number' => '531201123',
+            'privacy_consent' => '1',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $request->forceFill([
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+        ])->save();
+
+        $this->actingAs($admin)->post(route('branches.booking.appointment-requests.convert', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'starts_at' => '2026-07-22 10:00:00',
+            'force_create_patient' => true,
+        ])->assertSessionHasErrors('appointment_request');
+    }
+
+    public function test_public_request_without_existing_birth_number_stays_new_patient_and_keeps_snapshot(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'request_type' => 'general',
+            'service_ids' => [$service->id],
+            'preferred_date' => '2026-07-21',
+            'patient_name' => 'Brand New',
+            'patient_email' => 'brand.new@example.com',
+            'patient_phone' => '0900 111 999',
+            'patient_birth_number' => '530901123',
+            'privacy_consent' => '1',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertNull($request->patient_id);
+        $this->assertSame(PatientMatchStatus::NewPatient->value, $request->patient_match_status->value);
+        $this->assertNotNull($request->submitted_birth_number_hash);
+        $this->assertNotNull($request->submitted_birth_number_encrypted);
+    }
+
+    public function test_group_event_public_request_uses_same_birth_number_matching_logic(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+        $capacityWindow = $this->createGroupCapacityWindow($branch, $service);
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Group Match',
+            'patient_email' => 'group.match@example.com',
+            'patient_phone' => '+421900888777',
+            'patient_birth_number' => '531201123',
+        ]);
+
+        $this->post(route('public.branch.booking.store', ['branch' => $branch->slug]), [
+            'service_ids' => [$service->id],
+            'capacity_window_id' => $capacityWindow->id,
+            'patient_name' => 'Group Match',
+            'patient_email' => 'group.match@example.com',
+            'patient_phone' => '0900 888 777',
+            'patient_birth_number' => '531201123',
+            'privacy_consent' => '1',
+        ])->assertRedirect();
+
+        $request = AppointmentRequest::query()->latest('id')->firstOrFail();
+
+        $this->assertSame($patient->id, $request->patient_id);
+        $this->assertSame(PatientMatchStatus::Matched->value, $request->patient_match_status->value);
+        $this->assertSame('group_event_request', $request->request_type);
     }
 
     public function test_appointment_request_cannot_be_added_to_group_event_endpoint(): void
@@ -1043,6 +1208,128 @@ class AppointmentRequestIdentityFlowTest extends TestCase
         $this->assertDatabaseMissing('booking_event_details', [
             'source_request_id' => $request->id,
         ]);
+    }
+
+    public function test_staff_can_keep_existing_patient_details_for_difference_review(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'patient_match_status' => PatientMatchStatus::MatchedWithDifferences->value,
+            'contact_change_status' => 'detected',
+            'patient_data_differences' => ['email' => ['stored' => 'old@example.com', 'submitted' => 'new@example.com']],
+        ], $service);
+
+        $this->actingAs($admin)->post(route('branches.booking.requests.patient-match.resolve', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'action' => 'keep_existing_details',
+            'note' => 'keep existing',
+        ])->assertRedirect();
+
+        $request->refresh();
+
+        $this->assertSame('rejected', $request->contact_change_status->value);
+        $this->assertNotNull($request->patient_match_reviewed_at);
+    }
+
+    public function test_staff_can_update_patient_contact_from_request_snapshot(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Update Snapshot',
+            'patient_email' => 'old@example.com',
+            'patient_phone' => '+421900000111',
+        ]);
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'patient_id' => $patient->id,
+            'patient_email' => 'new@example.com',
+            'patient_phone' => '+421900000222',
+            'patient_match_status' => PatientMatchStatus::MatchedWithDifferences->value,
+            'contact_change_status' => 'detected',
+        ], $service);
+
+        $this->actingAs($admin)->post(route('branches.booking.requests.patient-match.resolve', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'action' => 'update_patient_details',
+            'update_fields' => ['email', 'phone'],
+        ])->assertRedirect();
+
+        $patient->refresh();
+        $request->refresh();
+
+        $this->assertSame('new@example.com', $patient->patient_email);
+        $this->assertSame('+421900000222', $patient->patient_phone);
+        $this->assertSame('accepted', $request->contact_change_status->value);
+    }
+
+    public function test_staff_can_manually_link_conflicted_request_to_existing_patient(): void
+    {
+        ['branch' => $branch, 'service' => $service, 'admin' => $admin] = $this->createPublicFixture();
+
+        $patient = Patient::query()->create([
+            'branch_id' => $branch->id,
+            'patient_name' => 'Manual Link',
+            'patient_email' => 'manual.link@example.com',
+        ]);
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'patient_match_status' => PatientMatchStatus::IdentityConflict->value,
+        ], $service);
+
+        $this->actingAs($admin)->post(route('branches.booking.requests.patient-match.resolve', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'action' => 'manual_link_patient',
+            'patient_id' => $patient->id,
+        ])->assertRedirect();
+
+        $request->refresh();
+
+        $this->assertSame($patient->id, $request->patient_id);
+        $this->assertSame(PatientMatchStatus::ManuallyLinked->value, $request->patient_match_status->value);
+    }
+
+    public function test_unauthorized_user_cannot_resolve_patient_match(): void
+    {
+        ['branch' => $branch, 'service' => $service] = $this->createPublicFixture();
+
+        $this->withoutMiddleware(\App\Http\Middleware\HandleInertiaRequests::class);
+
+        $request = $this->createAppointmentRequest($branch, [
+            'status' => AppointmentRequest::STATUS_PENDING_ADMIN_REVIEW,
+            'email_verified_at' => now(),
+            'patient_match_status' => PatientMatchStatus::IdentityConflict->value,
+        ], $service);
+
+        $outsider = User::query()->create([
+            'first_name' => 'Out',
+            'last_name' => 'Sider',
+            'email' => 'outsider-' . Str::random(8) . '@example.com',
+            'password' => 'password',
+            'global_role' => 'viewer',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($outsider)->post(route('branches.booking.requests.patient-match.resolve', [
+            'branch' => $branch,
+            'appointmentRequest' => $request,
+        ]), [
+            'action' => 'mark_conflict_reviewed',
+        ])->assertForbidden();
     }
 
     public function test_patient_receives_booking_confirmation_after_acceptance(): void
@@ -1274,6 +1561,7 @@ class AppointmentRequestIdentityFlowTest extends TestCase
             'last_name' => 'Patient',
             'patient_email' => 'public.patient@example.com',
             'patient_phone' => '0900 111 222',
+            'patient_birth_number' => '530101123',
             'patient_note' => 'Need afternoon slot',
             'privacy_consent' => '1',
         ];

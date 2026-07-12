@@ -535,10 +535,6 @@ const normalizePhoneValue = (value) => {
     return String(value ?? '').replace(/\s+/g, '').trim();
 };
 
-const normalizeBirthNumberValue = (value) => {
-    return String(value ?? '').trim();
-};
-
 const toLocalDateTimeString = (value) => {
     const date = value instanceof Date
         ? value
@@ -558,13 +554,8 @@ const toLocalDateTimeString = (value) => {
 };
 
 const getPatientMatchReason = (appointmentRequest, patient) => {
-    const requestBirthNumber = normalizeBirthNumberValue(appointmentRequest?.patient_birth_number);
     const requestEmail = normalizeSearchValue(appointmentRequest?.patient_email);
     const requestPhone = normalizePhoneValue(appointmentRequest?.patient_phone);
-
-    if (requestBirthNumber && requestBirthNumber === normalizeBirthNumberValue(patient?.patient_birth_number)) {
-        return 'Zhoda rodného čísla';
-    }
 
     if (requestEmail && requestEmail === normalizeSearchValue(patient?.patient_email)) {
         return 'Zhoda emailu';
@@ -587,6 +578,82 @@ const isDraggableAppointmentRequest = (request) => {
 
 const requiresPatientResolution = (request) => {
     return !Number(request?.patient_id ?? 0);
+};
+
+const getPatientMatchStatus = (request) => {
+    return request?.patient_match_status ?? 'pending';
+};
+
+const getPatientMatchStatusLabel = (request) => {
+    const status = getPatientMatchStatus(request);
+
+    if (status === 'matched') {
+        return 'Patient matched';
+    }
+
+    if (status === 'matched_with_differences') {
+        return 'Patient matched, submitted data differs';
+    }
+
+    if (status === 'new_patient') {
+        return 'New patient';
+    }
+
+    if (status === 'identity_conflict') {
+        return 'Identity conflict';
+    }
+
+    if (status === 'manually_linked') {
+        return 'Manually linked';
+    }
+
+    if (status === 'invalid_birth_number') {
+        return 'Invalid data';
+    }
+
+    return 'Pending';
+};
+
+const isIdentityConflict = (request) => {
+    return getPatientMatchStatus(request) === 'identity_conflict';
+};
+
+const hasDetectedContactDifferences = (request) => {
+    return getPatientMatchStatus(request) === 'matched_with_differences'
+        && request?.contact_change_status === 'detected'
+        && Boolean(request?.patient_data_differences);
+};
+
+const formatDifferenceValue = (value) => {
+    return String(value ?? '').trim() || 'Neuvedené';
+};
+
+const resolveRequestPatientMatch = (request, action, payload = {}, successMessage = 'Zhoda pacienta bola aktualizovaná.') => {
+    if (!request?.id) {
+        return;
+    }
+
+    router.post(route('branches.booking.requests.patient-match.resolve', [
+        props.branch.id,
+        request.id,
+    ]), {
+        action,
+        ...payload,
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            feedback.success(successMessage);
+            reloadCalendarData();
+        },
+        onError: (errors) => {
+            feedback.error(errors, 'Zhodu pacienta sa nepodarilo aktualizovať.');
+        },
+    });
+};
+
+const openManualLinkDialog = (request) => {
+    openRequestPatientResolution(request, null, 'manual_link_only');
 };
 
 const getSimilarPatientsForRequest = (appointmentRequest) => {
@@ -642,6 +709,10 @@ const requestConversionDialogMessage = computed(() => {
         return '';
     }
 
+    if (pendingRequestConversion.value.actionKind === 'manual_link_only') {
+        return 'Vyberte existujúceho pacienta, ku ktorému chcete túto požiadavku manuálne priradiť.';
+    }
+
     const actionLabel = pendingRequestConversion.value.actionKind === 'group_add_requested'
         ? 'požiadavka na skupinový termín'
         : (pendingRequestConversion.value.actionKind === 'group_add_different' ? 'požiadavka na iný skupinový termín' : 'požiadavka na termín');
@@ -654,10 +725,18 @@ const requestConversionDialogMessage = computed(() => {
 });
 
 const requestConversionDialogTitle = computed(() => {
+    if (pendingRequestConversion.value?.actionKind === 'manual_link_only') {
+        return 'Manuálne priradiť pacienta';
+    }
+
     return 'Priradiť pacienta';
 });
 
 const requestConversionConfirmLabel = computed(() => {
+    if (pendingRequestConversion.value?.actionKind === 'manual_link_only') {
+        return 'Priradiť pacienta';
+    }
+
     if (selectedPatientCandidate.value) {
         return 'Priradiť a potvrdiť';
     }
@@ -811,6 +890,20 @@ const submitRequestConversion = ({ appointmentRequestId, startsAt, selectedPatie
                 reloadCalendarData();
             },
         });
+
+        return;
+    }
+
+    if (actionKind === 'manual_link_only') {
+        if (!selectedPatient) {
+            feedback.error({}, 'Vyberte existujúceho pacienta.');
+            return;
+        }
+
+        resolveRequestPatientMatch(pending ?? { id: appointmentRequestId }, 'manual_link_patient', {
+            patient_id: selectedPatient.id ?? selectedPatient.patient_id,
+        }, 'Požiadavka bola manuálne priradená k pacientovi.');
+        closeRequestConversionDialog();
 
         return;
     }
@@ -1910,6 +2003,9 @@ onBeforeUnmount(() => {
                                                         <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-accent">
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">Požiadavka na termín</span>
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ getPatientMatchStatusLabel(request) }}
+                                                            </span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
                                                                 {{ request.email_verified_at ? 'Email overený' : 'Čaká na overenie emailu' }}
                                                             </span>
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
@@ -1942,7 +2038,80 @@ onBeforeUnmount(() => {
                                                     {{ request.patient_note }}
                                                 </p>
 
+                                                <div
+                                                    v-if="hasDetectedContactDifferences(request)"
+                                                    class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-accent"
+                                                >
+                                                    <p class="font-semibold">Rozdiely v kontaktných údajoch</p>
+                                                    <p v-if="request.patient_data_differences?.email" class="mt-1">
+                                                        Email: {{ formatDifferenceValue(request.patient_data_differences.email.stored) }} -> {{ formatDifferenceValue(request.patient_data_differences.email.submitted) }}
+                                                    </p>
+                                                    <p v-if="request.patient_data_differences?.phone" class="mt-1">
+                                                        Telefón: {{ formatDifferenceValue(request.patient_data_differences.phone.stored) }} -> {{ formatDifferenceValue(request.patient_data_differences.phone.submitted) }}
+                                                    </p>
+                                                </div>
+
                                                 <div class="mt-3 flex flex-wrap justify-end gap-2 border-t border-soft pt-3">
+                                                    <button
+                                                        v-if="hasDetectedContactDifferences(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'keep_existing_details', {}, 'Zachované sú aktuálne kontaktné údaje pacienta.')"
+                                                    >
+                                                        Ponechať existujúce údaje
+                                                    </button>
+
+                                                    <button
+                                                        v-if="hasDetectedContactDifferences(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'update_patient_details', { update_fields: ['email', 'phone'] }, 'Kontaktné údaje pacienta boli aktualizované.')"
+                                                    >
+                                                        Aktualizovať pacienta
+                                                    </button>
+
+                                                    <button
+                                                        v-if="hasDetectedContactDifferences(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'use_submitted_for_request', {}, 'Kontaktné údaje ostávajú iba na tejto požiadavke.')"
+                                                    >
+                                                        Použiť len pre požiadavku
+                                                    </button>
+
+                                                    <button
+                                                        v-if="isIdentityConflict(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="openManualLinkDialog(request)"
+                                                    >
+                                                        Priradiť iného pacienta
+                                                    </button>
+
+                                                    <button
+                                                        v-if="isIdentityConflict(request) || getPatientMatchStatus(request) === 'new_patient'"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'create_patient_from_request', {}, 'Z požiadavky bol vytvorený nový pacient.')"
+                                                    >
+                                                        Vytvoriť nového pacienta
+                                                    </button>
+
+                                                    <button
+                                                        v-if="isIdentityConflict(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'mark_conflict_reviewed', {}, 'Konflikt identity bol označený ako skontrolovaný.')"
+                                                    >
+                                                        Označiť konflikt ako skontrolovaný
+                                                    </button>
+
                                                     <button
                                                         v-if="!request.patient_id"
                                                         type="button"
@@ -2013,6 +2182,9 @@ onBeforeUnmount(() => {
                                                         <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-accent">
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">Prihlásenie na skupinový termín</span>
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
+                                                                {{ getPatientMatchStatusLabel(request) }}
+                                                            </span>
+                                                            <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
                                                                 {{ request.email_verified_at ? 'Email overený' : 'Čaká na overenie emailu' }}
                                                             </span>
                                                             <span class="inline-flex rounded-md bg-soft px-2 py-0.5">
@@ -2036,6 +2208,36 @@ onBeforeUnmount(() => {
                                                 </p>
 
                                                 <div class="mt-3 flex flex-wrap justify-end gap-2 border-t border-soft pt-3">
+                                                    <button
+                                                        v-if="isIdentityConflict(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="openManualLinkDialog(request)"
+                                                    >
+                                                        Priradiť iného pacienta
+                                                    </button>
+
+                                                    <button
+                                                        v-if="isIdentityConflict(request) || getPatientMatchStatus(request) === 'new_patient'"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'create_patient_from_request', {}, 'Z požiadavky bol vytvorený nový pacient.')"
+                                                    >
+                                                        Vytvoriť nového pacienta
+                                                    </button>
+
+                                                    <button
+                                                        v-if="isIdentityConflict(request)"
+                                                        type="button"
+                                                        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/5"
+                                                        @mousedown.stop
+                                                        @click.stop="resolveRequestPatientMatch(request, 'mark_conflict_reviewed', {}, 'Konflikt identity bol označený ako skontrolovaný.')"
+                                                    >
+                                                        Označiť konflikt ako skontrolovaný
+                                                    </button>
+
                                                     <button
                                                         type="button"
                                                         class="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-soft disabled:text-accent"
@@ -2351,7 +2553,10 @@ onBeforeUnmount(() => {
             @confirm="confirmRequestConversion"
         >
             <div class="mt-4 space-y-2">
-                <label class="flex cursor-pointer items-start gap-3 rounded-md border border-soft bg-soft p-3 text-sm text-accent">
+                <label
+                    v-if="pendingRequestConversion?.actionKind !== 'manual_link_only'"
+                    class="flex cursor-pointer items-start gap-3 rounded-md border border-soft bg-soft p-3 text-sm text-accent"
+                >
                     <input
                         v-model="selectedPatientCandidateKey"
                         type="radio"

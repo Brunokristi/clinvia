@@ -313,6 +313,11 @@ Route::middleware(['auth', 'active'])->group(function () {
                     'rejectRequest',
                 ])->name('booking.requests.reject');
 
+                Route::post('/booking/requests/{appointmentRequest}/patient-match/resolve', [
+                    BranchBookingCalendarController::class,
+                    'resolvePatientMatch',
+                ])->name('booking.requests.patient-match.resolve');
+
                 Route::post('/booking/appointment-requests/{appointmentRequest}/manual-verify', [
                     BranchBookingCalendarController::class,
                     'manuallyVerifyAppointmentRequest',

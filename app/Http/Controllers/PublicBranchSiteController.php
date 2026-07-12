@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Events\BranchCalendarUpdated;
+use App\Enums\ContactChangeStatus;
+use App\Enums\PatientMatchStatus;
 use App\Models\AppointmentRequest;
 use App\Models\Branch;
 use App\Models\Patient;
@@ -15,7 +17,9 @@ use App\Services\BookingAvailabilityService;
 use App\Services\AppointmentRequestVerificationService;
 use App\Services\BranchInboxMessageService;
 use App\Services\EmailNotificationService;
+use App\Services\PatientBirthNumberService;
 use App\Services\PatientMatchingService;
+use App\Rules\ValidSlovakBirthNumber;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -230,6 +234,7 @@ class PublicBranchSiteController extends Controller
         BranchInboxMessageService $inboxMessageService,
         EmailNotificationService $emailNotificationService,
         PatientMatchingService $patientMatchingService,
+        PatientBirthNumberService $birthNumberService,
     ): RedirectResponse {
         $this->ensurePublicSiteIsEnabled($branch);
         $this->ensureBranchBookingIsEnabled($branch);
@@ -268,7 +273,7 @@ class PublicBranchSiteController extends Controller
             'patient_phone' => ['nullable', 'string', 'max:255'],
             'date_of_birth' => ['nullable', 'date'],
             'patient_date_of_birth' => ['nullable', 'date'],
-            'patient_birth_number' => ['nullable', 'string', 'max:255'],
+            'patient_birth_number' => ['required', 'string', 'max:255', new ValidSlovakBirthNumber(required: true)],
             'patient_note' => ['nullable', 'string', 'max:2000'],
             'note' => ['nullable', 'string', 'max:2000'],
             'message' => ['nullable', 'string', 'max:2000'],
@@ -317,6 +322,7 @@ class PublicBranchSiteController extends Controller
         $validated['patient_phone'] = $patientMatchingService->normalizePhone($validated['patient_phone'] ?? null);
         $validated['requester_email'] = $patientMatchingService->normalizeEmail($validated['requester_email'] ?? null);
         $validated['requester_phone'] = $patientMatchingService->normalizePhone($validated['requester_phone'] ?? null);
+        $validated['patient_birth_number'] = $birthNumberService->normalize($validated['patient_birth_number'] ?? null);
 
         if (! filled($validated['patient_name'] ?? null)) {
             $validated['patient_name'] = trim(($validated['first_name'] ?? '') . ' ' . ($validated['last_name'] ?? ''));
@@ -371,6 +377,8 @@ class PublicBranchSiteController extends Controller
             inboxMessageService: $inboxMessageService,
             emailNotificationService: $emailNotificationService,
             verificationService: app(AppointmentRequestVerificationService::class),
+            patientMatchingService: $patientMatchingService,
+            birthNumberService: $birthNumberService,
         );
     }
 
@@ -1323,6 +1331,8 @@ class PublicBranchSiteController extends Controller
         BranchInboxMessageService $inboxMessageService,
         EmailNotificationService $emailNotificationService,
         AppointmentRequestVerificationService $verificationService,
+        PatientMatchingService $patientMatchingService,
+        PatientBirthNumberService $birthNumberService,
     ): RedirectResponse {
         $serviceIds = collect($validated['service_ids'])
             ->map(fn ($id) => (int) $id)
@@ -1404,6 +1414,17 @@ class PublicBranchSiteController extends Controller
             ? Carbon::parse($validated['requested_ends_at'])
             : ($requestedStartsAt ? $requestedStartsAt->copy()->addMinutes(max(15, $totalDurationMinutes)) : null);
 
+        $match = $patientMatchingService->matchPublicRequestPayload($branch, $validated);
+
+        if (($match['patient_match_status'] ?? null) instanceof PatientMatchStatus
+            && $match['patient_match_status'] === PatientMatchStatus::InvalidBirthNumber) {
+            throw ValidationException::withMessages([
+                'patient_birth_number' => 'Rodné číslo nemá platný formát.',
+            ]);
+        }
+
+        $normalizedBirthNumber = $birthNumberService->normalize($validated['patient_birth_number'] ?? null);
+
         $appointmentRequest = DB::transaction(function () use (
             $branch,
             $validated,
@@ -1414,6 +1435,9 @@ class PublicBranchSiteController extends Controller
             $preferredPeriod,
             $requestedStartsAt,
             $requestedEndsAt,
+            $match,
+            $normalizedBirthNumber,
+            $birthNumberService,
         ): AppointmentRequest {
             $appointmentRequest = AppointmentRequest::create([
                 'branch_id' => $branch->id,
@@ -1442,12 +1466,19 @@ class PublicBranchSiteController extends Controller
                 'normalized_email' => $validated['requester_email'] ?? ($validated['patient_email'] ?? null),
                 'patient_phone' => $validated['patient_phone'] ?? null,
                 'normalized_phone' => $validated['patient_phone'] ?? null,
-                'patient_birth_number' => $validated['patient_birth_number'] ?? null,
+                'patient_birth_number' => $normalizedBirthNumber,
+                'submitted_birth_number_encrypted' => $normalizedBirthNumber,
+                'submitted_birth_number_hash' => $birthNumberService->hash($normalizedBirthNumber),
                 'date_of_birth' => $validated['date_of_birth'] ?? null,
                 'patient_note' => $validated['patient_note'] ?? ($validated['message'] ?? null),
                 'privacy_consent_accepted_at' => now(),
                 'status' => AppointmentRequest::STATUS_PENDING_EMAIL_VERIFICATION,
                 'request_type' => $requestType,
+                'patient_id' => $match['patient_id'] ?? null,
+                'possible_patient_id' => $match['possible_patient_id'] ?? null,
+                'patient_match_status' => ($match['patient_match_status'] ?? PatientMatchStatus::Pending)->value,
+                'contact_change_status' => ($match['contact_change_status'] ?? ContactChangeStatus::None)->value,
+                'patient_data_differences' => $match['differences'] ?? null,
             ]);
 
             foreach ($services as $service) {

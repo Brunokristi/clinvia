@@ -1,7 +1,10 @@
 <script setup>
+import BirthNumberInput from '@/Components/Forms/BirthNumberInput.vue';
+import PhoneNumberInput from '@/Components/Forms/PhoneInput.vue';
 import PublicBranchLayout from '@/Layouts/PublicBranchLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
 import DatePicker from 'primevue/datepicker';
 import InputText from 'primevue/inputtext';
 import MultiSelect from 'primevue/multiselect';
@@ -79,6 +82,11 @@ const submittedRequestSummary = ref(null);
 const dateValue = ref(null);
 const selectedServiceIds = ref([...props.selectedServiceIds]);
 const availabilityPanel = ref('exact_slot');
+
+const requesterPhoneValue = ref('');
+const requesterPhoneCountryCode = ref('SK');
+const patientPhoneValue = ref('');
+const patientPhoneCountryCode = ref('SK');
 
 const visibleAvailabilityLimit = ref(5);
 const availabilityBatchSize = 5;
@@ -717,6 +725,11 @@ const resetBookingFlow = () => {
     dateValue.value = null;
     clearAvailabilitySelection();
 
+    requesterPhoneValue.value = '';
+    requesterPhoneCountryCode.value = 'SK';
+    patientPhoneValue.value = '';
+    patientPhoneCountryCode.value = 'SK';
+
     bookingForm.reset(
         'request_type',
         'service_ids',
@@ -1354,9 +1367,11 @@ watch(() => bookingForm.errors, (errors) => {
                                         Váš telefón <span class="text-red-500">*</span>
                                     </label>
 
-                                    <InputText
-                                        v-model="bookingForm.requester_phone"
-                                        class="w-full"
+                                    <PhoneNumberInput
+                                        v-model="requesterPhoneValue"
+                                        v-model:country-code="requesterPhoneCountryCode"
+                                        v-model:full-value="bookingForm.requester_phone"
+                                        :invalid="Boolean(bookingForm.errors.requester_phone)"
                                     />
 
                                     <small
@@ -1411,9 +1426,11 @@ watch(() => bookingForm.errors, (errors) => {
                                         Telefón <span class="text-red-500">*</span>
                                     </label>
 
-                                    <InputText
-                                        v-model="bookingForm.patient_phone"
-                                        class="w-full"
+                                    <PhoneNumberInput
+                                        v-model="patientPhoneValue"
+                                        v-model:country-code="patientPhoneCountryCode"
+                                        v-model:full-value="bookingForm.patient_phone"
+                                        :invalid="Boolean(selfPhoneError)"
                                     />
 
                                     <small
@@ -1425,15 +1442,27 @@ watch(() => bookingForm.errors, (errors) => {
                                 </div>
 
                                 <div>
-                                    <label class="mb-2 block text-sm font-medium text-dark">
+                                    <label
+                                        for="patient_birth_number"
+                                        class="mb-2 block text-sm font-medium text-dark"
+                                    >
                                         Rodné číslo
                                     </label>
 
-                                    <InputText
+                                    <BirthNumberInput
+                                        id="patient_birth_number"
                                         v-model="bookingForm.patient_birth_number"
                                         class="w-full"
-                                        placeholder="napr. 900101/1234"
+                                        :invalid="Boolean(bookingForm.errors.patient_birth_number)"
+                                        placeholder="900101/1234"
                                     />
+
+                                    <small
+                                        v-if="bookingForm.errors.patient_birth_number"
+                                        class="mt-1 block text-red-600"
+                                    >
+                                        {{ bookingForm.errors.patient_birth_number }}
+                                    </small>
                                 </div>
                             </div>
 
@@ -1451,17 +1480,23 @@ watch(() => bookingForm.errors, (errors) => {
                             </div>
 
                             <div class="space-y-2">
-                                <label class="inline-flex items-start gap-2 text-sm text-dark">
-                                    <input
+                                <div class="flex items-start gap-3">
+                                    <Checkbox
                                         v-model="bookingForm.privacy_consent"
-                                        type="checkbox"
-                                        class="mt-1"
-                                    >
+                                        input-id="privacy_consent"
+                                        binary
+                                        :invalid="Boolean(consentError)"
+                                        class="mt-0.5 shrink-0"
+                                    />
 
-                                    <span>
-                                        Súhlasím so spracovaním osobných údajov na účely vybavenia objednania. <span class="text-red-500">*</span>
-                                    </span>
-                                </label>
+                                    <label
+                                        for="privacy_consent"
+                                        class="cursor-pointer text-sm leading-6 text-dark"
+                                    >
+                                        Súhlasím so spracovaním osobných údajov na účely vybavenia objednania.
+                                        <span class="text-red-500">*</span>
+                                    </label>
+                                </div>
 
                                 <small
                                     v-if="consentError"

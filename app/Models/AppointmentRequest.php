@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\ContactChangeStatus;
+use App\Enums\PatientMatchStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -47,6 +49,15 @@ class AppointmentRequest extends Model
         'verification_expires_at',
         'email_verified_at',
         'patient_id',
+        'patient_match_status',
+        'possible_patient_id',
+        'contact_change_status',
+        'submitted_birth_number_encrypted',
+        'submitted_birth_number_hash',
+        'patient_data_differences',
+        'patient_match_reviewed_at',
+        'patient_match_reviewed_by',
+        'patient_match_note',
         'accepted_booking_id',
         'accepted_group_event_id',
         'accepted_group_event_participation_id',
@@ -72,7 +83,18 @@ class AppointmentRequest extends Model
         'verification_expires_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'manually_verified_at' => 'datetime',
+        'patient_match_status' => PatientMatchStatus::class,
+        'contact_change_status' => ContactChangeStatus::class,
+        'submitted_birth_number_encrypted' => 'encrypted',
+        'patient_data_differences' => 'array',
+        'patient_match_reviewed_at' => 'datetime',
         'total_duration_minutes' => 'integer',
+    ];
+
+    protected $hidden = [
+        'verification_token_hash',
+        'submitted_birth_number_encrypted',
+        'submitted_birth_number_hash',
     ];
 
     public const STATUS_PENDING_EMAIL_VERIFICATION = 'pending_email_verification';
@@ -98,6 +120,11 @@ class AppointmentRequest extends Model
         return $this->belongsTo(Patient::class);
     }
 
+    public function possiblePatient(): BelongsTo
+    {
+        return $this->belongsTo(Patient::class, 'possible_patient_id');
+    }
+
     public function acceptedBookingEvent(): BelongsTo
     {
         return $this->belongsTo(\App\Modules\Calendar\Models\Event::class, 'accepted_booking_id');
@@ -106,6 +133,11 @@ class AppointmentRequest extends Model
     public function manuallyVerifiedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'manually_verified_by');
+    }
+
+    public function patientMatchReviewedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'patient_match_reviewed_by');
     }
 
     public function auditLogs(): HasMany

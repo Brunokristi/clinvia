@@ -2,12 +2,123 @@
 
 namespace App\Services;
 
+use App\Enums\ContactChangeStatus;
+use App\Enums\PatientMatchStatus;
 use App\Models\AppointmentRequest;
+use App\Models\Branch;
 use App\Models\Patient;
 use Illuminate\Support\Collection;
 
 class PatientMatchingService
 {
+    public function __construct(
+        private readonly PatientBirthNumberService $birthNumberService,
+    ) {
+    }
+
+    public function matchPublicRequestPayload(Branch $branch, array $submitted): array
+    {
+        $normalizedBirthNumber = $this->birthNumberService->normalize($submitted['patient_birth_number'] ?? null);
+
+        if (! $this->birthNumberService->isValid($normalizedBirthNumber)) {
+            return [
+                'patient' => null,
+                'possible_patient' => null,
+                'patient_id' => null,
+                'possible_patient_id' => null,
+                'patient_match_status' => PatientMatchStatus::InvalidBirthNumber,
+                'contact_change_status' => ContactChangeStatus::None,
+                'differences' => null,
+                'manual_review_required' => true,
+                'may_create_new_patient_later' => false,
+                'normalized_birth_number' => $normalizedBirthNumber,
+                'birth_number_hash' => null,
+            ];
+        }
+
+        $birthNumberHash = $this->birthNumberService->hash($normalizedBirthNumber);
+
+        $patient = Patient::query()
+            ->where('birth_number_hash', $birthNumberHash)
+            ->first();
+
+        if (! $patient) {
+            $patient = Patient::query()
+                ->whereNotNull('patient_birth_number')
+                ->get()
+                ->first(function (Patient $candidate) use ($normalizedBirthNumber): bool {
+                    return $this->birthNumberService->normalize($candidate->patient_birth_number) === $normalizedBirthNumber;
+                });
+        }
+
+        if (! $patient) {
+            return [
+                'patient' => null,
+                'possible_patient' => null,
+                'patient_id' => null,
+                'possible_patient_id' => null,
+                'patient_match_status' => PatientMatchStatus::NewPatient,
+                'contact_change_status' => ContactChangeStatus::None,
+                'differences' => null,
+                'manual_review_required' => false,
+                'may_create_new_patient_later' => true,
+                'normalized_birth_number' => $normalizedBirthNumber,
+                'birth_number_hash' => $birthNumberHash,
+            ];
+        }
+
+        $submittedPatientName = $this->normalizePersonName($submitted['patient_name'] ?? null);
+        $matchedPatientName = $this->normalizePersonName($patient->patient_name);
+
+        if ($submittedPatientName === null || $matchedPatientName === null || $submittedPatientName !== $matchedPatientName) {
+            return [
+                'patient' => null,
+                'possible_patient' => $patient,
+                'patient_id' => null,
+                'possible_patient_id' => $patient->id,
+                'patient_match_status' => PatientMatchStatus::IdentityConflict,
+                'contact_change_status' => ContactChangeStatus::None,
+                'differences' => null,
+                'manual_review_required' => true,
+                'may_create_new_patient_later' => false,
+                'normalized_birth_number' => $normalizedBirthNumber,
+                'birth_number_hash' => $birthNumberHash,
+            ];
+        }
+
+        $differences = $this->detectPatientDifferences($submitted, $patient, (bool) ($submitted['is_for_someone_else'] ?? false));
+
+        if ($differences === []) {
+            return [
+                'patient' => $patient,
+                'possible_patient' => null,
+                'patient_id' => $patient->id,
+                'possible_patient_id' => null,
+                'patient_match_status' => PatientMatchStatus::Matched,
+                'contact_change_status' => ContactChangeStatus::None,
+                'differences' => null,
+                'manual_review_required' => false,
+                'may_create_new_patient_later' => false,
+                'normalized_birth_number' => $normalizedBirthNumber,
+                'birth_number_hash' => $birthNumberHash,
+            ];
+        }
+
+        return [
+            'patient' => $patient,
+            'possible_patient' => null,
+            'patient_id' => $patient->id,
+            'possible_patient_id' => null,
+            'patient_match_status' => PatientMatchStatus::MatchedWithDifferences,
+            'contact_change_status' => ContactChangeStatus::Detected,
+            'differences' => $differences,
+            'manual_review_required' => false,
+            'may_create_new_patient_later' => false,
+            'normalized_birth_number' => $normalizedBirthNumber,
+            'birth_number_hash' => $birthNumberHash,
+        ];
+    }
+
     public function findMatchesForRequest(AppointmentRequest $request, int $limit = 10): Collection
     {
         $request->loadMissing('branch');
@@ -76,7 +187,9 @@ class PatientMatchingService
                         'patient_name' => $patient->patient_name,
                         'patient_email' => $patient->patient_email,
                         'patient_phone' => $patient->patient_phone,
-                        'patient_birth_number' => $patient->patient_birth_number,
+                        'patient_birth_number' => $this->birthNumberService->mask(
+                            $this->birthNumberService->normalize($patient->patient_birth_number)
+                        ),
                     ],
                 ];
             })
@@ -125,6 +238,45 @@ class PatientMatchingService
         }
 
         return $normalized;
+    }
+
+    public function normalizePersonName(?string $name): ?string
+    {
+        $name = preg_replace('/\s+/', ' ', trim((string) $name)) ?? '';
+        $name = mb_strtolower($name);
+
+        return $name !== '' ? $name : null;
+    }
+
+    private function detectPatientDifferences(array $submitted, Patient $patient, bool $isForSomeoneElse): array
+    {
+        if ($isForSomeoneElse) {
+            return [];
+        }
+
+        $differences = [];
+
+        $submittedEmail = $this->normalizeEmail($submitted['patient_email'] ?? null);
+        $storedEmail = $this->normalizeEmail($patient->patient_email);
+
+        if ($submittedEmail !== null && $storedEmail !== $submittedEmail) {
+            $differences['email'] = [
+                'stored' => $storedEmail,
+                'submitted' => $submittedEmail,
+            ];
+        }
+
+        $submittedPhone = $this->normalizePhone($submitted['patient_phone'] ?? null);
+        $storedPhone = $this->normalizePhone($patient->patient_phone);
+
+        if ($submittedPhone !== null && $storedPhone !== $submittedPhone) {
+            $differences['phone'] = [
+                'stored' => $storedPhone,
+                'submitted' => $submittedPhone,
+            ];
+        }
+
+        return $differences;
     }
 
     private function normalizeNamePart(?string $value): ?string
