@@ -1,14 +1,26 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import PanelMenu from 'primevue/panelmenu';
 import Menu from 'primevue/menu';
 import Button from 'primevue/button';
+import Tooltip from 'primevue/tooltip';
+
+// Registers the directive locally so we can use `v-tooltip` in the template
+// without relying on it being registered globally in app.js.
+const vTooltip = Tooltip;
 
 const page = usePage();
 
 const userMenu = ref(null);
+
+// Collapsed state for the whole sidebar, including the brand block above the
+// nav. Everything in this component reacts to this one flag now.
+const collapsed = ref(false);
+
+const toggleCollapse = () => {
+    collapsed.value = !collapsed.value;
+};
 
 const user = computed(() => page.props.auth?.user);
 const branch = computed(() => page.props.branch ?? null);
@@ -94,22 +106,6 @@ const contextTitle = computed(() => {
     return 'Globálny prehľad';
 });
 
-const expandedMenuKeys = computed(() => {
-    const keys = {
-        main: true,
-    };
-
-    if (activeCompany.value?.id) {
-        keys[`company-${activeCompany.value.id}`] = true;
-    }
-
-    if (branch.value) {
-        keys.branch = true;
-    }
-
-    return keys;
-});
-
 const isSuperAdmin = computed(() => {
     return user.value?.global_role === 'super_admin';
 });
@@ -122,7 +118,7 @@ const makeMenuLink = (link) => {
     return {
         label: link.label,
         icon: link.icon,
-        class: link.active ? 'p-focus' : '',
+        active: link.active,
         command: () => {
             router.visit(link.href);
         },
@@ -205,6 +201,8 @@ const branchLinks = computed(() => {
     ];
 });
 
+// Single source of truth for both the expanded accordion and the collapsed
+// icon groups: key, label, group icon, and the items inside that group.
 const navigationItems = computed(() => {
     const items = [
         {
@@ -238,12 +236,30 @@ const navigationItems = computed(() => {
     return items;
 });
 
-const panelMenuKey = computed(() => {
-    const companyKey = activeCompany.value?.id ? `company-${activeCompany.value.id}` : 'company-none';
-    const branchKey = branch.value?.id ? `branch-${branch.value.id}` : 'branch-none';
+// Which groups are expanded in the *expanded* sidebar. Defaults every group
+// to open the first time it appears, but remembers manual toggles after
+// that (e.g. if the user collapses "Hlavné" on purpose, switching branch
+// shouldn't force it back open).
+const expandedGroups = ref({});
 
-    return `${companyKey}|${branchKey}`;
-});
+watch(navigationItems, (groups) => {
+    const next = { ...expandedGroups.value };
+
+    groups.forEach((group) => {
+        if (!(group.key in next)) {
+            next[group.key] = true;
+        }
+    });
+
+    expandedGroups.value = next;
+}, { immediate: true });
+
+const toggleGroup = (key) => {
+    expandedGroups.value = {
+        ...expandedGroups.value,
+        [key]: !expandedGroups.value[key],
+    };
+};
 
 const profileDialogVisible = ref(false);
 
@@ -280,100 +296,228 @@ const toggleUserMenu = (event) => {
 </script>
 
 <template>
-    <aside class="flex h-full w-72 shrink-0 flex-col bg-accent p-4">
-        <nav class="flex-1 overflow-y-auto">
-            <PanelMenu
-                :key="panelMenuKey"
-                v-model:expandedKeys="expandedMenuKeys"
-                :model="navigationItems"
-                multiple
-            >
-                <template #submenuicon>
-                    <span />
-                </template>
-            </PanelMenu>
-        </nav>
+    <aside
+        class="flex h-full shrink-0 flex-col bg-accent transition-all duration-200"
+        :class="collapsed ? 'w-20' : 'w-72'"
+    >
+        <!-- Brand block: lives in the sidebar so it collapses together with
+             the nav. Uses py-4 to line up with the breadcrumb header's own
+             py-4 in the layout. -->
+        <Link
+            :href="route('dashboard')"
+            class="flex w-full shrink-0 items-center justify-center bg-dark py-4 shadow-[0_1px_0_0] shadow-dark/40"
+            title="Dashboard"
+        >
+            <ApplicationLogo :class="collapsed ? 'h-8 w-auto' : 'h-10 w-auto'" />
+        </Link>
 
-        <div class="mt-4 space-y-3">
-            <Button
-                type="button"
-                class="!flex !w-full !items-center !justify-start !gap-3 !rounded-md !border !border-white/10 !bg-dark !px-3 !py-3 !text-white hover:!bg-dark/90"
-                @click="toggleUserMenu"
-            >
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm font-semibold text-white">
-                    {{ userInitials }}
-                </span>
+        <div class="flex min-h-0 flex-1 flex-col p-4" :class="collapsed ? 'items-center' : ''">
+            <div class="mb-3 flex w-full" :class="collapsed ? 'justify-center' : 'justify-end'">
+                <Button
+                    type="button"
+                    text
+                    rounded
+                    v-tooltip.right="collapsed ? 'Rozbaliť menu' : 'Zbaliť menu'"
+                    class="!h-9 !w-9 !bg-white/10 !text-white hover:!bg-white/20"
+                    @click="toggleCollapse"
+                >
+                    <i :class="collapsed ? 'pi pi-angle-right' : 'pi pi-angle-left'" class="text-sm" />
+                </Button>
+            </div>
 
-                <span class="min-w-0 flex-1 text-left">
-                    <span class="block truncate text-sm font-semibold text-white">
-                        {{ userName }}
-                    </span>
+            <nav class="w-full flex-1 overflow-y-auto">
+                <!-- Expanded: labelled, collapsible groups -->
+                <div v-if="!collapsed" class="flex flex-col gap-1">
+                    <div
+                        v-for="group in navigationItems"
+                        :key="group.key"
+                    >
+                        <button
+                            type="button"
+                            class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-white/10"
+                            @click="toggleGroup(group.key)"
+                        >
+                            <i :class="group.icon" class="text-sm text-white/70" />
 
-                    <span class="block truncate text-xs text-white/60">
-                        {{ contextTitle }}
-                    </span>
-                </span>
+                            <span class="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-white/70">
+                                {{ group.label }}
+                            </span>
 
-                <i class="pi pi-chevron-up text-xs text-white" />
-            </Button>
+                            <i
+                                class="pi pi-chevron-down text-[10px] text-white/50 transition-transform duration-200"
+                                :class="expandedGroups[group.key] ? 'rotate-180' : ''"
+                            />
+                        </button>
 
-            <Menu
-                ref="userMenu"
-                :model="userMenuItems"
-                popup
-                unstyled
-            >
-                <template #start>
-                    <div class="w-72 overflow-hidden rounded-md border border-soft bg-white shadow-lg">
-                        <div class="border-b border-soft bg-soft/40 p-4">
-                            <div class="flex items-center gap-3">
-                                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white text-base font-semibold text-accent">
-                                    {{ userInitials }}
-                                </div>
-
-                                <div class="min-w-0">
-                                    <p class="truncate text-sm font-semibold text-dark">
-                                        {{ userName }}
-                                    </p>
-
-                                    <p class="mt-0.5 truncate text-xs text-accent">
-                                        {{ userRole }}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="p-2">
-                            <template
-                                v-for="item in userMenuItems"
-                                :key="item.label"
-                            >
-                                <button
-                                    type="button"
-                                    class="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition"
-                                    :class="item.danger
-                                        ? 'text-red-500 hover:bg-red-50'
-                                        : 'text-accent hover:bg-soft'"
-                                    @click="item.command"
+                        <div
+                            class="grid transition-[grid-template-rows] duration-200 ease-out"
+                            :style="{ gridTemplateRows: expandedGroups[group.key] ? '1fr' : '0fr' }"
+                        >
+                            <ul class="space-y-0.5 overflow-hidden pt-0.5">
+                                <li
+                                    v-for="item in group.items"
+                                    :key="item.label"
                                 >
-                                    <i
-                                        :class="item.icon"
-                                        class="text-sm"
-                                    />
+                                    <button
+                                        type="button"
+                                        class="relative flex w-full items-center gap-3 rounded-lg py-2 pl-4 pr-3 text-left text-sm transition"
+                                        :class="item.active
+                                            ? 'bg-white/15 font-medium text-white before:absolute before:left-1 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-white'
+                                            : 'text-white/80 hover:bg-white/10 hover:text-white'"
+                                        @click="item.command"
+                                    >
+                                        <i :class="item.icon" class="text-sm" />
 
-                                    <span>
-                                        {{ item.label }}
-                                    </span>
-                                </button>
-                            </template>
+                                        <span class="truncate">
+                                            {{ item.label }}
+                                        </span>
+                                    </button>
+                                </li>
+                            </ul>
                         </div>
                     </div>
-                </template>
+                </div>
 
-                <template #item>
-                    <span />
-                </template>
-            </Menu>
+                <!-- Collapsed: icon-only, but still grouped. The group icon
+                     is now the same toggle as the expanded header — clicking
+                     it hides/shows that group's items, sharing the exact
+                     same `expandedGroups` state as the expanded sidebar, so
+                     a group collapsed in one view stays collapsed in the
+                     other. -->
+                <div v-else class="flex w-full flex-col items-center">
+                    <div
+                        v-for="(group, groupIndex) in navigationItems"
+                        :key="group.key"
+                        class="flex w-full flex-col items-center gap-1"
+                        :class="groupIndex > 0 ? 'mt-2 border-t border-white/10 pt-2' : ''"
+                    >
+                        <button
+                            type="button"
+                            v-tooltip.right="group.label"
+                            class="flex h-9 w-9 items-center justify-center rounded-full transition"
+                            :class="expandedGroups[group.key]
+                                ? 'bg-white/15 text-white'
+                                : 'text-white/40 hover:bg-white/10 hover:text-white/70'"
+                            @click="toggleGroup(group.key)"
+                        >
+                            <i :class="group.icon" class="text-sm" />
+                        </button>
+
+                        <div
+                            class="grid w-full justify-items-center transition-[grid-template-rows] duration-200 ease-out"
+                            :style="{ gridTemplateRows: expandedGroups[group.key] ? '1fr' : '0fr' }"
+                        >
+                            <div class="flex w-full flex-col items-center gap-1 overflow-hidden pt-1">
+                                <button
+                                    v-for="item in group.items"
+                                    :key="item.label"
+                                    type="button"
+                                    v-tooltip.right="item.label"
+                                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition"
+                                    :class="item.active ? 'bg-white/20' : 'hover:bg-white/10'"
+                                    @click="item.command"
+                                >
+                                    <i :class="item.icon" class="text-lg" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+
+            <div class="mt-4 w-full space-y-3">
+                <Button
+                    v-if="!collapsed"
+                    type="button"
+                    class="!flex !w-full !items-center !justify-start !gap-3 !rounded-md !border !border-white/10 !bg-dark !px-3 !py-3 !text-white hover:!bg-dark/90"
+                    @click="toggleUserMenu"
+                >
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
+                        {{ userInitials }}
+                    </span>
+
+                    <span class="min-w-0 flex-1 text-left">
+                        <span class="block truncate text-sm font-semibold text-white">
+                            {{ userName }}
+                        </span>
+
+                        <span class="block truncate text-xs text-white/60">
+                            {{ contextTitle }}
+                        </span>
+                    </span>
+
+                    <i class="pi pi-chevron-up text-xs text-white" />
+                </Button>
+
+                <button
+                    v-else
+                    type="button"
+                    v-tooltip.right="userName"
+                    class="mx-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white transition hover:bg-white/20"
+                    @click="toggleUserMenu"
+                >
+                    {{ userInitials }}
+                </button>
+
+                <Menu
+                    ref="userMenu"
+                    :model="userMenuItems"
+                    popup
+                    unstyled
+                >
+                    <template #start>
+                        <div class="w-72 overflow-hidden rounded-lg border border-soft bg-white shadow-lg">
+                            <div class="border-b border-soft bg-soft/40 p-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-accent">
+                                        {{ userInitials }}
+                                    </div>
+
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-semibold text-dark">
+                                            {{ userName }}
+                                        </p>
+
+                                        <p class="mt-0.5 truncate text-xs text-accent">
+                                            {{ userRole }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="p-2">
+                                <template
+                                    v-for="item in userMenuItems"
+                                    :key="item.label"
+                                >
+                                    <button
+                                        type="button"
+                                        class="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition"
+                                        :class="item.danger
+                                            ? 'text-red-500 hover:bg-red-50'
+                                            : 'text-accent hover:bg-soft'"
+                                        @click="item.command"
+                                    >
+                                        <i
+                                            :class="item.icon"
+                                            class="text-sm"
+                                        />
+
+                                        <span>
+                                            {{ item.label }}
+                                        </span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template #item>
+                        <span />
+                    </template>
+                </Menu>
+            </div>
         </div>
     </aside>
 </template>

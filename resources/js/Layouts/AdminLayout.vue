@@ -1,10 +1,9 @@
 <script setup>
 import AdminNavigation from '@/Components/Navigation/AdminNavbar.vue';
-import { router, usePage, Link } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import Breadcrumb from 'primevue/breadcrumb';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 
 const toast = useToast();
@@ -170,29 +169,19 @@ watch(
 </script>
 
 <template>
-    <div class="flex h-screen flex-col overflow-hidden bg-white text-slate-900">
-        <header class="z-10 flex w-full shrink-0 bg-accent">
-            <Link
-                :href="route('dashboard')"
-                class="flex shrink-0 items-center justify-center w-72 bg-dark"
-                title="Dashboard"
-            >
-                <ApplicationLogo
-                    class="h-10 w-auto"
-                />
-            </Link>
+    <div class="flex h-screen overflow-hidden bg-white text-slate-900">
+        <!-- The brand/logo block now lives inside AdminNavigation, at the top
+             of the sidebar, so it collapses together with the nav instead of
+             sitting in a separate full-width header row. -->
+        <AdminNavigation />
 
-            <div class="flex min-w-0 flex-1 items-center px-8 py-4 text-white">
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <header class="z-10 flex w-full shrink-0 items-center bg-accent px-8 py-4 text-white">
                 <Breadcrumb
                     v-if="breadcrumbs.length"
                     :model="breadcrumbs"
                 />
-            </div>
-        </header>
-
-        <div class="flex min-h-0 flex-1 overflow-hidden">
-            <AdminNavigation />
-
+            </header>
 
             <main class="min-w-0 flex-1 overflow-y-auto">
                 <div class="p-8">
@@ -205,7 +194,6 @@ watch(
                     <slot />
                 </div>
             </main>
-
         </div>
 
         <Toast />
