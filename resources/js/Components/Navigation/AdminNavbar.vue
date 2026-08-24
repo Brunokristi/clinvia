@@ -2,522 +2,1081 @@
 import { computed, ref, watch } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import Menu from 'primevue/menu';
-import Button from 'primevue/button';
-import Tooltip from 'primevue/tooltip';
 
-// Registers the directive locally so we can use `v-tooltip` in the template
-// without relying on it being registered globally in app.js.
-const vTooltip = Tooltip;
+const props = defineProps({
+    breadcrumbs: {
+        type: Array,
+        default: () => [],
+    },
+});
 
 const page = usePage();
 
-const userMenu = ref(null);
+const mobileMenuOpen = ref(false);
+const userMenuOpen = ref(false);
 
-// Collapsed state for the whole sidebar, including the brand block above the
-// nav. Everything in this component reacts to this one flag now.
-const collapsed = ref(false);
+const user = computed(
+    () => page.props.auth?.user ?? null
+);
 
-const toggleCollapse = () => {
-    collapsed.value = !collapsed.value;
-};
+const branch = computed(
+    () => page.props.branch ?? null
+);
 
-const user = computed(() => page.props.auth?.user);
-const branch = computed(() => page.props.branch ?? null);
-const managedCompanies = computed(() => Array.isArray(page.props.managedCompanies) ? page.props.managedCompanies : []);
+const managedCompanies = computed(
+    () => Array.isArray(page.props.managedCompanies)
+        ? page.props.managedCompanies
+        : []
+);
 
-const currentRouteCompanyParam = computed(() => {
-    const routeCompany = route().params?.company;
+const currentRouteCompanyParam = computed(
+    () => {
+        const value =
+            route().params?.company;
 
-    if (routeCompany === undefined || routeCompany === null || routeCompany === '') {
-        return null;
+        if (
+            value === undefined ||
+            value === null ||
+            value === ''
+        ) {
+            return null;
+        }
+
+        return String(value);
     }
+);
 
-    return String(routeCompany);
-});
+const currentRouteCompany = computed(
+    () => {
+        if (
+            !currentRouteCompanyParam.value
+        ) {
+            return null;
+        }
 
-const currentRouteCompany = computed(() => {
-    if (!currentRouteCompanyParam.value) {
-        return null;
+        return managedCompanies.value.find(
+            (companyItem) =>
+                String(companyItem.id) ===
+                    currentRouteCompanyParam.value ||
+                companyItem.slug ===
+                    currentRouteCompanyParam.value
+        ) ?? null;
     }
+);
 
-    return managedCompanies.value.find((companyItem) => {
-        return String(companyItem.id) === currentRouteCompanyParam.value
-            || companyItem.slug === currentRouteCompanyParam.value;
-    }) ?? null;
-});
+const company = computed(
+    () =>
+        page.props.company ??
+        branch.value?.company ??
+        currentRouteCompany.value ??
+        null
+);
 
-const company = computed(() => {
-    return page.props.company
-        ?? branch.value?.company
-        ?? currentRouteCompany.value
-        ?? null;
-});
+const globalRole = computed(
+    () =>
+        user.value?.global_role ??
+        null
+);
 
-const canSeeCompanyLinks = computed(() => {
-    return ['super_admin', 'admin'].includes(user.value?.global_role)
-        && Boolean(company.value?.id);
-});
+const isSuperAdmin = computed(
+    () =>
+        globalRole.value === 'super_admin'
+);
 
-const activeCompany = computed(() => {
-    if (!canSeeCompanyLinks.value) {
-        return null;
+const canSeeCompanyLinks = computed(
+    () =>
+        ['super_admin', 'admin'].includes(
+            globalRole.value
+        ) &&
+        Boolean(company.value?.id)
+);
+
+const isBranchBookingEnabled = computed(
+    () =>
+        Boolean(
+            branch.value
+                ?.booking_settings
+                ?.is_enabled
+        )
+);
+
+const userName = computed(
+    () =>
+        user.value?.full_name ||
+        [
+            user.value?.first_name,
+            user.value?.last_name,
+        ]
+            .filter(Boolean)
+            .join(' ') ||
+        'Používateľ'
+);
+
+const userRole = computed(
+    () =>
+        String(
+            globalRole.value ?? 'user'
+        ).replace(
+            '_',
+            ' '
+        )
+);
+
+const userInitials = computed(
+    () =>
+        userName.value
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(
+                (part) =>
+                    part.charAt(0)
+            )
+            .join('')
+            .slice(0, 2)
+            .toUpperCase()
+);
+
+const contextTitle = computed(
+    () => {
+        if (
+            ['super_admin', 'admin'].includes(
+                globalRole.value
+            ) &&
+            company.value
+        ) {
+            return company.value.legal_name;
+        }
+
+        if (branch.value) {
+            return branch.value.name;
+        }
+
+        if (company.value) {
+            return company.value.legal_name;
+        }
+
+        return 'Globálny prehľad';
     }
+);
 
-    return {
-        id: company.value.id,
-        legal_name: company.value.legal_name,
-        slug: company.value.slug,
-    };
-});
-
-const userName = computed(() => {
-    return user.value?.full_name
-        || [user.value?.first_name, user.value?.last_name].filter(Boolean).join(' ')
-        || 'Používateľ';
-});
-
-const userRole = computed(() => {
-    return user.value?.global_role?.replace('_', ' ') ?? 'user';
-});
-
-const userInitials = computed(() => {
-    return userName.value
-        .split(' ')
-        .map((part) => part.charAt(0))
-        .join('')
-        .slice(0, 2)
-        .toUpperCase();
-});
-
-const contextTitle = computed(() => {
-    if (['super_admin', 'admin'].includes(user.value?.global_role) && company.value) {
-        return company.value.legal_name;
-    }
-
-    if (branch.value) {
-        return branch.value.name;
-    }
-
-    if (company.value) {
-        return company.value.legal_name;
-    }
-
-    return 'Globálny prehľad';
-});
-
-const isSuperAdmin = computed(() => {
-    return user.value?.global_role === 'super_admin';
-});
-
-const isBranchBookingEnabled = computed(() => {
-    return Boolean(branch.value?.booking_settings?.is_enabled);
-});
-
-const makeMenuLink = (link) => {
-    return {
-        label: link.label,
-        icon: link.icon,
-        active: link.active,
-        command: () => {
-            router.visit(link.href);
-        },
-    };
-};
-
-const mainLinks = computed(() => [
-    {
-        label: 'Prehľad',
-        icon: 'pi pi-th-large',
-        href: route('dashboard'),
-        active: route().current('dashboard'),
-    },
-]);
-
-const companyLinks = (companyItem) => [
-    {
-        label: 'Základné informácie',
-        icon: 'pi pi-info-circle',
-        href: route('companies.edit', companyItem),
-        active: route().current('companies.edit'),
-    },
-    {
-        label: 'Pobočky',
-        icon: 'pi pi-sitemap',
-        href: route('companies.branches', companyItem),
-        active: route().current('companies.branches'),
-    },
-    ...(isSuperAdmin.value ? [
-        {
-            label: 'API kľúče',
-            icon: 'pi pi-key',
-            href: route('companies.api-clients', companyItem),
-            active: route().current('companies.api-clients'),
-        },
-    ] : []),
-    {
-        label: 'Používatelia',
-        icon: 'pi pi-users',
-        href: route('companies.users.page', companyItem),
-        active: route().current('companies.users.page'),
-    },
-];
-
-const branchLinks = computed(() => {
-    if (!branch.value) {
-        return [];
-    }
-
-    return [
+const mainLinks = computed(
+    () => [
         {
             label: 'Prehľad',
-            icon: 'pi pi-th-large',
-            href: route('branches.booking.dashboard.page', branch.value),
-            active: route().current('branches.booking.dashboard.page'),
+            href: route('dashboard'),
+            active:
+                route().current(
+                    'dashboard'
+                ),
         },
-        ...(isBranchBookingEnabled.value
-            ? [{
-                label: 'Rezervácie',
-                icon: 'pi pi-calendar',
-                href: route('branches.booking.agenda.page', branch.value),
-                active: route().current('branches.booking.agenda.page')
-                    || route().current('branches.booking.inbox.page'),
-            }]
-            : []),
-        {
-            label: 'Správy',
-            icon: 'pi pi-inbox',
-            href: route('branches.inbox.index', branch.value),
-            active: route().current('branches.inbox.index')
-                || route().current('branches.inbox.show'),
-        },
-        {
-            label: 'Nastavenia',
-            icon: 'pi pi-cog',
-            href: route('branches.settings.page', branch.value),
-            active: route().current('branches.settings.page')
-                || route().current('branches.booking.settings.page'),
-        },
-    ];
-});
+    ]
+);
 
-// Single source of truth for both the expanded accordion and the collapsed
-// icon groups: key, label, group icon, and the items inside that group.
-const navigationItems = computed(() => {
-    const items = [
-        {
-            key: 'main',
-            label: 'Hlavné',
-            icon: 'pi pi-folder',
-            items: mainLinks.value.map(makeMenuLink),
-        },
-    ];
-
-    if (activeCompany.value) {
-        const companyItem = activeCompany.value;
-
-        items.push({
-            key: `company-${companyItem.id}`,
-            label: companyItem.legal_name,
-            icon: 'pi pi-building',
-            items: companyLinks(companyItem).map(makeMenuLink),
-        });
-    }
-
-    if (branch.value) {
-        items.push({
-            key: 'branch',
-            label: branch.value.name,
-            icon: 'pi pi-map-marker',
-            items: branchLinks.value.map(makeMenuLink),
-        });
-    }
-
-    return items;
-});
-
-// Which groups are expanded in the *expanded* sidebar. Defaults every group
-// to open the first time it appears, but remembers manual toggles after
-// that (e.g. if the user collapses "Hlavné" on purpose, switching branch
-// shouldn't force it back open).
-const expandedGroups = ref({});
-
-watch(navigationItems, (groups) => {
-    const next = { ...expandedGroups.value };
-
-    groups.forEach((group) => {
-        if (!(group.key in next)) {
-            next[group.key] = true;
+const companyLinks = computed(
+    () => {
+        if (
+            !canSeeCompanyLinks.value
+        ) {
+            return [];
         }
-    });
 
-    expandedGroups.value = next;
-}, { immediate: true });
+        const companyItem =
+            company.value;
 
-const toggleGroup = (key) => {
-    expandedGroups.value = {
-        ...expandedGroups.value,
-        [key]: !expandedGroups.value[key],
-    };
+        return [
+            {
+                label: 'Základné informácie',
+                href:
+                    route(
+                        'companies.edit',
+                        companyItem
+                    ),
+                active:
+                    route().current(
+                        'companies.edit'
+                    ),
+            },
+            {
+                label: 'Pobočky',
+                href:
+                    route(
+                        'companies.branches',
+                        companyItem
+                    ),
+                active:
+                    route().current(
+                        'companies.branches'
+                    ),
+            },
+            ...(isSuperAdmin.value
+                ? [
+                    {
+                        label: 'API kľúče',
+                        href:
+                            route(
+                                'companies.api-clients',
+                                companyItem
+                            ),
+                        active:
+                            route().current(
+                                'companies.api-clients'
+                            ),
+                    },
+                ]
+                : []),
+            {
+                label: 'Používatelia',
+                href:
+                    route(
+                        'companies.users.page',
+                        companyItem
+                    ),
+                active:
+                    route().current(
+                        'companies.users.page'
+                    ),
+            },
+        ];
+    }
+);
+
+const branchLinks = computed(
+    () => {
+        if (!branch.value) {
+            return [];
+        }
+
+        return [
+            {
+                label: 'Prehľad',
+                href:
+                    route(
+                        'branches.booking.dashboard.page',
+                        branch.value
+                    ),
+                active:
+                    route().current(
+                        'branches.booking.dashboard.page'
+                    ),
+            },
+            ...(isBranchBookingEnabled.value
+                ? [
+                    {
+                        label: 'Rezervácie',
+                        href:
+                            route(
+                                'branches.booking.agenda.page',
+                                branch.value
+                            ),
+                        active:
+                            route().current(
+                                'branches.booking.agenda.page'
+                            ) ||
+                            route().current(
+                                'branches.booking.inbox.page'
+                            ),
+                    },
+                ]
+                : []),
+            {
+                label: 'Správy',
+                href:
+                    route(
+                        'branches.inbox.index',
+                        branch.value
+                    ),
+                active:
+                    route().current(
+                        'branches.inbox.index'
+                    ) ||
+                    route().current(
+                        'branches.inbox.show'
+                    ),
+            },
+            {
+                label: 'Nastavenia',
+                href:
+                    route(
+                        'branches.settings.page',
+                        branch.value
+                    ),
+                active:
+                    route().current(
+                        'branches.settings.page'
+                    ) ||
+                    route().current(
+                        'branches.booking.settings.page'
+                    ),
+            },
+        ];
+    }
+);
+
+const navigationGroups = computed(
+    () => {
+        const groups = [
+            {
+                key: 'general',
+                context: 'Všeobecné',
+                links:
+                    mainLinks.value,
+            },
+        ];
+
+        if (
+            companyLinks.value.length
+        ) {
+            groups.push({
+                key: 'company',
+                label: 'Spoločnosť',
+                context:
+                    company.value
+                        ?.legal_name ?? '',
+                links:
+                    companyLinks.value,
+            });
+        }
+
+        if (
+            branchLinks.value.length
+        ) {
+            groups.push({
+                key: 'branch',
+                label: 'Pobočka',
+                context:
+                    branch.value
+                        ?.name ?? '',
+                links:
+                    branchLinks.value,
+            });
+        }
+
+        return groups;
+    }
+);
+
+const navigate = (href) => {
+    closeMobileMenu();
+    closeUserMenu();
+
+    router.visit(href);
 };
 
-const profileDialogVisible = ref(false);
+const toggleMobileMenu = () => {
+    mobileMenuOpen.value =
+        !mobileMenuOpen.value;
 
-
-const userMenuItems = computed(() => {
-    const items = [];
-
-    if (user.value && route().has('profile.edit')) {
-        items.push({
-            label: 'Nastavenia',
-            icon: 'pi pi-cog',
-            command: () => {
-                router.visit(route('profile.edit'));
-            },
-        });
+    if (
+        mobileMenuOpen.value
+    ) {
+        userMenuOpen.value =
+            false;
     }
-
-    if (route().has('logout')) {
-        items.push({
-            label: 'Odhlásiť sa',
-            icon: 'pi pi-sign-out',
-            command: () => {
-                router.post(route('logout'));
-            },
-        });
-    }
-
-    return items;
-});
-
-const toggleUserMenu = (event) => {
-    userMenu.value.toggle(event);
 };
+
+const closeMobileMenu = () => {
+    mobileMenuOpen.value =
+        false;
+};
+
+const toggleUserMenu = () => {
+    userMenuOpen.value =
+        !userMenuOpen.value;
+
+    if (
+        userMenuOpen.value
+    ) {
+        mobileMenuOpen.value =
+            false;
+    }
+};
+
+const closeUserMenu = () => {
+    userMenuOpen.value =
+        false;
+};
+
+const goToProfile = () => {
+    closeUserMenu();
+    closeMobileMenu();
+
+    if (
+        route().has(
+            'profile.edit'
+        )
+    ) {
+        router.visit(
+            route(
+                'profile.edit'
+            )
+        );
+    }
+};
+
+const logout = () => {
+    closeUserMenu();
+    closeMobileMenu();
+
+    if (
+        route().has('logout')
+    ) {
+        router.post(
+            route('logout')
+        );
+    }
+};
+
+const handleDocumentClick = (
+    event
+) => {
+    const target =
+        event.target;
+
+    if (
+        !target.closest(
+            '[data-user-menu]'
+        )
+    ) {
+        closeUserMenu();
+    }
+};
+
+watch(
+    () =>
+        route().current(),
+    () => {
+        closeMobileMenu();
+        closeUserMenu();
+    }
+);
+
+if (
+    typeof document !== 'undefined'
+) {
+    document.addEventListener(
+        'click',
+        handleDocumentClick
+    );
+}
 </script>
 
 <template>
-    <aside
-        class="flex h-full shrink-0 flex-col bg-accent transition-all duration-200"
-        :class="collapsed ? 'w-20' : 'w-72'"
+    <header
+        class="
+            fixed
+            inset-x-0
+            top-0
+            z-50
+            flex
+            h-14
+            items-center
+            bg-accent
+            px-4
+            text-white
+
+        "
     >
-        <!-- Brand block: lives in the sidebar so it collapses together with
-             the nav. Uses py-4 to line up with the breadcrumb header's own
-             py-4 in the layout. -->
-        <Link
-            :href="route('dashboard')"
-            class="flex w-full shrink-0 items-center justify-center bg-dark py-4 shadow-[0_1px_0_0] shadow-dark/40"
-            title="Dashboard"
+        <div
+            class="
+                flex
+                min-w-0
+                flex-1
+                items-center
+                gap-4
+            "
         >
-            <ApplicationLogo :class="collapsed ? 'h-8 w-auto' : 'h-10 w-auto'" />
-        </Link>
 
-        <div class="flex min-h-0 flex-1 flex-col p-4" :class="collapsed ? 'items-center' : ''">
-            <div class="mb-3 flex w-full" :class="collapsed ? 'justify-center' : 'justify-end'">
-                <Button
-                    type="button"
-                    text
-                    rounded
-                    v-tooltip.right="collapsed ? 'Rozbaliť menu' : 'Zbaliť menu'"
-                    class="!h-9 !w-9 !bg-white/10 !text-white hover:!bg-white/20"
-                    @click="toggleCollapse"
+            <Link
+                :href="
+                    route('dashboard')
+                "
+                class="
+                    flex
+                    shrink-0
+                    items-center
+                    transition-opacity
+                    hover:opacity-70
+                "
+                title="Dashboard"
+            >
+                <ApplicationLogo
+                    class="
+                        h-9
+                        w-auto
+                        
+                    "
+                />
+            </Link>
+
+            <button
+                type="button"
+                class="
+                    grid
+                    h-9
+                    w-9
+                    shrink-0
+                    place-items-center
+                    rounded-md
+                    text-white
+                    transition
+                    active:scale-95
+                    lg:hidden
+                "
+                :aria-expanded="
+                    mobileMenuOpen
+                "
+                aria-controls="
+                    admin-navigation
+                "
+                :aria-label="
+                    mobileMenuOpen
+                        ? 'Zavrieť menu'
+                        : 'Otvoriť menu'
+                "
+                @click="
+                    toggleMobileMenu
+                "
+            >
+                <span
+                    class="
+                        relative
+                        block
+                        h-4
+                        w-5
+                    "
                 >
-                    <i :class="collapsed ? 'pi pi-angle-right' : 'pi pi-angle-left'" class="text-sm" />
-                </Button>
-            </div>
+                    <span
+                        class="
+                            absolute
+                            left-0
+                            top-1/2
+                            h-px
+                            w-5
+                            -translate-y-1/2
+                            bg-current
+                            transition-transform
+                            duration-200
+                        "
+                        :class="
+                            mobileMenuOpen
+                                ? 'rotate-45'
+                                : '-translate-y-[3px]'
+                        "
+                    ></span>
 
-            <nav class="w-full flex-1 overflow-y-auto">
-                <!-- Expanded: labelled, collapsible groups -->
-                <div v-if="!collapsed" class="flex flex-col gap-1">
+                    <span
+                        class="
+                            absolute
+                            left-0
+                            top-1/2
+                            h-px
+                            w-5
+                            -translate-y-1/2
+                            bg-current
+                            transition-transform
+                            duration-200
+                        "
+                        :class="
+                            mobileMenuOpen
+                                ? '-rotate-45'
+                                : 'translate-y-[3px]'
+                        "
+                    ></span>
+                </span>
+            </button>
+
+            <div
+                v-if="
+                    props.breadcrumbs.length
+                "
+                class="
+                    hidden
+                    min-w-0
+                    items-end
+                    lg:flex
+                "
+            >
+                <nav
+                    class="
+                        flex
+                        min-w-0
+                        items-end
+                        gap-2
+                        text-sm
+                    "
+                    aria-label="
+                        Breadcrumb
+                    "
+                >
+                    <template
+                        v-for="
+                            (
+                                item,
+                                index
+                            ) in props.breadcrumbs
+                        "
+                        :key="
+                            `${item.label}-${index}`
+                        "
+                    >
+                        <Link
+                            v-if="
+                                item.url
+                            "
+                            :href="
+                                item.url
+                            "
+                            class="
+                                max-w-[18rem]
+                                truncate
+                                text-white
+                                transition
+                                hover:text-white
+                            "
+                        >
+                            {{
+                                item.label
+                            }}
+                        </Link>
+
+                        <span
+                            v-else
+                            class="
+                                max-w-[18rem]
+                                truncate
+                                font-medium
+                                text-white
+                            "
+                            aria-current="
+                                page
+                            "
+                        >
+                            {{
+                                item.label
+                            }}
+                        </span>
+
+                        <span
+                            v-if="
+                                index <
+                                props.breadcrumbs.length -
+                                    1
+                            "
+                            class="
+                                text-white
+                            "
+                            aria-hidden="
+                                true
+                            "
+                        >
+                            /
+                        </span>
+                    </template>
+                </nav>
+            </div>
+        </div>
+
+        <div
+            class="
+                relative
+                shrink-0
+            "
+            data-user-menu
+        >
+            <button
+                type="button"
+                class="
+                    flex
+                    items-center
+                    gap-2
+                    rounded-md
+                    px-2
+                    py-1.5
+                    text-left
+                    transition
+                    hover:bg-dark
+                    active:scale-[0.99]
+                "
+                :aria-expanded="
+                    userMenuOpen
+                "
+                aria-haspopup="menu"
+                @click.stop="
+                    toggleUserMenu
+                "
+            >
+                <span
+                    class="
+                        flex
+                        h-8
+                        w-8
+                        shrink-0
+                        items-center
+                        justify-center
+                        rounded-full
+                        bg-white
+                        text-xs
+                        font-semibold
+                        text-accent
+                    "
+                >
+                    {{
+                        userInitials
+                    }}
+                </span>
+
+                <span
+                    class="
+                        hidden
+                        max-w-48
+                        flex-col
+                        sm:flex
+                    "
+                >
+                    <span
+                        class="
+                            truncate
+                            text-xs
+                            font-semibold
+                            text-white
+                        "
+                    >
+                        {{
+                            userName
+                        }}
+                    </span>
+
+                    <span
+                        class="
+                            truncate
+                            text-[10px]
+                            uppercase
+                            tracking-wide
+                            text-white
+                        "
+                    >
+                        {{
+                            contextTitle
+                        }}
+                    </span>
+                </span>
+            </button>
+
+            <Transition
+                enter-active-class="
+                    transition
+                    duration-150
+                    ease-out
+                "
+                enter-from-class="
+                    translate-y-1
+                    opacity-0
+                "
+                enter-to-class="
+                    translate-y-0
+                    opacity-100
+                "
+                leave-active-class="
+                    transition
+                    duration-100
+                    ease-in
+                "
+                leave-from-class="
+                    translate-y-0
+                    opacity-100
+                "
+                leave-to-class="
+                    translate-y-1
+                    opacity-0
+                "
+            >
+                <div
+                    v-if="
+                        userMenuOpen
+                    "
+                    class="
+                        absolute
+                        right-0
+                        top-[calc(100%+0.5rem)]
+                        w-64
+                        overflow-hidden
+                        rounded-md
+                        border
+                        border-soft
+                        bg-white
+                        shadow-xl
+                    "
+                    role="menu"
+                >
                     <div
-                        v-for="group in navigationItems"
-                        :key="group.key"
+                        class="
+                            bg-soft
+                            px-3
+                            py-3
+                        "
+                    >
+                        <p
+                            class="
+                                truncate
+                                text-sm
+                                font-semibold
+                                text-accent
+                            "
+                        >
+                            {{
+                                userName
+                            }}
+                        </p>
+
+                        <p
+                            class="
+                                mt-0.5
+                                truncate
+                                text-xs
+                                font-medium
+                                text-dark
+                            "
+                        >
+                            {{
+                                userRole
+                            }}
+                        </p>
+                    </div>
+
+                    <div
+                        class="
+                            p-1.5
+                        "
                     >
                         <button
+                            v-if="
+                                user &&
+                                route().has(
+                                    'profile.edit'
+                                )
+                            "
                             type="button"
-                            class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-white/10"
-                            @click="toggleGroup(group.key)"
+                            class="
+                                block
+                                w-full
+                                rounded-md
+                                px-3
+                                py-2.5
+                                text-left
+                                text-sm
+                                font-medium
+                                text-dark
+                                transition
+                                hover:bg-soft
+                                hover:text-accent
+                            "
+                            role="menuitem"
+                            @click="
+                                goToProfile
+                            "
                         >
-                            <i :class="group.icon" class="text-sm text-white/70" />
-
-                            <span class="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-white/70">
-                                {{ group.label }}
-                            </span>
-
-                            <i
-                                class="pi pi-chevron-down text-[10px] text-white/50 transition-transform duration-200"
-                                :class="expandedGroups[group.key] ? 'rotate-180' : ''"
-                            />
+                            Nastavenia
                         </button>
 
-                        <div
-                            class="grid transition-[grid-template-rows] duration-200 ease-out"
-                            :style="{ gridTemplateRows: expandedGroups[group.key] ? '1fr' : '0fr' }"
+                        <button
+                            v-if="
+                                route().has(
+                                    'logout'
+                                )
+                            "
+                            type="button"
+                            class="
+                                block
+                                w-full
+                                rounded-md
+                                px-3
+                                py-2.5
+                                text-left
+                                text-sm
+                                font-medium
+                                text-dark
+                                transition
+                                hover:bg-soft
+                                hover:text-accent
+                            "
+                            role="menuitem"
+                            @click="
+                                logout
+                            "
                         >
-                            <ul class="space-y-0.5 overflow-hidden pt-0.5">
-                                <li
-                                    v-for="item in group.items"
-                                    :key="item.label"
-                                >
-                                    <button
-                                        type="button"
-                                        class="relative flex w-full items-center gap-3 rounded-lg py-2 pl-4 pr-3 text-left text-sm transition"
-                                        :class="item.active
-                                            ? 'bg-white/15 font-medium text-white before:absolute before:left-1 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-white'
-                                            : 'text-white/80 hover:bg-white/10 hover:text-white'"
-                                        @click="item.command"
-                                    >
-                                        <i :class="item.icon" class="text-sm" />
-
-                                        <span class="truncate">
-                                            {{ item.label }}
-                                        </span>
-                                    </button>
-                                </li>
-                            </ul>
-                        </div>
+                            Odhlásiť sa
+                        </button>
                     </div>
                 </div>
+            </Transition>
+        </div>
+    </header>
 
-                <!-- Collapsed: icon-only, but still grouped. The group icon
-                     is now the same toggle as the expanded header — clicking
-                     it hides/shows that group's items, sharing the exact
-                     same `expandedGroups` state as the expanded sidebar, so
-                     a group collapsed in one view stays collapsed in the
-                     other. -->
-                <div v-else class="flex w-full flex-col items-center">
-                    <div
-                        v-for="(group, groupIndex) in navigationItems"
-                        :key="group.key"
-                        class="flex w-full flex-col items-center gap-1"
-                        :class="groupIndex > 0 ? 'mt-2 border-t border-white/10 pt-2' : ''"
+    <button
+        v-if="
+            mobileMenuOpen
+        "
+        type="button"
+        class="
+            fixed
+            inset-0
+            z-40
+            bg-dark/10
+            backdrop-blur-[2px]
+            lg:hidden
+        "
+        aria-label="
+            Zavrieť navigáciu
+        "
+        @click="
+            closeMobileMenu
+        "
+    ></button>
+
+    <aside
+        id="admin-navigation"
+        class="
+            fixed
+            bottom-0
+            left-0
+            top-14
+            z-40
+            flex
+            w-[min(86vw,280px)]
+            flex-col
+            bg-soft
+            text-dark
+            shadow-xl
+            transition-transform
+            duration-200
+            ease-out
+            lg:w-[250px]
+            lg:translate-x-0
+            lg:shadow-none
+        "
+        :class="
+            mobileMenuOpen
+                ? 'translate-x-0'
+                : '-translate-x-full'
+        "
+    >
+        <div
+            class="
+                flex
+                min-h-0
+                flex-1
+                flex-col
+            "
+        >
+            <nav
+                class="
+                    min-h-0
+                    flex-1
+                    overflow-y-auto
+                    px-3
+                    py-5
+                "
+                aria-label="
+                    Hlavná navigácia
+                "
+            >
+                <div
+                    class="
+                        space-y-6
+                    "
+                >
+                    <section
+                        v-for="
+                            group in navigationGroups
+                        "
+                        :key="
+                            group.key
+                        "
+                        class="
+                            rounded-lg
+                            p-2
+                        "
                     >
-                        <button
-                            type="button"
-                            v-tooltip.right="group.label"
-                            class="flex h-9 w-9 items-center justify-center rounded-full transition"
-                            :class="expandedGroups[group.key]
-                                ? 'bg-white/15 text-white'
-                                : 'text-white/40 hover:bg-white/10 hover:text-white/70'"
-                            @click="toggleGroup(group.key)"
+                        <div
+                            class="
+                                mb-1
+                                rounded-md
+                                bg-accent
+                                px-2.5
+                                py-2
+                            "
                         >
-                            <i :class="group.icon" class="text-sm" />
-                        </button>
+                            <p
+                                v-if="
+                                    group.context
+                                "
+                                class="
+                                    mt-0.5
+                                    truncate
+                                    text-sm
+                                    font-semibold
+                                    text-white
+                                "
+                            >
+                                {{
+                                    group.context
+                                }}
+                            </p>
+                        </div>
 
                         <div
-                            class="grid w-full justify-items-center transition-[grid-template-rows] duration-200 ease-out"
-                            :style="{ gridTemplateRows: expandedGroups[group.key] ? '1fr' : '0fr' }"
+                            class="
+                                space-y-0.5
+                            "
                         >
-                            <div class="flex w-full flex-col items-center gap-1 overflow-hidden pt-1">
-                                <button
-                                    v-for="item in group.items"
-                                    :key="item.label"
-                                    type="button"
-                                    v-tooltip.right="item.label"
-                                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition"
-                                    :class="item.active ? 'bg-white/20' : 'hover:bg-white/10'"
-                                    @click="item.command"
+                            <button
+                                v-for="
+                                    item in group.links
+                                "
+                                :key="
+                                    item.label
+                                "
+                                type="button"
+                                class="
+                                    group
+                                    relative
+                                    block
+                                    w-full
+                                    rounded-md
+                                    px-3
+                                    py-2.5
+                                    text-left
+                                    text-sm
+                                    transition
+                                    duration-150
+                                "
+                                :class="
+                                    item.active
+                                        ? 'bg-soft font-semibold text-accent'
+                                        : 'text-dark hover:bg-soft hover:text-accent'
+                                "
+                                @click="
+                                    navigate(
+                                        item.href
+                                    )
+                                "
+                            >
+                               <span
+                                    class="
+                                        block
+                                        truncate
+                                    "
                                 >
-                                    <i :class="item.icon" class="text-lg" />
-                                </button>
-                            </div>
+                                    {{
+                                        item.label
+                                    }}
+                                </span>
+                            </button>
                         </div>
-                    </div>
+                    </section>
                 </div>
             </nav>
 
-
-            <div class="mt-4 w-full space-y-3">
-                <Button
-                    v-if="!collapsed"
-                    type="button"
-                    class="!flex !w-full !items-center !justify-start !gap-3 !rounded-md !border !border-white/10 !bg-dark !px-3 !py-3 !text-white hover:!bg-dark/90"
-                    @click="toggleUserMenu"
-                >
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
-                        {{ userInitials }}
-                    </span>
-
-                    <span class="min-w-0 flex-1 text-left">
-                        <span class="block truncate text-sm font-semibold text-white">
-                            {{ userName }}
-                        </span>
-
-                        <span class="block truncate text-xs text-white/60">
-                            {{ contextTitle }}
-                        </span>
-                    </span>
-
-                    <i class="pi pi-chevron-up text-xs text-white" />
-                </Button>
-
-                <button
-                    v-else
-                    type="button"
-                    v-tooltip.right="userName"
-                    class="mx-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white transition hover:bg-white/20"
-                    @click="toggleUserMenu"
-                >
-                    {{ userInitials }}
-                </button>
-
-                <Menu
-                    ref="userMenu"
-                    :model="userMenuItems"
-                    popup
-                    unstyled
-                >
-                    <template #start>
-                        <div class="w-72 overflow-hidden rounded-lg border border-soft bg-white shadow-lg">
-                            <div class="border-b border-soft bg-soft/40 p-4">
-                                <div class="flex items-center gap-3">
-                                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-accent">
-                                        {{ userInitials }}
-                                    </div>
-
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-semibold text-dark">
-                                            {{ userName }}
-                                        </p>
-
-                                        <p class="mt-0.5 truncate text-xs text-accent">
-                                            {{ userRole }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="p-2">
-                                <template
-                                    v-for="item in userMenuItems"
-                                    :key="item.label"
-                                >
-                                    <button
-                                        type="button"
-                                        class="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition"
-                                        :class="item.danger
-                                            ? 'text-red-500 hover:bg-red-50'
-                                            : 'text-accent hover:bg-soft'"
-                                        @click="item.command"
-                                    >
-                                        <i
-                                            :class="item.icon"
-                                            class="text-sm"
-                                        />
-
-                                        <span>
-                                            {{ item.label }}
-                                        </span>
-                                    </button>
-                                </template>
-                            </div>
-                        </div>
-                    </template>
-
-                    <template #item>
-                        <span />
-                    </template>
-                </Menu>
-            </div>
         </div>
     </aside>
 </template>

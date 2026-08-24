@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\EnsureUserIsSuperAdmin;
 use App\Http\Middleware\EnsureUserIsActive;
@@ -24,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('requests:send-pending-digest')->dailyAt(config('notifications.pending_digest_hour', '18:15'));
     })
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->prepend(HandleCors::class);
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);

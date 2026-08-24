@@ -1,7 +1,6 @@
 <script setup>
 import AdminNavigation from '@/Components/Navigation/AdminNavbar.vue';
 import { router, usePage } from '@inertiajs/vue3';
-import Breadcrumb from 'primevue/breadcrumb';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -131,12 +130,7 @@ const breadcrumbs = computed(() => {
     return items;
 });
 
-const homeBreadcrumb = computed(() => ({
-    icon: 'pi pi-home',
-    command: () => {
-        router.visit(route('dashboard'));
-    },
-}));
+
 
 const pageTitle = computed(() => {
     return breadcrumbs.value[breadcrumbs.value.length - 1]?.label ?? 'Prehľad';
@@ -169,23 +163,37 @@ watch(
 </script>
 
 <template>
-    <div class="flex h-screen overflow-hidden bg-white text-slate-900">
-        <!-- The brand/logo block now lives inside AdminNavigation, at the top
-             of the sidebar, so it collapses together with the nav instead of
-             sitting in a separate full-width header row. -->
-        <AdminNavigation />
+    <div class="h-screen overflow-hidden bg-white text-slate-900">
+        <AdminNavigation
+            :breadcrumbs="breadcrumbs"
+        />
 
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <header class="z-10 flex w-full shrink-0 items-center bg-accent px-8 py-4 text-white">
-                <Breadcrumb
-                    v-if="breadcrumbs.length"
-                    :model="breadcrumbs"
-                />
-            </header>
-
-            <main class="min-w-0 flex-1 overflow-y-auto">
-                <div class="p-8">
-                    <div class="pb-4">
+        <div
+            class="
+                flex
+                h-full
+                min-w-0
+                flex-col
+                overflow-hidden
+                pt-14
+                lg:pl-[250px]
+            "
+        >
+            <main
+                class="
+                    min-h-0
+                    min-w-0
+                    flex-1
+                    overflow-y-auto
+                "
+            >
+                <div
+                    class="
+                        p-5
+                        sm:p-8
+                    "
+                >
+                    <div class="pb-6">
                         <h1 class="text-heading font-semibold text-dark">
                             {{ pageTitle }}
                         </h1>

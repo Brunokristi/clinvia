@@ -12,6 +12,10 @@ class EnsureValidApiClient
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if ($request->isMethod('OPTIONS')) {
+            return $next($request);
+        }
+
         $plainToken = $request->header('X-API-Key');
 
         if (! $plainToken) {
